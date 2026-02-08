@@ -54,7 +54,16 @@ export function AppSidebar({ currentSection, onSectionChange }: AppSidebarProps)
                                     Flagged Prompts
                                 </SidebarMenuButton>
                             </SidebarMenuItem>
+                            <SidebarMenuItem>
+                                <SidebarMenuButton
+                                    onClick={() => onSectionChange("agent-monitor")}
+                                    isActive={currentSection === "agent-monitor"}
+                                >
+                                    Agent Test
+                                </SidebarMenuButton>
+                            </SidebarMenuItem>
                         </SidebarMenu>
+
                     </SidebarGroupContent>
                 </SidebarGroup>
             </SidebarContent>

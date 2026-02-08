@@ -43,6 +43,7 @@ export function FlaggedPromptsSection() {
             .from('requests')
             .select('*')
             .eq('action', 'BLOCKED')
+            .eq('action', 'BLOCKED')
             .order('created_at', { ascending: false })
 
         if (data) {
@@ -60,12 +61,6 @@ export function FlaggedPromptsSection() {
 
     return (
         <div className="space-y-4">
-            <div>
-                <h2 className="text-2xl font-bold">Flagged Prompts</h2>
-                <p className="text-sm text-muted-foreground">
-                    Review and manage prompts blocked by the Dual-Agent system
-                </p>
-            </div>
 
             {loading ? (
                 <Card>
@@ -76,7 +71,7 @@ export function FlaggedPromptsSection() {
             ) : flaggedRequests.length === 0 ? (
                 <Card>
                     <CardContent className="p-8 text-center text-muted-foreground">
-                        No flagged prompts yet. All requests have been processed safely.
+                        No flagged prompts yet
                     </CardContent>
                 </Card>
             ) : (
@@ -94,7 +89,6 @@ export function FlaggedPromptsSection() {
                                         </div>
                                         <p className="font-mono text-sm break-all mb-3">{req.query}</p>
                                         <div className="text-xs text-muted-foreground space-y-1">
-                                            <div><strong>Layer:</strong> {req.layer}</div>
                                             <div><strong>Reason:</strong> {req.reason}</div>
                                         </div>
                                     </div>

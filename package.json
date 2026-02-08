@@ -9,11 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@langchain/core": "^1.1.19",
+    "@langchain/groq": "^1.0.4",
     "@supabase/supabase-js": "^2.95.3",
     "autoprefixer": "^10.4.24",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.2.4",
     "groq-sdk": "^0.37.0",
+    "langchain": "^1.2.18",
     "lucide-react": "^0.563.0",
     "next": "16.1.6",
     "postcss": "^8.5.6",

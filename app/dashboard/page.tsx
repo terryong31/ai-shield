@@ -7,11 +7,15 @@ import { PanelLeft } from "lucide-react"
 import { OverviewSection } from "@/components/dashboard/overview-section"
 import { ChatHistorySection } from "@/components/dashboard/chat-history-section"
 import { FlaggedPromptsSection } from "@/components/dashboard/flagged-prompts-section"
+import { AgentMonitorSection } from "@/components/dashboard/agent-monitor-section"
+import { SettingsSection } from "@/components/dashboard/settings-section"
 
 const navItems = [
     { id: "overview", label: "Overview" },
     { id: "history", label: "Chat History" },
     { id: "flagged", label: "Flagged Prompts" },
+    { id: "agent-monitor", label: "Dual Agent Test" },
+    { id: "settings", label: "Settings" },
 ]
 
 export default function Dashboard() {
@@ -63,13 +67,17 @@ export default function Dashboard() {
                             <PanelLeft className="h-4 w-4" />
                             <span className="sr-only">Toggle Sidebar</span>
                         </Button>
-                        <span className="font-semibold">Dashboard</span>
+                        <span className="font-semibold">
+                            {navItems.find(item => item.id === currentSection)?.label}
+                        </span>
                     </div>
                 </header>
                 <main className="flex-1 overflow-y-auto p-6">
                     {currentSection === "overview" && <OverviewSection />}
                     {currentSection === "history" && <ChatHistorySection />}
                     {currentSection === "flagged" && <FlaggedPromptsSection />}
+                    {currentSection === "agent-monitor" && <AgentMonitorSection />}
+                    {currentSection === "settings" && <SettingsSection />}
                 </main>
             </div>
         </div>
