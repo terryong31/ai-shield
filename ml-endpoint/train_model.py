@@ -125,7 +125,7 @@ def train():
     
     # Train Model
     print("Training SGD Classifier (Log Loss)...")
-    model = SGDClassifier(loss='log_loss', class_weight='balanced', max_iter=1000) # handle imbalance
+    model = SGDClassifier(loss='log_loss', class_weight='balanced', max_iter=1000, learning_rate='constant', eta0=2.0, alpha=0.0) # handle imbalance
     model.fit(X_train_vec, y_train)
     
     # Evaluation
@@ -147,7 +147,9 @@ def update_model_live(model, vectorizer, text, label):
     # Check if model supports partial_fit (e.g. SGDClassifier)
     if hasattr(model, "partial_fit"):
         # Partial fit (online learning) to update weights immediately
-        model.partial_fit(X_new, [label])
+        # Hammer the point home 5 times
+        for _ in range(5):
+            model.partial_fit(X_new, [label])
     else:
         print("Warning: Current model does not support partial_fit. Skipping live update.")
         
