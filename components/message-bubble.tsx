@@ -6,6 +6,7 @@ import { ShieldAlert, ShieldCheck, Cpu, Clock } from "lucide-react"
 interface MessageBubbleProps {
     role: "user" | "assistant"
     content: string
+    timestamp?: string
     metadata?: {
         blocked?: boolean
         reason?: string
@@ -21,7 +22,7 @@ interface MessageBubbleProps {
     }
 }
 
-export function MessageBubble({ role, content, metadata }: MessageBubbleProps) {
+export function MessageBubble({ role, content, metadata, timestamp }: MessageBubbleProps) {
     const isUser = role === "user"
     const isBlocked = metadata?.blocked
 
@@ -34,7 +35,7 @@ export function MessageBubble({ role, content, metadata }: MessageBubbleProps) {
             </Avatar>
 
             <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : "items-start"}`}>
-                <Card className={`p-3 text-sm ${isUser
+                <Card className={`p-3 text-sm break-words overflow-wrap-anywhere ${isUser
                     ? "bg-primary text-primary-foreground border-primary"
                     : isBlocked
                         ? "bg-destructive/10 border-destructive"
@@ -43,42 +44,31 @@ export function MessageBubble({ role, content, metadata }: MessageBubbleProps) {
                     {content}
                 </Card>
 
+                {timestamp && (
+                    <span className="text-[10px] text-zinc-500 mt-0.5 px-1">
+                        {timestamp}
+                    </span>
+                )}
+
                 {!isUser && metadata && (
                     <div className="flex flex-col gap-1 mt-1 w-full">
                         {/* Security Metadata Badge */}
                         <div className="flex flex-wrap items-center gap-2">
                             {isBlocked ? (
-                                <Badge variant="destructive" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5">
-                                    BLOCKED BY {metadata.dualAgentTriggered ? "AGENTS" : "ML ONLY"}
+                                <Badge variant="destructive" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5 bg-red-950 text-red-400 border-red-900">
+                                    BLOCKED BY {metadata?.dualAgentTriggered ? "AGENTS" : "ML"}
                                 </Badge>
                             ) : (
-                                // ONLY SHOW "SECURE" IF NOT CHAOS MODE
-                                metadata.securityMode !== "chaos" && (
-                                    <Badge variant="outline" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5 text-green-600 border-green-200 bg-green-50">
-                                        SECURE
-                                    </Badge>
-                                )
-                            )}
-
-                            {/* Hide Groq badge in chaos mode to reduce clutter if requested, or keep it. User said "remove all these. and show run time only" */}
-                            {metadata.usingGroq && metadata.securityMode !== "chaos" && (
-                                <Badge variant="secondary" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5 bg-purple-100 text-purple-700 border-purple-200">
-                                    <Cpu className="h-3 w-3" />
-                                    {metadata.dualAgentTriggered ? "GROQ DUAL-AGENT VERIFIED" : "GROQ POWERED"}
+                                <Badge variant="outline" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5 text-green-500 border-green-950 bg-green-950/20">
+                                    SECURE
                                 </Badge>
                             )}
 
                             {metadata.duration !== undefined && (
-                                <Badge variant="secondary" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5 bg-blue-100 text-blue-700 border-blue-200">
+                                <Badge variant="secondary" className="flex gap-1 items-center w-fit text-[10px] px-1 h-5 bg-zinc-900 text-zinc-400 border-zinc-800">
                                     <Clock className="h-3 w-3" />
                                     {metadata.duration.toFixed(2)}s
                                 </Badge>
-                            )}
-
-                            {!isBlocked && !metadata.dualAgentTriggered && metadata.securityMode !== "chaos" && (
-                                <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                    {metadata.securityMode === 'guardrail' ? "Processed by Guardrail" : "Processed by ML Only"}
-                                </span>
                             )}
                         </div>
                     </div>

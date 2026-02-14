@@ -54,8 +54,10 @@ def train():
     if os.path.exists(feedback_path):
         print("Loading human feedback...")
         feedback_df = pd.read_csv(feedback_path)
+        # UPSAMPLE FEEDBACK: Repeat feedback 1000x to ensure it has impact
+        feedback_upsampled = pd.concat([feedback_df] * 1000, ignore_index=True)
         # Combine with existing malicious data or safe data based on label
-        malicious_df = pd.concat([malicious_df, feedback_df[feedback_df['label'] == 1][['text', 'label']]], ignore_index=True)
+        malicious_df = pd.concat([malicious_df, feedback_upsampled[feedback_upsampled['label'] == 1][['text', 'label']]], ignore_index=True)
 
     # 2. Generate/Load Safe Prompts
     # Synthetic Safe Prompts (Normal business queries)
@@ -104,7 +106,8 @@ def train():
 
     # Add safe feedback to safe_df
     if os.path.exists(feedback_path):
-        safe_df = pd.concat([safe_df, feedback_df[feedback_df['label'] == 0][['text', 'label']]], ignore_index=True)
+        # We already upsampled it above as feedback_upsampled
+        safe_df = pd.concat([safe_df, feedback_upsampled[feedback_upsampled['label'] == 0][['text', 'label']]], ignore_index=True)
 
     print(f"Malicious samples: {len(malicious_df)}")
     print(f"Safe samples (Upsampled): {len(safe_df)}")

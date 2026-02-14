@@ -1,10 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import os
 import pandas as pd
 from datetime import datetime
+import train_model
 
 app = FastAPI()
 
@@ -78,7 +79,7 @@ async def predict_prompt(request: PromptRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/feedback")
-async def receive_feedback(request: FeedbackRequest):
+async def receive_feedback(request: FeedbackRequest, background_tasks: BackgroundTasks):
     try:
         # Save feedback to a CSV file for future retraining
         feedback_file = "feedback_data.csv"
@@ -91,9 +92,18 @@ async def receive_feedback(request: FeedbackRequest):
         header = not os.path.exists(feedback_file)
         new_data.to_csv(feedback_file, mode='a', index=False, header=header)
         
-        return {"status": "success", "message": "Feedback logged"}
+        # Trigger retraining in background
+        background_tasks.add_task(retrain_and_reload)
+        
+        return {"status": "success", "message": "Feedback logged and retraining triggered"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+def retrain_and_reload():
+    print("Pre-retraining model reload initiated...")
+    train_model.train()
+    load_artifacts()
+    print("Model retraining and reloading complete.")
 
 @app.get("/health")
 async def health_check():

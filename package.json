@@ -13,6 +13,7 @@
     "@langchain/core": "^1.1.19",
     "@langchain/groq": "^1.0.4",
     "@supabase/supabase-js": "^2.95.3",
+    "@xyflow/react": "^12.10.0",
     "autoprefixer": "^10.4.24",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

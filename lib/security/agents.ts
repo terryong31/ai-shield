@@ -40,7 +40,7 @@ const getGroqLLM = () => {
 }
 
 // Run the dual agent conversation
-export async function runDualAgents(prompt: string): Promise<AgentResult> {
+export async function runDualAgents(prompt: string, onProgress?: (step: any) => void): Promise<AgentResult> {
     const dialogue: DialogueMessage[] = []
 
     const addMessage = (agent: 'ANALYST' | 'WARDEN', message: string) => {
@@ -70,6 +70,7 @@ Keep your response concise but thorough. Speak directly to The Warden.`
 
         const analyst1 = typeof analystTurn1.content === 'string' ? analystTurn1.content : String(analystTurn1.content)
         addMessage('ANALYST', analyst1)
+        if (onProgress) onProgress({ type: 'debate_step', agent: 'ANALYST', message: analyst1 })
         console.log(`[DualAgent] Analyst Turn 1: ${analyst1.substring(0, 500)}`)
 
         // Turn 2: Warden responds and asks questions
@@ -91,6 +92,7 @@ Speak directly to The Analyst. Be professional but conversational.`
 
         const warden1 = typeof wardenTurn1.content === 'string' ? wardenTurn1.content : String(wardenTurn1.content)
         addMessage('WARDEN', warden1)
+        if (onProgress) onProgress({ type: 'debate_step', agent: 'WARDEN', message: warden1 })
         console.log(`[DualAgent] Warden Turn 1: ${warden1.substring(0, 500)}`)
 
         // Turn 3: Analyst responds to Warden's questions
@@ -109,6 +111,7 @@ Be concise but clear.`
 
         const analyst2 = typeof analystTurn2.content === 'string' ? analystTurn2.content : String(analystTurn2.content)
         addMessage('ANALYST', analyst2)
+        if (onProgress) onProgress({ type: 'debate_step', agent: 'ANALYST', message: analyst2 })
         console.log(`[DualAgent] Analyst Turn 2: ${analyst2.substring(0, 500)}`)
 
         // Turn 4: Warden makes final decision and summary
@@ -135,6 +138,7 @@ Explain your reasoning briefly before the decision.`
 
         const wardenFinalText = typeof wardenFinal.content === 'string' ? wardenFinal.content : String(wardenFinal.content)
         addMessage('WARDEN', wardenFinalText)
+        if (onProgress) onProgress({ type: 'debate_step', agent: 'WARDEN', message: wardenFinalText })
         console.log(`[DualAgent] Warden Final: ${wardenFinalText}`)
 
         // Extract Summary

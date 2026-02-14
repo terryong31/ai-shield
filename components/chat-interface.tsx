@@ -1,43 +1,59 @@
 "use client"
-// Force IDE re-index
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Send, Activity, Flame, Terminal } from "lucide-react"
+import { Send, Terminal, Loader2 } from "lucide-react"
 import { MessageBubble } from "@/components/message-bubble"
+import { WorkflowVisualizer } from "@/components/workflow/WorkflowVisualizer"
+import { supabase } from "@/lib/supabase"
 
 interface Message {
     role: "user" | "assistant"
     content: string
-    metadata?: {
-        blocked?: boolean
-        reason?: string
-        analysis?: string
-        toolPolicy?: string
-        dualAgentTriggered?: boolean
-        mlConfidence?: number
-        duration?: number
-        securityMode?: string
-        tool_calls?: any[]
-        userPrompt?: string
-    }
+    timestamp?: string
+    metadata?: any
 }
 
-import { supabase } from "@/lib/supabase"
+interface WorkflowState {
+    query: string
+    stage: 'idle' | 'start' | 'ml_processing' | 'ml_done' | 'debate' | 'final'
+    mlConfidence: number | null
+    mlVerdict: string
+    lastAgentMessage: string
+    dualAgentTriggered: boolean
+    blocked: boolean
+    toolPolicy?: string
+}
+
+const initialWorkflowState: WorkflowState = {
+    query: "",
+    stage: 'idle',
+    mlConfidence: null,
+    mlVerdict: "",
+    lastAgentMessage: "",
+    dualAgentTriggered: false,
+    blocked: false
+}
 
 export default function ChatInterface() {
     const [messages, setMessages] = useState<Message[]>([
-        { role: "assistant", content: "Hello. I am Inbaraj from Deriv. I can answer your questions and help you do tasks. How can I help you?" }
+        { role: "assistant", content: "System online. AI S.H.I.E.L.D. active. Ready for analysis." }
     ])
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
-    const [currentPolicy, setCurrentPolicy] = useState("ALLOW_ALL")
-    const [allowedTools, setAllowedTools] = useState<string[]>([])
-    const [restrictedTools, setRestrictedTools] = useState<string[]>([])
+
+    // Resizable Panel State
+    const [sidebarWidth, setSidebarWidth] = useState(50) // Percentage
+    const [isDragging, setIsDragging] = useState(false)
+
+    // Workflow Visualization State
+    const [workflowState, setWorkflowState] = useState<WorkflowState>(initialWorkflowState)
+    const [displayLimit, setDisplayLimit] = useState(10)
+    const [hasMore, setHasMore] = useState(false)
 
     const scrollRef = useRef<HTMLDivElement>(null)
+    const isSendingRef = useRef(false)
 
     useEffect(() => {
         fetchHistory()
@@ -46,37 +62,50 @@ export default function ChatInterface() {
     const fetchHistory = async () => {
         setIsLoading(true)
         try {
-            const { data, error } = await supabase
+            const { data, count, error } = await supabase
                 .from('requests')
-                .select('*')
-                .order('created_at', { ascending: true })
-                .limit(50)
+                .select('*', { count: 'exact' })
+                .order('created_at', { ascending: false })
+                .limit(displayLimit)
 
             if (error) throw error
 
-            if (data && data.length > 0) {
-                const historyMessages: Message[] = data.flatMap(req => {
-                    const userMsg: Message = { role: "user", content: req.query }
+            if (data) {
+                // Reverse to show chronological order
+                const sortedData = [...data].reverse()
+                const historyMessages: Message[] = sortedData.flatMap(req => {
+                    const timestamp = new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    const userMsg: Message = {
+                        role: "user",
+                        content: req.query,
+                        timestamp
+                    }
                     const aiMsg: Message = {
                         role: "assistant",
                         content: req.action === "BLOCKED"
-                            ? "Request blocked by security protocols."
+                            ? `Request blocked: ${req.reason}`
                             : (req.metadata?.aiResponse || "No record of AI response."),
+                        timestamp,
                         metadata: {
                             blocked: req.action === "BLOCKED",
                             reason: req.reason,
                             analysis: req.metadata?.analysis || req.metadata?.agentAnalysis,
                             toolPolicy: req.metadata?.toolPolicy,
                             tool_calls: req.metadata?.tool_calls,
-                            userPrompt: req.query
+                            userPrompt: req.query,
+                            duration: req.metadata?.duration,
+                            dualAgentTriggered: req.metadata?.dualAgentTriggered || req.layer === "LAYER_2_DUAL_AGENT",
+                            mlConfidence: req.metadata?.mlConfidence,
+                            stage: req.metadata?.stage
                         }
                     }
                     return [userMsg, aiMsg]
                 })
                 setMessages([
-                    { role: "assistant", content: "Hello. I am Inbaraj from Deriv. I can answer your questions and help you do tasks. How can I help you?" },
+                    { role: "assistant", content: "System online. AI S.H.I.E.L.D. active. Ready for analysis." },
                     ...historyMessages
                 ])
+                setHasMore(count ? count > displayLimit : false)
             }
         } catch (err) {
             console.error("Failed to load chat history:", err)
@@ -85,24 +114,70 @@ export default function ChatInterface() {
         }
     }
 
+    useEffect(() => {
+        fetchHistory()
+    }, [displayLimit])
+
+    // Initial scroll to bottom on load
+    useEffect(() => {
+        if (!isLoading && displayLimit === 10 && messages.length > 1 && scrollRef.current) {
+            scrollRef.current.scrollIntoView({ behavior: "instant" })
+        }
+    }, [messages, isLoading, displayLimit])
+
+    // Dragging Logic
+    const startResizing = useCallback(() => setIsDragging(true), [])
+    const stopResizing = useCallback(() => setIsDragging(false), [])
+
+    const resize = useCallback((mouseEvent: MouseEvent) => {
+        if (isDragging) {
+            const newWidth = (mouseEvent.clientX / window.innerWidth) * 100
+            if (newWidth > 20 && newWidth < 80) setSidebarWidth(newWidth)
+        }
+    }, [isDragging])
 
     useEffect(() => {
-        if (scrollRef.current) {
+        window.addEventListener("mousemove", resize)
+        window.addEventListener("mouseup", stopResizing)
+        return () => {
+            window.removeEventListener("mousemove", resize)
+            window.removeEventListener("mouseup", stopResizing)
+        }
+    }, [resize, stopResizing])
+
+    useEffect(() => {
+        if (!isLoading && scrollRef.current && isSendingRef.current) {
             scrollRef.current.scrollIntoView({ behavior: "smooth" })
+            isSendingRef.current = false
         }
     }, [messages, isLoading])
 
-    const sendMessage = async (currentInput: string) => {
-        if (!currentInput.trim()) return
+    const sendMessage = async () => {
+        if (!input.trim() || isLoading || isSendingRef.current) return
 
-        const userMsg: Message = { role: "user", content: currentInput }
-        setMessages(prev => [...prev, userMsg])
+        const currentInput = input
         setInput("")
         setIsLoading(true)
+        isSendingRef.current = true
         const startTime = Date.now()
 
+        // Reset workflow state for new request
+        setWorkflowState({
+            ...initialWorkflowState,
+            query: currentInput,
+            stage: 'start'
+        })
+
+        // Add user message immediately
+        const userMessage: Message = {
+            role: "user",
+            content: currentInput,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+        setMessages(prev => [...prev, userMessage])
+
         try {
-            const res = await fetch("/api/chat", {
+            const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -111,53 +186,111 @@ export default function ChatInterface() {
                 }),
             })
 
-            const data = await res.json()
-            const endTime = Date.now()
-            const duration = (endTime - startTime) / 1000 // Convert to seconds
+            if (!response.ok) throw new Error("Network response was not ok")
+            if (!response.body) throw new Error("No response body")
 
-            const aiMsg: Message = {
-                role: "assistant",
-                content: data.blocked ? "Request blocked by security protocols." : data.response,
-                metadata: {
-                    blocked: data.blocked,
-                    reason: data.reason,
-                    analysis: data.analysis || data.agentAnalysis,
-                    toolPolicy: data.toolPolicy,
-                    dualAgentTriggered: data.dualAgentTriggered,
-                    mlConfidence: data.mlConfidence,
-                    duration: duration,
-                    securityMode: localStorage.getItem("securityMode") || "shield",
-                    tool_calls: data.tool_calls,
-                    userPrompt: currentInput
+            const reader = response.body.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ""
+            let aiResponseText = ""
+            let fullMetadata: any = {}
+
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.replace(/}\s*{/g, '}\n{').split("\n")
+
+                // Keep the last line in buffer as it might be incomplete
+                buffer = lines.pop() || ""
+
+                for (const line of lines) {
+                    if (line.trim() === "") continue
+                    try {
+                        const data = JSON.parse(line)
+
+                        // Update Workflow State based on event type
+                        switch (data.type) {
+                            case 'START':
+                                setWorkflowState(prev => ({ ...prev, stage: 'start' }))
+                                break
+
+                            case 'STAGE_CHANGE':
+                                setWorkflowState(prev => ({ ...prev, stage: data.stage }))
+                                break
+
+                            case 'ML_RESULT':
+                                setWorkflowState(prev => ({
+                                    ...prev,
+                                    mlConfidence: data.confidence,
+                                    mlVerdict: data.verdict
+                                }))
+                                fullMetadata.mlConfidence = data.confidence
+                                fullMetadata.mlVerdict = data.verdict
+                                break
+
+                            case 'debate_step':
+                                setWorkflowState(prev => ({
+                                    ...prev,
+                                    stage: 'debate',
+                                    dualAgentTriggered: true,
+                                    lastAgentMessage: data.message
+                                }))
+                                fullMetadata.dualAgentTriggered = true
+                                break
+
+                            case 'BLOCK':
+                                const blockDuration = (Date.now() - startTime) / 1000
+                                setWorkflowState(prev => ({ ...prev, blocked: true }))
+                                setMessages(prev => [...prev, {
+                                    role: "assistant",
+                                    content: `Request blocked: ${data.reason}`,
+                                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // Added timestamp
+                                    duration: blockDuration, // Added duration
+                                    metadata: {
+                                        blocked: true,
+                                        reason: data.reason,
+                                        duration: blockDuration,
+                                        dualAgentTriggered: fullMetadata.dualAgentTriggered
+                                    }
+                                }])
+                                break
+
+                            case 'POLICY_UPDATE':
+                                setWorkflowState(prev => ({ ...prev, toolPolicy: data.policy }))
+                                fullMetadata.toolPolicy = data.policy
+                                break
+
+                            case 'FINAL_RESPONSE':
+                                setWorkflowState(prev => ({ ...prev, stage: 'final' }))
+                                aiResponseText = data.text
+                                break
+
+                            case 'ERROR':
+                                console.error("Stream error:", data.message)
+                                break
+                        }
+
+                    } catch (e) {
+                        console.error("Error parsing JSON chunk", e)
+                    }
                 }
             }
 
-            setMessages(prev => [...prev, aiMsg])
-
-            if (data.allowedTools) setAllowedTools(data.allowedTools)
-            if (data.restrictedTools) setRestrictedTools(data.restrictedTools)
-            if (data.toolPolicy) setCurrentPolicy(data.toolPolicy)
-
-            // Persist state for Dashboard
-            try {
-                const { error } = await supabase.from('requests').insert({
-                    query: currentInput,
-                    action: data.blocked ? "BLOCKED" : "ALLOWED",
-                    reason: data.reason || "Processed by AI S.H.I.E.L.D.",
-                    layer: data.dualAgentTriggered ? "LAYER_2_AGENTS" : "LAYER_1_ML_SHIELD",
+            // If we got a final response, add it to chat
+            if (aiResponseText) {
+                const duration = (Date.now() - startTime) / 1000
+                setMessages(prev => [...prev, {
+                    role: "assistant",
+                    content: aiResponseText,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     metadata: {
-                        blocked: data.blocked,
-                        analysis: data.analysis || data.agentAnalysis,
-                        toolPolicy: data.toolPolicy,
-                        mlConfidence: data.mlConfidence,
-                        dualAgentTriggered: data.dualAgentTriggered,
-                        aiResponse: data.blocked ? "BLOCKED" : data.response,
-                        tool_calls: data.tool_calls
+                        ...fullMetadata,
+                        duration: duration,
+                        dualAgentTriggered: fullMetadata.dualAgentTriggered
                     }
-                })
-                if (error) console.error("Error logging to Supabase:", error)
-            } catch (err) {
-                console.error("Failed to log request:", err)
+                }])
             }
 
         } catch (error) {
@@ -169,64 +302,91 @@ export default function ChatInterface() {
     }
 
     return (
-        <div className="flex h-screen bg-background text-foreground font-sans overflow-hidden">
-            {/* Main Chat Area - Full Width Now */}
-            <div className="flex-1 flex flex-col relative min-h-0">
-                <header className="h-14 border-b flex items-center px-6 justify-between bg-background/50 backdrop-blur-sm sticky top-0 z-10">
-                    <div className="flex items-center gap-4">
+        <div className="h-screen bg-zinc-950 text-foreground font-sans flex overflow-hidden">
+            {/* Left Panel: Chat Interface */}
+            <div
+                className="flex flex-col relative h-full min-h-0 overflow-hidden bg-zinc-950"
+                style={{ width: `${sidebarWidth}%` }}
+            >
+                <header className="h-14 border-b border-zinc-800 flex items-center px-6 justify-between bg-background/50 backdrop-blur-sm shrink-0">
+                    <div className="flex items-center gap-2">
+                        <Terminal className="h-4 w-4 text-primary" />
                         <span className="text-sm font-medium">Chat Interface</span>
                     </div>
                 </header>
 
-                <ScrollArea className="flex-1 p-6 min-h-0">
-                    <div className="max-w-3xl mx-auto space-y-6">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 p-6 scroll-smooth">
+                    <div className="max-w-2xl mx-auto space-y-6">
+                        {hasMore && (
+                            <div className="flex justify-center mb-4">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                                    onClick={() => setDisplayLimit(prev => prev + 10)}
+                                >
+                                    Show 10 more
+                                </Button>
+                            </div>
+                        )}
                         {messages.map((m, i) => (
                             <MessageBubble key={i} {...m} />
                         ))}
-                        {isLoading && (
-                            <div className="flex gap-3 justify-start items-start">
+                        {isLoading && !workflowState.blocked && !messages[messages.length - 1]?.role.includes("assistant") && (
+                            <div className="flex gap-3 justify-start items-start opacity-70">
                                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                                    <div className="h-4 w-4 bg-primary rounded-full animate-pulse" />
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
                                 </div>
-                                <div className="space-y-2 max-w-[80%]">
-                                    <div className="bg-card border border-border rounded-2xl rounded-tl-none p-3 shadow-sm">
-                                        <div className="flex flex-col gap-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs font-semibold text-primary animate-pulse">
-                                                    {localStorage.getItem("securityMode") === "chaos"
-                                                        ? "Regular AI thinking..."
-                                                        : localStorage.getItem("securityMode") === "guardrail"
-                                                            ? "Regular Guardrail checking..."
-                                                            : "AI S.H.I.E.L.D. scanning..."}
-                                                </span>
+                                <div className="text-sm pt-1.5 flex flex-col gap-1">
+                                    <span>AI S.H.I.E.L.D. Processing...</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        {workflowState.stage === 'ml_processing' && "Analyzing intent & vectors..."}
+                                        {workflowState.stage === 'debate' && (
+                                            <div className="flex flex-col gap-1 mt-1">
+                                                <span>Dual Agents debating security clearance...</span>
+                                                {workflowState.lastAgentMessage && (
+                                                    <span className="font-mono text-xs text-primary/80 bg-primary/5 p-2 rounded border border-primary/10 block whitespace-pre-wrap max-w-[400px]">
+                                                        {"> " + workflowState.lastAgentMessage}
+                                                    </span>
+                                                )}
                                             </div>
-                                        </div>
-                                    </div>
+                                        )}
+                                        {workflowState.stage === 'final' && "Generating secure response..."}
+                                    </span>
                                 </div>
                             </div>
                         )}
                         <div ref={scrollRef} />
                     </div>
-                </ScrollArea>
+                </div>
 
-                {/* Input Area */}
-                <div className="p-4 border-t bg-background">
-                    <div className="max-w-3xl mx-auto space-y-4">
-                        <div className="flex gap-2">
-                            <Input
-                                placeholder="Type a command..."
-                                value={input}
-                                onChange={e => setInput(e.target.value)}
-                                onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage(input)}
-                                className="bg-muted/20 border-muted-foreground/20 focus-visible:ring-primary/20"
-                            />
-                            <Button onClick={() => sendMessage(input)} disabled={isLoading || !input.trim()}>
-                                <Send className="h-4 w-4" />
-                                <span className="sr-only">Send</span>
-                            </Button>
-                        </div>
+                <div className="p-4 border-t border-zinc-800 bg-background shrink-0">
+                    <div className="max-w-2xl mx-auto flex gap-2">
+                        <Input
+                            placeholder="Type a command..."
+                            value={input}
+                            onChange={e => setInput(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
+                            className="bg-muted/20"
+                        />
+                        <Button onClick={sendMessage} disabled={isLoading || !input.trim()}>
+                            <Send className="h-4 w-4" />
+                        </Button>
                     </div>
                 </div>
+            </div>
+
+            {/* Resizer Handle */}
+            <div
+                className="w-1 bg-zinc-800 hover:bg-blue-600 cursor-col-resize transition-colors flex items-center justify-center z-50 group hover:w-1.5"
+                onMouseDown={startResizing}
+            >
+                <div className="h-8 w-0.5 bg-zinc-600 group-hover:bg-white rounded-full transition-colors" />
+            </div>
+
+            {/* Right Panel: Workflow Visualization */}
+            <div className="bg-zinc-950 flex flex-col min-h-0 h-full overflow-hidden flex-1 relative">
+                <WorkflowVisualizer workflowState={workflowState} />
             </div>
         </div>
     )

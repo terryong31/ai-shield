@@ -21,8 +21,8 @@ export function ToolTrace({ userPrompt, layer1Verdict = "SAFE", toolCalls = [], 
     const [isOpen, setIsOpen] = useState(false);
 
     return (
-        <div className="border rounded-lg p-4 bg-white dark:bg-gray-900 shadow-sm my-2">
-            <button 
+        <div className="border rounded-lg p-2 bg-white dark:bg-gray-900 shadow-sm my-2">
+            <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center justify-between w-full text-left font-semibold text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded transition-colors"
             >
@@ -32,7 +32,7 @@ export function ToolTrace({ userPrompt, layer1Verdict = "SAFE", toolCalls = [], 
                 </span>
                 <span>{isOpen ? '▼' : '▶'}</span>
             </button>
-            
+
             {isOpen && (
                 <div className="mt-4 space-y-6 relative pl-4 border-l-2 border-gray-200 dark:border-gray-700 ml-2">
                     {/* User Prompt */}
@@ -58,7 +58,7 @@ export function ToolTrace({ userPrompt, layer1Verdict = "SAFE", toolCalls = [], 
                     <div className="relative">
                         <div className={`absolute -left-[21px] h-3 w-3 rounded-full mt-1.5 ring-4 ring-white dark:ring-gray-900 ${toolCalls && toolCalls.length > 0 ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-700'}`}></div>
                         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tool Execution</h4>
-                        
+
                         {toolCalls && toolCalls.length > 0 ? (
                             <div className="mt-2 space-y-3">
                                 {toolCalls.map((tool, idx) => (

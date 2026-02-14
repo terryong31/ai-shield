@@ -6,15 +6,11 @@ import { Button } from "@/components/ui/button"
 import { PanelLeft } from "lucide-react"
 import { OverviewSection } from "@/components/dashboard/overview-section"
 import { ChatHistorySection } from "@/components/dashboard/chat-history-section"
-import { FlaggedPromptsSection } from "@/components/dashboard/flagged-prompts-section"
-import { AgentMonitorSection } from "@/components/dashboard/agent-monitor-section"
 import { SettingsSection } from "@/components/dashboard/settings-section"
 
 const navItems = [
     { id: "overview", label: "Overview" },
-    { id: "history", label: "Chat History" },
-    { id: "flagged", label: "Flagged Prompts" },
-    { id: "agent-monitor", label: "Dual Agent Test" },
+    { id: "history", label: "Security Logs" },
     { id: "settings", label: "Settings" },
 ]
 
@@ -75,8 +71,6 @@ export default function Dashboard() {
                 <main className="flex-1 overflow-y-auto p-6">
                     {currentSection === "overview" && <OverviewSection />}
                     {currentSection === "history" && <ChatHistorySection />}
-                    {currentSection === "flagged" && <FlaggedPromptsSection />}
-                    {currentSection === "agent-monitor" && <AgentMonitorSection />}
                     {currentSection === "settings" && <SettingsSection />}
                 </main>
             </div>

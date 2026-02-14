@@ -67,7 +67,6 @@ export function AgentMonitorSection() {
 
         try {
             if (currentMode === "shield") {
-                // 1. Initial ML Only Screening (Shield Mode Only)
                 addStep({
                     type: 'ML_ONLY',
                     title: 'ML Context Screening',
@@ -75,7 +74,6 @@ export function AgentMonitorSection() {
                     status: 'processing'
                 })
             } else {
-                // 1. Standard Guardrail Check
                 addStep({
                     type: 'GUARDRAIL',
                     title: 'System Guardrail Check',
@@ -84,8 +82,7 @@ export function AgentMonitorSection() {
                 })
             }
 
-            // 2. Call the Real Backend API
-            const res = await fetch("/api/chat", {
+            const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -94,61 +91,75 @@ export function AgentMonitorSection() {
                 }),
             })
 
-            const data = await res.json()
+            if (!response.ok) throw new Error("Network response was not ok")
+            if (!response.body) throw new Error("No response body")
 
-            // Handle Shield Mode Logic
-            if (currentMode === "shield") {
-                // 3. Update ML Step Result
-                addStep({
-                    type: 'ML_ONLY',
-                    title: 'ML Filtering Complete',
-                    content: `ML Confidence Score: ${(data.mlConfidence * 100).toFixed(1)}%. ` +
-                        (data.dualAgentTriggered ? "Uncertainty detected. Routing to Dual-Agent Shield." : "Verdict reached by ML layer."),
-                    status: 'complete',
-                    metadata: { confidence: data.mlConfidence?.toString() }
-                })
+            const reader = response.body.getReader()
+            const decoder = new TextDecoder()
+            let buffer = ""
+            let fullMetadata: any = {}
 
-                // 4. Display Dual Agent Dialogue if triggered
-                if (data.dualAgentTriggered && data.agentDialogue) {
-                    for (const turn of data.agentDialogue) {
-                        await new Promise(r => setTimeout(r, 50)) // Fast animation
-                        addStep({
-                            type: 'DUAL_AGENT',
-                            title: turn.agent === 'ANALYST' ? 'Analyst Reasoning' : 'Warden Review',
-                            content: turn.message,
-                            status: 'complete',
-                            metadata: { isAnalyst: turn.agent === 'ANALYST' }
-                        })
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.replace(/}\s*{/g, '}\n{').split("\n")
+                buffer = lines.pop() || ""
+
+                for (const line of lines) {
+                    if (line.trim() === "") continue
+                    try {
+                        const data = JSON.parse(line)
+
+                        switch (data.type) {
+                            case 'ML_RESULT':
+                                addStep({
+                                    type: 'ML_ONLY',
+                                    title: 'ML Filtering Complete',
+                                    content: `ML Confidence Score: ${(data.confidence * 100).toFixed(1)}%. ` +
+                                        (data.verdict === "UNCERTAIN" ? "Uncertainty detected. Routing to Dual-Agent Shield." : "Verdict reached by ML layer."),
+                                    status: 'complete',
+                                    metadata: { confidence: data.confidence?.toString() }
+                                })
+                                fullMetadata.mlConfidence = data.confidence
+                                break
+
+                            case 'debate_step':
+                                addStep({
+                                    type: 'DUAL_AGENT',
+                                    title: data.agent === 'ANALYST' ? 'Analyst Reasoning' : 'Warden Review',
+                                    content: data.message,
+                                    status: 'complete',
+                                    metadata: { isAnalyst: data.agent === 'ANALYST' }
+                                })
+                                fullMetadata.dualAgentTriggered = true
+                                break
+
+                            case 'BLOCK':
+                                addStep({
+                                    type: 'BLOCKED',
+                                    title: 'ACCESS TERMINATED',
+                                    content: data.reason || 'Request blocked by security protocols.',
+                                    status: 'error'
+                                })
+                                setCurrentSession(prev => prev ? { ...prev, final_verdict: 'BLOCKED' } : null)
+                                break
+
+                            case 'FINAL_RESPONSE':
+                                addStep({
+                                    type: 'FINAL_RESPONSE',
+                                    title: 'Secure Path Verified',
+                                    content: 'Request forwarded to primary LLM core.',
+                                    status: 'complete'
+                                })
+                                setCurrentSession(prev => prev ? { ...prev, final_verdict: 'ALLOWED' } : null)
+                                break
+                        }
+                    } catch (e) {
+                        console.error("Error parsing JSON chunk in monitor", e)
                     }
                 }
-            } else {
-                // Handle Guardrail Mode Logic
-                addStep({
-                    type: 'GUARDRAIL',
-                    title: 'Guardrail Protocol',
-                    content: data.blocked ? 'Violation detected by system prompt.' : 'Input passed standard safety checks.',
-                    status: 'complete'
-                })
-            }
-
-            // 5. Final Verdict
-            await new Promise(r => setTimeout(r, 50))
-            if (data.blocked) {
-                addStep({
-                    type: 'BLOCKED',
-                    title: 'ACCESS TERMINATED',
-                    content: data.reason || 'Request blocked by security protocols.',
-                    status: 'error'
-                })
-                setCurrentSession(prev => prev ? { ...prev, final_verdict: 'BLOCKED' } : null)
-            } else {
-                addStep({
-                    type: 'FINAL_RESPONSE',
-                    title: 'Secure Path Verified',
-                    content: 'Request forwarded to primary LLM core.',
-                    status: 'complete'
-                })
-                setCurrentSession(prev => prev ? { ...prev, final_verdict: 'ALLOWED' } : null)
             }
 
         } catch (error) {
