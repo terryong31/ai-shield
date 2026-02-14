@@ -89,9 +89,11 @@ export async function POST(req: Request) {
                 }
 
                 // SENSITIVE PROMOTION HEURISTIC: Force into Layer 2 for specific risky keywords
+                // SENSITIVE PROMOTION HEURISTIC: Force into Layer 2 for specific risky keywords
+                // BUT ONLY if the ML model hasn't already flagged it as MALICIOUS.
                 const sensitiveKeywords = ["sales", "revenue", "employee", "salary", "database", "sql", "delete", "personal", "member", "boss", "org", "chart", "hierarchy", "email", "drop", "table"];
-                if (sensitiveKeywords.some(kw => message.toLowerCase().includes(kw))) {
-                    console.log(`[API] Sensitive keyword detected. Forcing UNCERTAIN verdict for Dual Agent review.`);
+                if (mlVerdict !== "MALICIOUS" && sensitiveKeywords.some(kw => message.toLowerCase().includes(kw))) {
+                    console.log(`[API] Sensitive keyword detected in SAFE/UNCERTAIN query. Promoting to UNCERTAIN for Dual Agent review.`);
                     mlVerdict = "UNCERTAIN";
                 }
 

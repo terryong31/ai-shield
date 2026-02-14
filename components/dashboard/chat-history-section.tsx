@@ -82,23 +82,15 @@ export function ChatHistorySection() {
 
     const handleFeedback = async (requestId: string, query: string, label: number) => {
         try {
-            const res = await fetch('http://127.0.0.1:8000/feedback', {
+            const res = await fetch('/api/feedback', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: query, human_label: label })
+                body: JSON.stringify({ requestId, prompt: query, human_label: label })
             })
 
-            if (!res.ok) throw new Error("ML Service error")
+            if (!res.ok) throw new Error("Feedback service error")
 
-            const { error: dbError } = await supabase
-                .from('requests')
-                .update({
-                    human_label: label,
-                    reviewed: true
-                })
-                .eq('id', requestId)
-
-            if (dbError) throw dbError
+            // DB update is handled by the API route now
             fetchLogs()
         } catch (error) {
             console.error("Feedback failed", error)
@@ -132,8 +124,9 @@ export function ChatHistorySection() {
         const blocked = log.action === "BLOCKED";
 
         // Reconstruct dual agent state
-        // If action was blocked but ML wasn't high confidence, likely dual agent blocked it
-        const dualAgentTriggered = mlVerdict === "UNCERTAIN" || log.metadata.dualAgentTriggered;
+        // Strict visualization: Dual Agent is ONLY triggered if the ML verdict is UNCERTAIN.
+        // This prevents high-confidence blocks (0.99) from showing a ghost path through the dual agent.
+        const dualAgentTriggered = mlVerdict === "UNCERTAIN";
 
         return {
             query: log.query,

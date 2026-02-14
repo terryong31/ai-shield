@@ -212,7 +212,7 @@ export function NodeDetailsSheet({ isOpen, onClose, node }: NodeDetailsSheetProp
                         Trace details for {node.data.label || node.id}
                     </SheetDescription>
                 </SheetHeader>
-                <ScrollArea className="h-[calc(100vh-100px)] mt-6 pr-4">
+                <ScrollArea className="h-[calc(100vh-100px)] mt-6 px-4">
                     {renderContent()}
                 </ScrollArea>
             </SheetContent>

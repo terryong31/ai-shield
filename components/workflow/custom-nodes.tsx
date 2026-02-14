@@ -79,44 +79,13 @@ export const SwitchNode = memo(({ data }: NodeProps) => {
 
 export const DualAgentNode = memo(({ data }: NodeProps) => {
     return (
-        <NodeContainer status={data.status as string} className="w-[400px] h-[300px] p-0 overflow-hidden flex flex-col items-stretch">
+        <NodeContainer status={data.status as string}>
             <Handle type="target" position={Position.Left} className="w-3 h-3 bg-muted-foreground" />
             <Handle type="source" position={Position.Right} className="w-3 h-3 bg-muted-foreground" />
-
-            <div className="bg-muted/50 p-2 border-b flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-2">
-                    <BrainCircuit className="w-4 h-4 text-primary" />
-                    <span className="text-xs font-bold uppercase tracking-wider">Dual-Agent Shield</span>
-                </div>
-                <Badge variant="outline" className="text-[9px] h-4 px-1 border-primary/20 bg-primary/5 text-primary">LAYER 2</Badge>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-zinc-950/50 nodrag cursor-text">
-                <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                        <ShieldAlert className="w-3 h-3 text-blue-400" />
-                        <span className="text-[10px] font-semibold text-blue-400">ANALYST</span>
-                    </div>
-                    <div className="text-[10px] bg-blue-500/10 border border-blue-500/20 p-2 rounded-lg rounded-tl-none italic opacity-90 whitespace-pre-wrap break-words nodrag select-text">
-                        {typeof data.currentMessage === "string" ? data.currentMessage : "Waiting for security analysis..."}
-                    </div>
-                </div>
-
-                <div className="flex flex-col gap-2 items-end">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-semibold text-red-400">WARDEN</span>
-                        <Shield className="w-3 h-3 text-red-400" />
-                    </div>
-                    <div className="text-[10px] bg-red-500/10 border border-red-500/20 p-2 rounded-lg rounded-tr-none italic opacity-90 text-right nodrag select-text">
-                        {data.status === 'success' ? "Analysis complete. Access policy applied." : "Monitoring debate..."}
-                    </div>
-                </div>
-            </div>
-
-            <div className="p-2 bg-muted/30 border-t flex items-center justify-center shrink-0">
-                <div className="text-[9px] text-muted-foreground animate-pulse">
-                    {data.status === 'active' ? "DEBATING PROTOCOLS..." : "DEBATE TERMINATED"}
-                </div>
+            <BrainCircuit className="w-8 h-8 mb-2" />
+            <div className="text-sm font-medium">Dual-Agent Shield</div>
+            <div className="text-xs opacity-70 mt-1">
+                {data.status === 'active' ? "Analysing..." : "Analysis Complete"}
             </div>
         </NodeContainer>
     );

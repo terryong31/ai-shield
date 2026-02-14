@@ -7,8 +7,9 @@ export async function POST(request: Request) {
 
         // 1. Notify the ML Service (Optional: wrap in try/catch if ML service is unstable)
         try {
-            // Using 127.0.0.1 instead of localhost to avoid Node.js resolution issues
-            await fetch('http://127.0.0.1:8000/feedback', {
+            // Use environment variable for ML API URL, default to localhost for development
+            const mlApiUrl = process.env.ML_API_URL || 'http://127.0.0.1:8000';
+            await fetch(`${mlApiUrl}/feedback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt, human_label }),
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
         // 2. Update Supabase so the Dashboard UI reflects the "Reviewed" state
         // We also update the 'action' field so it's no longer 'BLOCKED' if marked safe
         const newAction = human_label === 0 ? 'ALLOWED' : 'BLOCKED';
-        
+
         console.log(`Updating Request ${requestId} to ${newAction}...`);
 
         const { data, error } = await supabase
