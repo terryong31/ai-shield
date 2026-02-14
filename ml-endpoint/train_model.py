@@ -54,6 +54,11 @@ def train():
     if os.path.exists(feedback_path):
         print("Loading human feedback...")
         feedback_df = pd.read_csv(feedback_path)
+        
+        # DEDUPLICATE: Keep only the LAST label for each unique text
+        # This prevents conflicting labels (e.g. user toggled Safe -> Malicious) from confusing the model
+        feedback_df = feedback_df.drop_duplicates(subset=['text'], keep='last')
+        
         # UPSAMPLE FEEDBACK: Repeat feedback 1000x to ensure it has impact
         feedback_upsampled = pd.concat([feedback_df] * 1000, ignore_index=True)
         # Combine with existing malicious data or safe data based on label

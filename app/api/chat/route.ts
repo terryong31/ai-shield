@@ -25,7 +25,7 @@ async function logRequestToSupabase(data: any) {
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-    const { message, mode = "shield" } = await req.json()
+    const { message, mode = "shield", signer_name, passphrase } = await req.json()
 
     // Initialize log data structure
     let logData: any = {
@@ -42,7 +42,9 @@ export async function POST(req: Request) {
             toolPolicy: "ALLOW_ALL",
             dualAgentTriggered: false,
             agentDialogue: [],
-            mode: mode
+            mode: mode,
+            authorized_signer: signer_name, // Log the signer (legacy or if passed)
+            passphrase_provided: !!passphrase // Log if passphrase was provided (do not log the actual passphrase)
         }
     };
 
@@ -78,6 +80,7 @@ export async function POST(req: Request) {
                             const mlData = await mlResponse.json()
                             mlConfidence = mlData.confidence_score
 
+                            // Adjust ML thresholds
                             if (mlConfidence >= 0.85) {
                                 mlVerdict = "MALICIOUS"
                             } else if (mlConfidence <= 0.2) {
@@ -96,56 +99,61 @@ export async function POST(req: Request) {
                 }
 
                 // SENSITIVE PROMOTION HEURISTIC: Force into Layer 2 for specific risky keywords
-                // SENSITIVE PROMOTION HEURISTIC: Force into Layer 2 for specific risky keywords
-                // BUT ONLY if the ML model hasn't already flagged it as MALICIOUS.
-                // AND ONLY if we are in SHIELD mode.
-                const sensitiveKeywords = ["sales", "revenue", "employee", "salary", "database", "sql", "delete", "personal", "member", "boss", "org", "chart", "hierarchy", "email", "drop", "table"];
-                if (mode === 'shield' && mlVerdict !== "MALICIOUS" && sensitiveKeywords.some(kw => message.toLowerCase().includes(kw))) {
-                    console.log(`[API] Sensitive keyword detected in SAFE/UNCERTAIN query. Promoting to UNCERTAIN for Dual Agent review.`);
+                const sensitiveKeywords = ["delete", "drop", "update", "execute", "select", "insert", "sql", "database", "table", "schema", "admin", "truncate", "email", "send"];
+                const isSensitive = sensitiveKeywords.some(kw => message.toLowerCase().includes(kw));
+
+                // If sensitive, downgrade "SAFE" to "UNCERTAIN" to force Agent Review, unless explicitly malicious
+                if (isSensitive && mlVerdict === "SAFE" && mode === 'shield') {
+                    console.log(`[API] Sensitive keyword detected. Escalating to Dual Agents.`);
                     mlVerdict = "UNCERTAIN";
                 }
 
+                // Add Passphrase check heuristic: If passphrase is provided, we should run agents to verify it,
+                // BUT ONLY if the ML layer didn't already flag it as definitely MALICIOUS.
+                if (passphrase && mode === 'shield' && mlVerdict !== "MALICIOUS") {
+                    console.log(`[API] Passphrase provided. Escalating to Dual Agents for Authorization.`);
+                    mlVerdict = "UNCERTAIN"; // Force agent review to validate passphrase
+                }
+
+
                 logData.metadata.mlConfidence = mlConfidence;
+                logData.metadata.generated_intent = mlVerdict;
+
                 send({ type: 'ML_RESULT', confidence: mlConfidence, verdict: mlVerdict });
-                console.log(`[API] ML Result: ${mlVerdict} (Confidence: ${mlConfidence})`);
-                send({ type: 'STAGE_CHANGE', stage: 'ml_done' });
 
-                // Handle Immediate Block
+                // CRITICAL SECURITY FIX: Immediately BLOCK high-confidence malicious requests
                 if (mlVerdict === "MALICIOUS") {
-                    send({ type: 'BLOCK', reason: "High risk signature detected." });
+                    console.log(`[API] Blocking High-Confidence Malicious Request (Confidence: ${mlConfidence})`);
+                    send({ type: 'BLOCK', reason: "High confidence ML detection triggered immediate block." });
 
-                    // Log Block
                     logData.action = "BLOCKED";
-                    logData.reason = "High risk signature detected.";
+                    logData.reason = "High confidence ML detection";
                     logData.layer = "LAYER_1_ML";
-                    logRequestToSupabase(logData);
+                    logRequestToSupabase(logData); // Fire and forget
 
                     controller.close();
                     return;
                 }
 
-                // 3. Dual Agent Layer (if Uncertain)
-                let agentResult: any = {
-                    verdict: mlVerdict,
-                    analysis: "Skipped Layer 2",
-                    policy: "ALLOW_ALL",
-                    dialogue: [],
-                    summary: ""
-                };
+                // 3. Dual Agent Layer (Layer 2)
+                // Trigger if ML is UNCERTAIN or if 'guardrail' mode is active (paranoid mode)
+                // Note: MALICIOUS is handled above, so we only need to check for UNCERTAIN or forced check in SAFE
+                let agentResult: any = { verdict: "SAFE", policy: "ALLOW_ALL", summary: "Skipped Layer 2", dialogue: [] };
 
-                if (mlVerdict === "UNCERTAIN") {
+                if (mlVerdict === "UNCERTAIN" || mode === 'guardrail') {
                     send({ type: 'STAGE_CHANGE', stage: 'debate' });
                     logData.metadata.dualAgentTriggered = true;
 
-                    agentResult = await runDualAgents(message, (step) => {
-                        // send(step); // Stream debate steps - DISABLED per user request
+                    // Pass passphrase to agents
+                    agentResult = await runDualAgents(message, passphrase, (step) => {
+                        send(step);
                     });
 
+                    logData.metadata.agentAnalysis = agentResult.analysis;
                     logData.metadata.agentDialogue = agentResult.dialogue;
-                    logData.metadata.analysis = agentResult.analysis;
                 }
 
-                // Handle Dual Agent Block
+                // If Agents decide to BLOCK (MALICIOUS)
                 if (agentResult.verdict === "MALICIOUS") {
                     send({ type: 'BLOCK', reason: agentResult.summary });
 
@@ -176,7 +184,7 @@ export async function POST(req: Request) {
 
                 const realResponse = await getChatResponse(message, allowedTools, undefined, (event) => {
                     send(event);
-                });
+                }, passphrase); // Pass passphrase (was signer_name)
 
                 logData.metadata.aiResponse = realResponse;
                 logRequestToSupabase(logData);

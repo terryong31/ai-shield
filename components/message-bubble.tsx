@@ -46,7 +46,7 @@ export function MessageBubble({ role, content, metadata, timestamp }: MessageBub
                     <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
                         components={{
-                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+                            p: ({ node, ...props }) => <div className="mb-2 last:mb-0 leading-relaxed" {...props} />,
                             ul: ({ node, ...props }) => <ul className="list-disc pl-4 mb-2 last:mb-0 space-y-1" {...props} />,
                             ol: ({ node, ...props }) => <ol className="list-decimal pl-4 mb-2 last:mb-0 space-y-1" {...props} />,
                             li: ({ node, ...props }) => <li className="pl-1" {...props} />,

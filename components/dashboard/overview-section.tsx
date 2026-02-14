@@ -215,7 +215,39 @@ export function OverviewSection() {
 
     return (
         <div className="space-y-6">
-            {/* Radial Charts Row */}
+            {/* Request Flow Map (Moved Up) */}
+            <Card className="flex flex-col">
+                <CardHeader>
+                    <CardTitle>Request Flow Map</CardTitle>
+                    <CardDescription>Authorization flow from ML to Dual Agents</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 min-h-0">
+                    {sankeyData.links.length > 0 ? (
+                        <div className="w-full h-[600px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <Sankey
+                                    data={sankeyData}
+                                    node={<DemoSankeyNode containerWidth={1200} />}
+                                    nodePadding={50}
+                                    margin={{
+                                        left: 20,
+                                        right: 200,
+                                        top: 20,
+                                        bottom: 20,
+                                    }}
+                                    link={{ stroke: '#374151' }}
+                                >
+                                    <RechartsTooltip />
+                                </Sankey>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">Not enough data</div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Radial Charts Row (Moved Down) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Total Requests */}
                 <Card className="flex flex-col">
@@ -483,88 +515,53 @@ export function OverviewSection() {
                 </CardContent>
             </Card>
 
-            {/* Row for Sankey and Cloud */}
-            <div className="flex flex-col gap-6">
-                {/* Sankey Chart */}
-                <Card className="flex flex-col">
-                    <CardHeader>
-                        <CardTitle>Request Flow Map</CardTitle>
-                        <CardDescription>Authorization flow from ML to Dual Agents</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-1 min-h-0">
-                        {sankeyData.links.length > 0 ? (
-                            <div className="w-full h-[600px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <Sankey
-                                        data={sankeyData}
-                                        node={<DemoSankeyNode containerWidth={1200} />}
-                                        nodePadding={50}
-                                        margin={{
-                                            left: 20,
-                                            right: 200,
-                                            top: 20,
-                                            bottom: 20,
-                                        }}
-                                        link={{ stroke: '#374151' }}
-                                    >
-                                        <RechartsTooltip />
-                                    </Sankey>
-                                </ResponsiveContainer>
-                            </div>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">Not enough data</div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Word Cloud */}
-                <Card className="flex flex-col">
-                    <CardHeader>
-                        <CardTitle>Common Keywords</CardTitle>
-                        <CardDescription>Most frequent terms in user prompts</CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex-1 flex items-center justify-center overflow-hidden">
-                        {wordCloudData.length > 0 ? (
-                            <div className="w-full h-full">
-                                <WordCloud
-                                    data={wordCloudData}
-                                    width={800}
-                                    height={300}
-                                    font="Inter"
-                                    fontStyle="normal"
-                                    fontWeight="bold"
-                                    fontSize={(word: any) => {
-                                        const maxVal = Math.max(...wordCloudData.map(d => d.value));
-                                        const minVal = Math.min(...wordCloudData.map(d => d.value));
-                                        // Chunky fonts (24-80) to fill the smaller container
-                                        const size = ((word.value - minVal) / (Math.max(1, maxVal - minVal))) * (80 - 24) + 24;
-                                        return size;
-                                    }}
-                                    spiral="archimedean"
-                                    rotate={() => (Math.random() > 0.7 ? 90 : 0)}
-                                    padding={1}
-                                    random={() => 0.5}
-                                    onWordClick={onWordClick}
-                                    fill={(d: any, i: number) => {
-                                        // Reference image palette: Earthy greens, vibrant oranges, and dark slates
-                                        const colors = [
-                                            "#7d9b01", // Green
-                                            "#689c00", // Darker Green
-                                            "#ff8a00", // Orange
-                                            "#ea6301", // Burnt Orange
-                                            "#334155", // Slate 700 (instead of pure black for readability)
-                                            "#475569", // Slate 600
-                                        ]
-                                        return colors[i % colors.length]
-                                    }}
-                                />
-                            </div>
-                        ) : (
-                            <div className="flex items-center justify-center h-full text-muted-foreground">No keywords found</div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
+            {/* Word Cloud */}
+            <Card className="flex flex-col">
+                <CardHeader>
+                    <CardTitle>Common Keywords</CardTitle>
+                    <CardDescription>Most frequent terms in user prompts</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 flex items-center justify-center overflow-hidden">
+                    {wordCloudData.length > 0 ? (
+                        <div className="w-full h-full">
+                            <WordCloud
+                                data={wordCloudData}
+                                width={800}
+                                height={300}
+                                font="Inter"
+                                fontStyle="normal"
+                                fontWeight="bold"
+                                fontSize={(word: any) => {
+                                    const maxVal = Math.max(...wordCloudData.map(d => d.value));
+                                    const minVal = Math.min(...wordCloudData.map(d => d.value));
+                                    // Chunky fonts (24-80) to fill the smaller container
+                                    const size = ((word.value - minVal) / (Math.max(1, maxVal - minVal))) * (80 - 24) + 24;
+                                    return size;
+                                }}
+                                spiral="archimedean"
+                                rotate={() => (Math.random() > 0.7 ? 90 : 0)}
+                                padding={1}
+                                random={() => 0.5}
+                                onWordClick={onWordClick}
+                                fill={(d: any, i: number) => {
+                                    // Reference image palette: Earthy greens, vibrant oranges, and dark slates
+                                    const colors = [
+                                        "#7d9b01", // Green
+                                        "#689c00", // Darker Green
+                                        "#ff8a00", // Orange
+                                        "#ea6301", // Burnt Orange
+                                        "#334155", // Slate 700 (instead of pure black for readability)
+                                        "#475569", // Slate 600
+                                    ]
+                                    return colors[i % colors.length]
+                                }}
+                            />
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-muted-foreground">No keywords found</div>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     )
 }

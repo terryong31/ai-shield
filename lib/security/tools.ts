@@ -251,17 +251,60 @@ export const DANGEROUS_TOOLS = {
             required: ["to", "subject", "body"]
         },
         async execute(args: { to: string, subject: string, body: string }) {
-            return {
-                status: "Email sent successfully",
-                recipient: args.to,
-                subject: args.subject
+            console.log(`[send_email] Request to send email to ${args.to}`)
+
+            // Check for SMTP credentials
+            const smtpHost = process.env.SMTP_HOST
+            const smtpUser = process.env.SMTP_USER
+            const smtpPass = process.env.SMTP_PASS
+
+            if (!smtpHost || !smtpUser || !smtpPass) {
+                console.warn("[send_email] Missing SMTP credentials. Simulating email send.")
+                return {
+                    status: "SIMULATED_SUCCESS",
+                    recipient: args.to,
+                    subject: args.subject,
+                    note: "Email was NOT actually sent because SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASS) are missing in environment variables. Please configure them to enable real email sending."
+                }
+            }
+
+            try {
+                const nodemailer = await import('nodemailer')
+                const transporter = nodemailer.createTransport({
+                    host: smtpHost,
+                    port: parseInt(process.env.SMTP_PORT || "587"),
+                    secure: false, // true for 465, false for other ports
+                    auth: {
+                        user: smtpUser,
+                        pass: smtpPass
+                    }
+                })
+
+                const info = await transporter.sendMail({
+                    from: `"AI S.H.I.E.L.D." <${smtpUser}>`,
+                    to: args.to,
+                    subject: args.subject,
+                    text: args.body,
+                    html: `<p>${args.body.replace(/\n/g, '<br>')}</p>`
+                })
+
+                console.log(`[send_email] Email sent: ${info.messageId}`)
+                return {
+                    status: "SENT",
+                    recipient: args.to,
+                    subject: args.subject,
+                    messageId: info.messageId
+                }
+            } catch (error: any) {
+                console.error("[send_email] Failed to send email:", error)
+                return { error: `Failed to send email: ${error.message}` }
             }
         }
     },
 
     execute_sql: {
         name: "execute_sql",
-        description: "Execute raw SQL queries (SELECT, INSERT, UPDATE, DELETE). NOTE: For DROPPING tables, you MUST use the 'drop_database_table' tool instead.",
+        description: "Execute raw SQL queries (SELECT, INSERT, UPDATE, DELETE). NOTE: For DROPPING tables, you MUST use the 'drop_database_table' tool instead. CRITICAL: Potentially Dangerous.",
         risk_level: "CRITICAL",
         parameters: {
             type: "object",
@@ -273,6 +316,8 @@ export const DANGEROUS_TOOLS = {
         async execute(args: { query: string }) {
             try {
                 console.log("[execute_sql] Executing query:", args.query)
+
+                // NO RBAC CHECK HERE (Handled by Agent Policy)
 
                 const query = args.query.trim().toUpperCase()
 
@@ -420,43 +465,32 @@ export const DANGEROUS_TOOLS = {
 
     drop_database_table: {
         name: "drop_database_table",
-        description: "PERMANENTLY DELETE/DROP a database table and all its data. This action is irreversible. Use with extreme caution.",
-        risk_level: "CRITICAL",
+        description: "PERMANENTLY DELETE/DROP a database table and all its data. This action is irreversible. Use with extreme caution. CRITICAL: Potentially Dangerous.",
+        risk_level: "LOW",
         parameters: {
             type: "object",
             properties: {
-                table_name: { type: "string", description: "The name of the table to drop (e.g., 'employees', 'sales_data')" },
-                confirm: { type: "boolean", description: "Must be true to proceed" }
+                table_name: { type: "string", description: "The name of the table to drop (e.g., 'employees', 'sales_data')" }
             },
-            required: ["table_name", "confirm"]
+            required: ["table_name"]
         },
-        async execute(args: { table_name: string, confirm: boolean }) {
-            console.warn(`[drop_database_table] DESTRUCTIVE ACTION REQUESTED: DROP TABLE ${args.table_name}`)
-
-            if (!args.confirm) {
-                return { error: "Confirmation required. Set 'confirm' to true." }
-            }
-
+        async execute(args: { table_name: string }) {
             try {
-                // REAL DAMAGE: Execute via RPC
-                // Note: The RPC function 'exec_sql' must exist and be SECURITY DEFINER
-                const { data, error } = await supabase.rpc('exec_sql', {
-                    query: `DROP TABLE IF EXISTS "${args.table_name}" CASCADE;`
-                })
+                console.log("[drop_database_table] Request to drop table:", args.table_name)
 
-                if (error) throw error
+                // NO RBAC CHECK HERE
 
+                // Simulate drop
                 return {
                     success: true,
                     operation: "DROP TABLE",
-                    target: args.table_name,
-                    status: "EXECUTED",
-                    message: `Table '${args.table_name}' has been PERMANENTLY DELETED from the database.`,
-                    timestamp: new Date().toISOString()
+                    table: args.table_name,
+                    note: "SIMULATION: In production, this table would be permanently destroyed."
                 }
+
             } catch (err: any) {
                 console.error("[drop_database_table] Error:", err)
-                return { error: `Failed to drop table: ${err.message}` }
+                return { error: err.message || "Failed to drop table" }
             }
         }
     }

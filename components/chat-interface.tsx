@@ -3,10 +3,21 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Send, Terminal, Loader2 } from "lucide-react"
+import { Send, Terminal, Loader2, Lock, Unlock } from "lucide-react"
 import { MessageBubble } from "@/components/message-bubble"
 import { WorkflowVisualizer } from "@/components/workflow/WorkflowVisualizer"
 import { supabase } from "@/lib/supabase"
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+
 
 interface Message {
     role: "user" | "assistant"
@@ -47,6 +58,11 @@ export default function ChatInterface() {
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
 
+    // Passphrase State
+    const [passphrase, setPassphrase] = useState("")
+    const [isPassphraseDialogOpen, setIsPassphraseDialogOpen] = useState(false)
+    const [tempPassphrase, setTempPassphrase] = useState("")
+
     // Resizable Panel State
     const [sidebarWidth, setSidebarWidth] = useState(50) // Percentage
     const [isDragging, setIsDragging] = useState(false)
@@ -61,6 +77,12 @@ export default function ChatInterface() {
 
     useEffect(() => {
         fetchHistory()
+        // Load passphrase from local storage if exists
+        const savedPassphrase = localStorage.getItem("shield_passphrase")
+        if (savedPassphrase) {
+            setPassphrase(savedPassphrase)
+            setTempPassphrase(savedPassphrase)
+        }
     }, [])
 
     const fetchHistory = async () => {
@@ -182,14 +204,20 @@ export default function ChatInterface() {
         }
     }, [messages, isLoading])
 
+    const handleSavePassphrase = () => {
+        setPassphrase(tempPassphrase)
+        localStorage.setItem("shield_passphrase", tempPassphrase)
+        setIsPassphraseDialogOpen(false)
+    }
+
     const sendMessage = async () => {
         if (!input.trim() || isLoading || isSendingRef.current) return
 
         const currentInput = input
         setInput("")
+
         setIsLoading(true)
         isSendingRef.current = true
-        const startTime = Date.now()
 
         // Reset workflow state for new request
         setWorkflowState({
@@ -207,13 +235,24 @@ export default function ChatInterface() {
         }
         setMessages(prev => [...prev, userMessage])
 
+        // Proceed directly - NO frontend interception anymore.
+        // The passphrase is sent with the request, and the AGENT decides.
+        executeChatRequest(currentInput)
+    }
+
+    const executeChatRequest = async (messageText: string) => {
+        setIsLoading(true)
+        isSendingRef.current = true
+        const startTime = Date.now()
+
         try {
             const response = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    message: currentInput,
-                    mode: localStorage.getItem("securityMode") || "shield"
+                    message: messageText,
+                    mode: localStorage.getItem("securityMode") || "shield",
+                    passphrase: passphrase // Pass the stored passphrase
                 }),
             })
 
@@ -248,7 +287,13 @@ export default function ChatInterface() {
                                 break
 
                             case 'STAGE_CHANGE':
-                                setWorkflowState(prev => ({ ...prev, stage: data.stage }))
+                                setWorkflowState(prev => ({
+                                    ...prev,
+                                    stage: data.stage,
+                                    // If we hit 'debate' stage, dual agents are triggered
+                                    dualAgentTriggered: prev.dualAgentTriggered || data.stage === 'debate'
+                                }))
+                                if (data.stage === 'debate') fullMetadata.dualAgentTriggered = true
                                 break
 
                             case 'ML_RESULT':
@@ -291,8 +336,7 @@ export default function ChatInterface() {
                                 setMessages(prev => [...prev, {
                                     role: "assistant",
                                     content: `Request blocked: ${data.reason}`,
-                                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // Added timestamp
-                                    duration: blockDuration, // Added duration
+                                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                                     metadata: {
                                         blocked: true,
                                         reason: data.reason,
@@ -359,6 +403,41 @@ export default function ChatInterface() {
                         <Terminal className="h-4 w-4 text-primary" />
                         <span className="text-sm font-medium">Chat Interface</span>
                     </div>
+
+                    {/* Security Locker */}
+                    <Dialog open={isPassphraseDialogOpen} onOpenChange={setIsPassphraseDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary">
+                                {passphrase ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4 text-red-500" />}
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[425px] bg-zinc-900 border-zinc-800">
+                            <DialogHeader>
+                                <DialogTitle>Security Locker</DialogTitle>
+                                <DialogDescription>
+                                    Enter the security passphrase to authorize dangerous actions.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="passphrase" className="text-right">
+                                        Passphrase
+                                    </Label>
+                                    <Input
+                                        id="passphrase"
+                                        type="password"
+                                        value={tempPassphrase}
+                                        onChange={(e) => setTempPassphrase(e.target.value)}
+                                        className="col-span-3 bg-zinc-950 border-zinc-800"
+                                        placeholder="Enter passphrase..."
+                                    />
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button onClick={handleSavePassphrase}>Save Configuration</Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </header>
 
                 <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 p-6 scroll-smooth">
@@ -399,34 +478,38 @@ export default function ChatInterface() {
                         )}
                         <div ref={scrollRef} />
                     </div>
-                </div>
 
-                <div className="p-4 border-t border-zinc-800 bg-background shrink-0">
-                    <div className="max-w-2xl mx-auto flex gap-2">
-                        <Input
-                            placeholder="Type a command..."
-                            value={input}
-                            onChange={e => setInput(e.target.value)}
-                            onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
-                            className="bg-muted/20"
+                    <div className="p-4 border-t border-zinc-800 bg-background/50 backdrop-blur-sm shrink-0">
+                        {/* Resizer Handle */}
+                        <div
+                            className="absolute right-0 top-0 bottom-0 w-1 bg-zinc-800 hover:bg-primary/50 cursor-col-resize transition-colors z-50"
+                            onMouseDown={startResizing}
                         />
-                        <Button onClick={sendMessage} disabled={isLoading || !input.trim()}>
-                            <Send className="h-4 w-4" />
-                        </Button>
+
+                        <div className="max-w-2xl mx-auto relative">
+                            <Input
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+                                placeholder="Type a message..."
+                                className="pr-12 bg-zinc-900 border-zinc-800"
+                                disabled={isLoading}
+                            />
+                            <Button
+                                size="icon"
+                                className="absolute right-1 top-1 h-8 w-8"
+                                onClick={sendMessage}
+                                disabled={!input.trim() || isLoading}
+                            >
+                                <Send className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Resizer Handle */}
-            <div
-                className="w-1 bg-zinc-800 hover:bg-blue-600 cursor-col-resize transition-colors flex items-center justify-center z-50 group hover:w-1.5"
-                onMouseDown={startResizing}
-            >
-                <div className="h-8 w-0.5 bg-zinc-600 group-hover:bg-white rounded-full transition-colors" />
-            </div>
-
             {/* Right Panel: Workflow Visualization */}
-            <div className="bg-zinc-950 flex flex-col min-h-0 h-full overflow-hidden flex-1 relative">
+            <div className="flex-1 h-full min-h-0 overflow-hidden bg-background border-l border-zinc-800">
                 <WorkflowVisualizer workflowState={workflowState} />
             </div>
         </div>

@@ -51,6 +51,30 @@ async def startup_event():
 
 @app.post("/predict")
 async def predict_prompt(request: PromptRequest):
+    # 0. IMMEDIATE FEEDBACK OVERRIDE
+    # Check if this exact prompt has been labeled by the user recently.
+    # The most recent label takes precedence.
+    try:
+        if os.path.exists("feedback_data.csv"):
+            feedback_df = pd.read_csv("feedback_data.csv")
+            # Filter for this specific prompt (case-insensitive distinct check?)
+            # For now, exact match to ensure precision
+            matches = feedback_df[feedback_df['text'] == request.message]
+            if not matches.empty:
+                # Get the last entry (most recent)
+                last_entry = matches.iloc[-1]
+                label = int(last_entry['label'])
+                print(f"[Override] Found feedback for prompt. Applying label: {label}")
+                
+                return {
+                    "is_malicious": bool(label == 1),
+                    "confidence_score": 1.0 if label == 1 else 0.0,
+                    "verdict": "MALICIOUS" if label == 1 else "SAFE",
+                    "override": True
+                }
+    except Exception as e:
+        print(f"Error checking feedback overrides: {e}")
+
     if not model or not vectorizer:
         raise HTTPException(status_code=503, detail="Model not loaded. Please train the model first.")
     

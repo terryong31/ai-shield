@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { PanelLeft } from "lucide-react"
@@ -17,6 +17,19 @@ const navItems = [
 export default function Dashboard() {
     const [currentSection, setCurrentSection] = useState("overview")
     const [sidebarOpen, setSidebarOpen] = useState(true)
+
+    // Load saved section on mount
+    useEffect(() => {
+        const savedSection = localStorage.getItem("dashboard_current_section")
+        if (savedSection && ["overview", "history", "settings"].includes(savedSection)) {
+            setCurrentSection(savedSection)
+        }
+    }, [])
+
+    // Save section on change
+    useEffect(() => {
+        localStorage.setItem("dashboard_current_section", currentSection)
+    }, [currentSection])
 
     return (
         <div className="flex h-screen bg-background">

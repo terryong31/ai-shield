@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
     ReactFlow,
     Controls,
@@ -159,32 +159,54 @@ interface WorkflowVisualizerProps {
     onNodeClick?: (event: React.MouseEvent, node: any) => void;
 }
 
+
 export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisualizerProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+    const [rfInstance, setRfInstance] = useState<any>(null);
 
-    const onNodeDragStop = (_: any, node: any) => {
+    const onNodeDragStop = useCallback((event: any, node: any) => {
+        // Logic to save node position can be added here
         const mode = workflowState?.mode || 'shield';
         const isBypassMode = mode !== 'shield';
         const storageKey = isBypassMode ? 'workflow-node-positions-bypass' : 'workflow-node-positions-shield';
 
+        // We would need to get current positions from nodes state or the event
+        // For now, let's just log or no-op to fix the build
+        console.log('Node drag stop', node.position);
+
+        // Helper to save correct position
         const saved = localStorage.getItem(storageKey);
         const positions = saved ? JSON.parse(saved) : {};
         positions[node.id] = node.position;
         localStorage.setItem(storageKey, JSON.stringify(positions));
-    };
+    }, [workflowState?.mode]);
 
 
-    // Sync workflowState with nodes/edges
-    // Sync workflowState with nodes/edges
+    // Initial load and reload when mode changes (Layout & Viewport)
     useEffect(() => {
         if (!workflowState) return;
 
         const mode = workflowState.mode || 'shield';
         const isBypassMode = mode !== 'shield';
+
+        // 1. Restore Viewport
+        if (rfInstance) {
+            const viewportKey = isBypassMode ? 'workflow-viewport-bypass' : 'workflow-viewport-shield';
+            const savedViewport = localStorage.getItem(viewportKey);
+
+            if (savedViewport) {
+                const { x, y, zoom } = JSON.parse(savedViewport);
+                rfInstance.setViewport({ x, y, zoom });
+            } else {
+                // If no saved viewport, fit view after a short delay to allow nodes to render
+                setTimeout(() => rfInstance.fitView({ padding: 0.2, duration: 800 }), 100);
+            }
+        }
+
         const storageKey = isBypassMode ? 'workflow-node-positions-bypass' : 'workflow-node-positions-shield';
 
-        // Load saved positions
+        // Load saved node positions (Logic merged from previous step)
         let savedPositions: Record<string, { x: number, y: number }> = {};
         try {
             const saved = localStorage.getItem(storageKey);
@@ -194,6 +216,8 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
         }
 
         const getPos = (id: string, defaultPos: { x: number, y: number }) => savedPositions[id] || defaultPos;
+
+        // ... Node setting logic continues below (no changes needed to the node logic itself, just ensuring scope) ... 
 
         // ------------------------------------------------------------------
         // BYPASS MODE (No Guardrail / Standard Guardrail)
@@ -376,11 +400,11 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
 
                 // ML -> Router
                 if (edge.id === 'e2') {
-                    const isActive = ['ml_done', 'debate', 'final'].includes(stage);
+                    const isActive = ['ml_done', 'debate', 'final'].includes(stage) || (stage === 'ml_processing' && !!workflowState.mlVerdict);
                     return {
                         ...edge,
                         style: { ...edge.style, stroke: isActive ? '#ffffff' : '#ffffff', opacity: isActive ? 1 : 0.2 },
-                        animated: stage === 'ml_done'
+                        animated: stage === 'ml_processing' && !!workflowState.mlVerdict
                     };
                 }
 
@@ -399,9 +423,10 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                         animated: isActive && stage === 'ml_done'
                     };
                 }
-                // Switch -> Moderate
+                // Switch -> Moderate (Router -> Dual Agent)
                 if (edge.id === 'e4') {
-                    const isActive = workflowState.mlVerdict === 'UNCERTAIN' && ['ml_done', 'debate', 'final'].includes(stage);
+                    // Activate ONLY if the stage is 'debate' or 'final'
+                    const isActive = workflowState.mlVerdict === 'UNCERTAIN' && ['debate', 'final'].includes(stage);
                     return {
                         ...edge,
                         style: {
@@ -410,12 +435,14 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                             opacity: isActive ? 1 : 0.2,
                             strokeWidth: isActive ? 8 : 5
                         } as any,
-                        animated: isActive && stage === 'ml_done'
+                        animated: isActive && stage === 'debate'
                     };
                 }
-                // Switch -> Dangerous
+                // Switch -> Dangerous (Router -> Oblivion)
                 if (edge.id === 'e5') {
-                    const isActive = workflowState.mlVerdict === 'MALICIOUS' && ['ml_done', 'debate', 'final'].includes(stage);
+                    // CRITICAL: Ensure it doesn't light up during 'ml_processing' replay stage
+                    const isActive = workflowState.mlVerdict === 'MALICIOUS' &&
+                        (['ml_done', 'debate', 'final'].includes(stage) || (workflowState.blocked && stage !== 'ml_processing'));
                     return {
                         ...edge,
                         style: {
@@ -424,12 +451,14 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                             opacity: isActive ? 1 : 0.2,
                             strokeWidth: isActive ? 8 : 5
                         } as any,
-                        animated: isActive && stage === 'ml_done'
+                        animated: isActive && (stage === 'ml_done' || (stage === 'ml_processing' && workflowState.blocked))
                     };
                 }
                 // Dual Agent -> Approved
                 if (edge.id === 'e6') {
-                    const isActive = workflowState.dualAgentTriggered && !workflowState.blocked && stage === 'final';
+                    // It's approved if dual agents ran, we are NOT blocked, and we reached final stage
+                    // OR if we are in final stage after debate
+                    const isActive = workflowState.dualAgentTriggered && !workflowState.blocked && ['final'].includes(stage);
                     return {
                         ...edge,
                         style: {
@@ -441,8 +470,10 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                         animated: isActive
                     };
                 }
-                // Dual Agent -> Blocked
+                // Dual Agent -> Blocked (Oblivion)
                 if (edge.id === 'e7') {
+                    // It's blocked if dual agents ran AND we are blocked. 
+                    // ONLY activate in 'final' stage to prevent premature red line during 'debate' stage
                     const isActive = workflowState.dualAgentTriggered && workflowState.blocked && stage === 'final';
                     return {
                         ...edge,
@@ -475,7 +506,15 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
             })
         );
 
-    }, [workflowState, setNodes, setEdges]);
+    }, [workflowState, setNodes, setEdges, rfInstance]);
+
+    // Save viewport on move end
+    const onMoveEnd = (_: any, viewport: any) => {
+        const mode = workflowState?.mode || 'shield';
+        const isBypassMode = mode !== 'shield';
+        const viewportKey = isBypassMode ? 'workflow-viewport-bypass' : 'workflow-viewport-shield';
+        localStorage.setItem(viewportKey, JSON.stringify(viewport));
+    };
 
     return (
         <div className="w-full h-full bg-zinc-950">
@@ -486,10 +525,9 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                 onEdgesChange={onEdgesChange}
                 onNodeClick={onNodeClick}
                 onNodeDragStop={onNodeDragStop}
+                onInit={setRfInstance}
+                onMoveEnd={onMoveEnd}
                 nodeTypes={nodeTypes}
-                fitView
-                // Force re-render of fitView when switching modes to center the new graph
-                fitViewOptions={{ padding: 0.2, duration: 800 }}
                 minZoom={0.1}
                 maxZoom={4}
                 attributionPosition="bottom-right"

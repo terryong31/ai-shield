@@ -48,13 +48,27 @@ export function ChatHistorySection() {
         fetchLogs()
 
         const channel = supabase
-            .channel('requests-all-updates')
+            .channel('realtime:requests')
             .on('postgres_changes', {
-                event: '*',
+                event: 'INSERT',
                 schema: 'public',
                 table: 'requests',
-            }, () => {
-                fetchLogs()
+            }, (payload) => {
+                const newLog = payload.new as RequestLog
+                if (newLog) {
+                    setLogs(prev => [newLog, ...prev])
+                }
+            })
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'requests',
+            }, (payload) => {
+                // For updates (e.g. feedback), modify the specific item in place without full refetch
+                const updatedLog = payload.new as RequestLog
+                if (updatedLog) {
+                    setLogs(prev => prev.map(log => log.id === updatedLog.id ? updatedLog : log))
+                }
             })
             .subscribe()
 
@@ -180,9 +194,9 @@ export function ChatHistorySection() {
                             <div key={log.id} className="border border-zinc-800 rounded-lg bg-zinc-900/50 shadow-sm hover:border-zinc-700 transition-colors overflow-hidden">
                                 <div className="p-4 flex justify-between items-start gap-4 cursor-pointer" onClick={() => toggleExpand(log.id)}>
                                     <div className="space-y-2 flex-1 min-w-0">
-                                        <div className="flex items-start gap-2">
-                                            <span className="font-semibold text-xs text-muted-foreground uppercase pt-1">Query:</span>
-                                            <span className="text-sm font-mono break-words leading-relaxed">{log.query}</span>
+                                        <div className="flex items-start gap-2 min-w-0">
+                                            <span className="font-semibold text-xs text-muted-foreground uppercase pt-1 shrink-0">Query:</span>
+                                            <span className="text-sm font-mono break-all leading-relaxed">{log.query}</span>
                                         </div>
                                         <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                                             <span>{new Date(log.created_at).toLocaleString()}</span>
