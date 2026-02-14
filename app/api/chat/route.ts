@@ -130,7 +130,7 @@ export async function POST(req: Request) {
                     logData.metadata.dualAgentTriggered = true;
 
                     agentResult = await runDualAgents(message, (step) => {
-                        send(step); // Stream debate steps
+                        // send(step); // Stream debate steps - DISABLED per user request
                     });
 
                     logData.metadata.agentDialogue = agentResult.dialogue;

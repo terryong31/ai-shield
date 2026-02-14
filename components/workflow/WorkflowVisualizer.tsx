@@ -296,10 +296,32 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
         // Update Edges based on path
         setEdges((eds) =>
             eds.map((edge) => {
+                const stage = workflowState.stage;
+
+                // Input -> ML
+                if (edge.id === 'e1') {
+                    const isActive = ['ml_processing', 'ml_done', 'debate', 'final'].includes(stage);
+                    return {
+                        ...edge,
+                        style: { ...edge.style, stroke: isActive ? '#3b82f6' : '#ffffff', opacity: isActive ? 1 : 0.2 },
+                        animated: stage === 'ml_processing'
+                    };
+                }
+
+                // ML -> Router
+                if (edge.id === 'e2') {
+                    const isActive = ['ml_done', 'debate', 'final'].includes(stage);
+                    return {
+                        ...edge,
+                        style: { ...edge.style, stroke: isActive ? '#ffffff' : '#ffffff', opacity: isActive ? 1 : 0.2 },
+                        animated: stage === 'ml_done'
+                    };
+                }
+
                 // Activate edges based on state
                 // Switch -> Safe
                 if (edge.id === 'e3') {
-                    const isActive = workflowState.mlVerdict === 'SAFE';
+                    const isActive = workflowState.mlVerdict === 'SAFE' && ['ml_done', 'debate', 'final'].includes(stage);
                     return {
                         ...edge,
                         style: {
@@ -308,12 +330,12 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                             opacity: isActive ? 1 : 0.2,
                             strokeWidth: isActive ? 8 : 5
                         } as any,
-                        animated: isActive
+                        animated: isActive && stage === 'ml_done'
                     };
                 }
                 // Switch -> Moderate
                 if (edge.id === 'e4') {
-                    const isActive = workflowState.mlVerdict === 'UNCERTAIN';
+                    const isActive = workflowState.mlVerdict === 'UNCERTAIN' && ['ml_done', 'debate', 'final'].includes(stage);
                     return {
                         ...edge,
                         style: {
@@ -322,12 +344,12 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                             opacity: isActive ? 1 : 0.2,
                             strokeWidth: isActive ? 8 : 5
                         } as any,
-                        animated: isActive
+                        animated: isActive && stage === 'ml_done'
                     };
                 }
                 // Switch -> Dangerous
                 if (edge.id === 'e5') {
-                    const isActive = workflowState.mlVerdict === 'MALICIOUS';
+                    const isActive = workflowState.mlVerdict === 'MALICIOUS' && ['ml_done', 'debate', 'final'].includes(stage);
                     return {
                         ...edge,
                         style: {
@@ -336,12 +358,12 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                             opacity: isActive ? 1 : 0.2,
                             strokeWidth: isActive ? 8 : 5
                         } as any,
-                        animated: isActive
+                        animated: isActive && stage === 'ml_done'
                     };
                 }
                 // Dual Agent -> Approved
                 if (edge.id === 'e6') {
-                    const isActive = workflowState.dualAgentTriggered && !workflowState.blocked && workflowState.stage === 'final';
+                    const isActive = workflowState.dualAgentTriggered && !workflowState.blocked && stage === 'final';
                     return {
                         ...edge,
                         style: {
@@ -355,7 +377,7 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                 }
                 // Dual Agent -> Blocked
                 if (edge.id === 'e7') {
-                    const isActive = workflowState.dualAgentTriggered && workflowState.blocked;
+                    const isActive = workflowState.dualAgentTriggered && workflowState.blocked && stage === 'final';
                     return {
                         ...edge,
                         style: {
@@ -368,11 +390,18 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                     };
                 }
 
-                // Default thickness for static edges
-                if (['e1', 'e2', 'e8'].includes(edge.id)) {
+                // Agent -> Toolbox
+                if (edge.id === 'e8') {
+                    const isActive = !workflowState.blocked && stage === 'final';
                     return {
                         ...edge,
-                        style: { ...edge.style, strokeWidth: 5 }
+                        style: {
+                            ...edge.style,
+                            stroke: isActive ? '#3b82f6' : '#ffffff',
+                            opacity: isActive ? 1 : 0.2,
+                            strokeWidth: 5
+                        } as any,
+                        animated: isActive
                     };
                 }
 

@@ -196,7 +196,7 @@ export function OverviewSection() {
         const cloudData = Object.entries(wordCounts)
             .map(([text, value]) => ({ text, value: value * 100 })) // Scale up for visibility
             .sort((a, b) => b.value - a.value)
-            .slice(0, 50) // Top 50 words
+            .slice(0, 15) // Top 15 words per user request
 
         setWordCloudData(cloudData)
     }
@@ -533,14 +533,28 @@ export function OverviewSection() {
                                     font="Inter"
                                     fontStyle="normal"
                                     fontWeight="bold"
-                                    fontSize={(word: any) => Math.log2(word.value) * 5 + 15}
-                                    spiral="rectangular"
-                                    rotate={0}
-                                    padding={2}
+                                    fontSize={(word: any) => {
+                                        const maxVal = Math.max(...wordCloudData.map(d => d.value));
+                                        const minVal = Math.min(...wordCloudData.map(d => d.value));
+                                        // Chunky fonts (24-80) to fill the smaller container
+                                        const size = ((word.value - minVal) / (Math.max(1, maxVal - minVal))) * (80 - 24) + 24;
+                                        return size;
+                                    }}
+                                    spiral="archimedean"
+                                    rotate={() => (Math.random() > 0.7 ? 90 : 0)}
+                                    padding={1}
                                     random={() => 0.5}
                                     onWordClick={onWordClick}
                                     fill={(d: any, i: number) => {
-                                        const colors = ["#22c55e", "#ef4444", "#3b82f6", "#eab308", "#8b5cf6"]
+                                        // Reference image palette: Earthy greens, vibrant oranges, and dark slates
+                                        const colors = [
+                                            "#7d9b01", // Green
+                                            "#689c00", // Darker Green
+                                            "#ff8a00", // Orange
+                                            "#ea6301", // Burnt Orange
+                                            "#334155", // Slate 700 (instead of pure black for readability)
+                                            "#475569", // Slate 600
+                                        ]
                                         return colors[i % colors.length]
                                     }}
                                 />

@@ -361,14 +361,9 @@ export default function ChatInterface() {
                                         {workflowState.stage === 'debate' && (
                                             <div className="flex flex-col gap-1 mt-1">
                                                 <span>Dual Agents debating security clearance...</span>
-                                                {workflowState.lastAgentMessage && (
-                                                    <span className="font-mono text-xs text-primary/80 bg-primary/5 p-2 rounded border border-primary/10 block whitespace-pre-wrap max-w-[400px]">
-                                                        {"> " + workflowState.lastAgentMessage}
-                                                    </span>
-                                                )}
                                             </div>
                                         )}
-                                        {workflowState.stage === 'final' && "Generating secure response..."}
+                                        {workflowState.stage === 'final' && "(AI Agent Running...)"}
                                     </span>
                                 </div>
                             </div>
