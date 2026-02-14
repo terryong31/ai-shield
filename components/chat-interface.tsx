@@ -20,6 +20,8 @@ interface Message {
         mlConfidence?: number
         duration?: number
         securityMode?: string
+        tool_calls?: any[]
+        userPrompt?: string
     }
 }
 
@@ -64,7 +66,9 @@ export default function ChatInterface() {
                             blocked: req.action === "BLOCKED",
                             reason: req.reason,
                             analysis: req.metadata?.analysis || req.metadata?.agentAnalysis,
-                            toolPolicy: req.metadata?.toolPolicy
+                            toolPolicy: req.metadata?.toolPolicy,
+                            tool_calls: req.metadata?.tool_calls,
+                            userPrompt: req.query
                         }
                     }
                     return [userMsg, aiMsg]
@@ -122,7 +126,9 @@ export default function ChatInterface() {
                     dualAgentTriggered: data.dualAgentTriggered,
                     mlConfidence: data.mlConfidence,
                     duration: duration,
-                    securityMode: localStorage.getItem("securityMode") || "shield"
+                    securityMode: localStorage.getItem("securityMode") || "shield",
+                    tool_calls: data.tool_calls,
+                    userPrompt: currentInput
                 }
             }
 
@@ -145,7 +151,8 @@ export default function ChatInterface() {
                         toolPolicy: data.toolPolicy,
                         mlConfidence: data.mlConfidence,
                         dualAgentTriggered: data.dualAgentTriggered,
-                        aiResponse: data.blocked ? "BLOCKED" : data.response
+                        aiResponse: data.blocked ? "BLOCKED" : data.response,
+                        tool_calls: data.tool_calls
                     }
                 })
                 if (error) console.error("Error logging to Supabase:", error)

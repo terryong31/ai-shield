@@ -13,6 +13,10 @@ interface FlaggedRequest {
     reason: string
     layer: string
     metadata: any
+    action: string
+    human_label: number | null
+    reviewed: boolean
+    reviewed_at: string | null
 }
 
 export function FlaggedPromptsSection() {
@@ -24,10 +28,9 @@ export function FlaggedPromptsSection() {
         const channel = supabase
             .channel('flagged-updates')
             .on('postgres_changes', {
-                event: 'INSERT',
+                event: '*',
                 schema: 'public',
                 table: 'requests',
-                filter: 'action=eq.BLOCKED'
             }, () => {
                 fetchFlagged()
             })
@@ -43,7 +46,7 @@ export function FlaggedPromptsSection() {
             .from('requests')
             .select('*')
             .eq('action', 'BLOCKED')
-            .eq('action', 'BLOCKED')
+            .eq('reviewed', false)
             .order('created_at', { ascending: false })
 
         if (data) {
@@ -52,11 +55,36 @@ export function FlaggedPromptsSection() {
         setLoading(false)
     }
 
-    const handleWhitelist = async (id: string) => {
-        // TODO: Implement whitelist logic
-        console.log("Whitelist request:", id)
-        // For now, just show a message
-        alert("Whitelist functionality coming soon!")
+    const handleFeedback = async (requestId: string, query: string, label: number) => {
+        try {
+            // 1. Send Feedback to ML endpoint first for retraining
+            // If this fails, the catch block will prevent the DB from being updated
+            const res = await fetch('http://127.0.0.1:8000/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: query, human_label: label })
+            })
+
+            if (!res.ok) throw new Error("ML Service responded with an error")
+
+            // 2. Update Supabase only after ML service confirms receipt
+            const { error: dbError } = await supabase
+                .from('requests')
+                .update({ 
+                    human_label: label, 
+                    reviewed: true,
+                    reviewed_at: new Date().toISOString()
+                })
+                .eq('id', requestId)
+
+            if (dbError) throw dbError
+            
+            fetchFlagged()
+            alert("Feedback recorded and model updated.")
+        } catch (error) {
+            alert("Could not connect to ML Service. Please ensure the Python backend is running on port 8000.")
+            console.error("Feedback failed", error)
+        }
     }
 
     return (
@@ -75,37 +103,55 @@ export function FlaggedPromptsSection() {
                     </CardContent>
                 </Card>
             ) : (
-                <div className="space-y-3">
-                    {flaggedRequests.map((req) => (
-                        <Card key={req.id} className="border-red-500/20">
-                            <CardHeader>
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <Badge variant="destructive">BLOCKED</Badge>
-                                            <span className="text-xs text-muted-foreground">
-                                                {new Date(req.created_at).toLocaleString()}
-                                            </span>
-                                        </div>
-                                        <p className="font-mono text-sm break-all mb-3">{req.query}</p>
-                                        <div className="text-xs text-muted-foreground space-y-1">
-                                            <div><strong>Reason:</strong> {req.reason}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-col gap-2">
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleWhitelist(req.id)}
-                                        >
-                                            Whitelist
-                                        </Button>
-                                    </div>
-                                </div>
-                            </CardHeader>
-                        </Card>
-                    ))}
-                </div>
+                <Card className="overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs uppercase bg-muted/50 text-muted-foreground border-b border-border">
+                                <tr>
+                                    <th className="px-6 py-4 font-medium">User Prompt</th>
+                                    <th className="px-6 py-4 font-medium">Action Taken</th>
+                                    <th className="px-6 py-4 font-medium">AI Intent</th>
+                                    <th className="px-6 py-4 font-medium text-right">Review</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {flaggedRequests.map((req) => (
+                                    <tr key={req.id} className="hover:bg-muted/30 transition-colors">
+                                        <td className="px-6 py-4 font-mono text-xs break-all max-w-md">{req.query}</td>
+                                        <td className="px-6 py-4">
+                                            <Badge variant={req.action === 'BLOCKED' ? "destructive" : "secondary"}>
+                                                {req.action}
+                                            </Badge>
+                                        </td>
+                                        <td className="px-6 py-4 text-muted-foreground">
+                                            {req.metadata?.generated_intent || "N/A"}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-green-500 hover:text-green-600 border-green-500/20"
+                                                    onClick={() => handleFeedback(req.id, req.query, 0)}
+                                                >
+                                                    Mark as Safe
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    className="text-red-500 hover:text-red-600 border-red-500/20"
+                                                    onClick={() => handleFeedback(req.id, req.query, 1)}
+                                                >
+                                                    Confirm Malicious
+                                                </Button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
             )}
         </div>
     )

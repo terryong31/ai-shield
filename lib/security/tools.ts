@@ -146,9 +146,6 @@ export const DANGEROUS_TOOLS = {
             try {
                 console.log(`[search_quotations] Query: "${args.query}"`)
 
-                // Use Google Embeddings API to generate query embedding
-                const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY
-
                 // Extract key search terms (product names tend to be capitalized words)
                 const searchTerm = args.query.trim()
                 console.log(`[search_quotations] Searching for: "${searchTerm}"`)
@@ -277,14 +274,25 @@ export const DANGEROUS_TOOLS = {
             try {
                 console.log("[execute_sql] Executing query:", args.query)
 
-                // Use Supabase RPC for raw SQL execution
-                // For now, we'll use the select method for SELECT queries and simulate for others
                 const query = args.query.trim().toUpperCase()
 
                 if (query.startsWith("SELECT")) {
-                    // For SELECT, we'll try to parse and execute
-                    // Extract table name from simple SELECT queries
-                    const tableMatch = args.query.match(/FROM\s+(\w+)/i)
+                    // Attempt to execute via RPC to support full SQL (WHERE, JOINs, etc.)
+                    const { data, error } = await supabase.rpc('exec_sql', { query: args.query })
+
+                    if (!error) {
+                        return {
+                            success: true,
+                            rows_returned: Array.isArray(data) ? data.length : 0,
+                            data: Array.isArray(data) ? data.slice(0, 20) : data,
+                            note: "Executed via raw SQL"
+                        }
+                    }
+
+                    console.warn("[execute_sql] RPC failed, falling back to simple table selection:", error.message)
+
+                    // Fallback: Extract table name from simple SELECT queries
+                    const tableMatch = args.query.match(/FROM\s+([a-zA-Z0-9_."]+)/i)
                     if (tableMatch) {
                         const tableName = tableMatch[1]
                         const { data, error } = await supabase
@@ -297,7 +305,7 @@ export const DANGEROUS_TOOLS = {
                             success: true,
                             rows_returned: data?.length || 0,
                             data: data?.slice(0, 20), // Limit response size
-                            note: data && data.length > 20 ? `Showing first 20 of ${data.length} results` : undefined
+                            note: data && data.length > 20 ? `Showing first 20 of ${data.length} results (Fallback: Filters ignored)` : undefined
                         }
                     }
                 }

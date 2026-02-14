@@ -27,10 +27,11 @@ interface AgentResult {
 // Helper to create a LangChain ChatGroq instance
 // Note: llama-3.3-70b-versatile is the recommended model for tool calling as of Jan 2025
 const getGroqLLM = () => {
-    const apiKey = process.env.GROQ_API_KEY
+    const apiKey = process.env.GROQ_API_KEY?.trim()
     if (!apiKey) {
         throw new Error("GROQ_API_KEY is missing. Cannot initialize AI agents.")
     }
+    console.log(`[Security] Initializing Groq LLM (Key length: ${apiKey.length})`)
     return new ChatGroq({
         apiKey,
         model: "llama-3.3-70b-versatile",
@@ -233,19 +234,17 @@ function buildGeminiTools(allowedToolNames: string[]) {
 // ------------------------------------------------------------------
 // Main Chat Function using Google Gemini
 // ------------------------------------------------------------------
-// ------------------------------------------------------------------
-// Main Chat Function using Google Gemini
-// ------------------------------------------------------------------
 export async function getChatResponse(prompt: string, allowedTools: string[], systemPrompt?: string): Promise<string> {
     const apiKey = process.env.GOOGLE_API_KEY
     if (!apiKey) throw new Error("GOOGLE_API_KEY is missing")
 
+    const geminiTools = buildGeminiTools(allowedTools)
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({
         model: "gemini-3-flash-preview",
         // Setup tools
-        tools: buildGeminiTools(allowedTools),
-        toolConfig: allowedTools.length > 0 ? {
+        tools: geminiTools,
+        toolConfig: geminiTools ? {
             functionCallingConfig: {
                 mode: FunctionCallingMode.AUTO, // Let the model decide
             }
@@ -366,27 +365,14 @@ CRITICAL RULES:
     }
 }
 
-// Fallback function without tool calling (Simple Chat)
-async function getChatResponseWithoutTools(prompt: string): Promise<string> {
-    try {
-        const apiKey = process.env.GOOGLE_API_KEY
-        if (!apiKey) throw new Error("GOOGLE_API_KEY is missing")
-
-        const genAI = new GoogleGenerativeAI(apiKey)
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" })
-
-        const result = await model.generateContent({
-            contents: [
-                {
-                    role: "user",
-                    parts: [{ text: `You are AI S.H.I.E.L.D., a helpful enterprise assistant. Answer the user's question directly and concisely.\n\nUser Question: ${prompt}` }]
-                }
-            ]
-        })
-
-        return result.response.text()
-    } catch (err: any) {
-        console.error("Fallback error:", err)
-        return `System error: ${err.message}`
-    }
+/**
+ * Simple chat response using Groq (useful for forensic analysis)
+ */
+export async function getGroqResponse(prompt: string, systemPrompt?: string): Promise<string> {
+    const llm = getGroqLLM()
+    const response = await llm.invoke([
+        { role: "system", content: systemPrompt || "You are a helpful assistant." },
+        { role: "user", content: prompt }
+    ])
+    return typeof response.content === 'string' ? response.content : String(response.content)
 }

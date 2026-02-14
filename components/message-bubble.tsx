@@ -16,6 +16,8 @@ interface MessageBubbleProps {
         mlConfidence?: number
         duration?: number
         securityMode?: string
+        tool_calls?: any[]
+        userPrompt?: string
     }
 }
 

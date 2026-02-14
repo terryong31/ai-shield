@@ -1,13 +1,29 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import os
+import pandas as pd
+from datetime import datetime
 
 app = FastAPI()
+
+# Enable CORS so the browser can talk to this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with your frontend URL (e.g., ["http://localhost:3000"])
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Input model
 class PromptRequest(BaseModel):
     message: str
+
+class FeedbackRequest(BaseModel):
+    prompt: str
+    human_label: int
 
 # Load model artifacts
 MODEL_PATH = "model.pkl"
@@ -58,6 +74,24 @@ async def predict_prompt(request: PromptRequest):
             "confidence_score": float(probability),
             "verdict": "MALICIOUS" if prediction == 1 else "SAFE"
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/feedback")
+async def receive_feedback(request: FeedbackRequest):
+    try:
+        # Save feedback to a CSV file for future retraining
+        feedback_file = "feedback_data.csv"
+        new_data = pd.DataFrame([{
+            "text": request.prompt,
+            "label": request.human_label,
+            "timestamp": datetime.now().isoformat()
+        }])
+        
+        header = not os.path.exists(feedback_file)
+        new_data.to_csv(feedback_file, mode='a', index=False, header=header)
+        
+        return {"status": "success", "message": "Feedback logged"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

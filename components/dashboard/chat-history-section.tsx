@@ -1,123 +1,110 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { supabase } from "@/lib/supabase"
-import { User, Cpu, ShieldCheck, ShieldAlert, Clock } from "lucide-react"
+import { ToolTrace } from "@/components/ToolTrace"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Loader2 } from "lucide-react"
 
-interface RequestRecord {
+interface RequestLog {
     id: string
     created_at: string
     query: string
     action: string
     reason: string
     layer: string
-    metadata: any
+    metadata: {
+        mlConfidence?: number
+        tool_calls?: any[]
+        aiResponse?: string
+        analysis?: string
+        generated_intent?: string
+        allowedTools?: string[]
+    }
 }
 
 export function ChatHistorySection() {
-    const [requests, setRequests] = useState<RequestRecord[]>([])
+    const [logs, setLogs] = useState<RequestLog[]>([])
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        fetchHistory()
-        const channel = supabase
-            .channel('history-updates')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requests' }, () => {
-                fetchHistory()
-            })
-            .subscribe()
-
-        return () => {
-            supabase.removeChannel(channel)
-        }
+        fetchLogs()
     }, [])
 
-    const fetchHistory = async () => {
-        const { data } = await supabase
-            .from('requests')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(30)
+    const fetchLogs = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('requests')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(50)
 
-        if (data) {
-            setRequests(data)
+            if (error) throw error
+            if (data) setLogs(data)
+        } catch (error) {
+            console.error("Error fetching logs:", error)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
     }
 
     return (
-        <div className="space-y-6">
-
-            {loading ? (
-                <div className="space-y-4">
-                    {[1, 2, 3].map(i => (
-                        <div key={i} className="h-32 w-full bg-muted/20 animate-pulse rounded-lg border border-muted" />
-                    ))}
-                </div>
-            ) : requests.length === 0 ? (
-                <Card className="bg-muted/10 border-dashed">
-                    <CardContent className="p-12 text-center text-muted-foreground">
-                        No chat history yet
-                    </CardContent>
-                </Card>
-            ) : (
-                <div className="space-y-8">
-                    {requests.map((req) => {
-                        const score = req.metadata?.mlConfidence || 0
-                        const injectionProb = (score * 100).toFixed(1)
-                        const aiResponse = req.metadata?.aiResponse || "No response recorded."
-                        const isBlocked = req.action === "BLOCKED"
-
-                        return (
-                            <div key={req.id} className="space-y-3">
-                                {/* User Message */}
-                                <div className="flex flex-col items-end space-y-2">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <Badge variant="secondary" className={`text-[10px] ${score > 0.5 ? "bg-red-500/10 text-red-500" : "bg-green-500/10 text-green-500"}`}>
-                                            {injectionProb}% Injection Probability
-                                        </Badge>
-                                        <span className="text-[10px] text-muted-foreground">
-                                            {new Date(req.created_at).toLocaleTimeString()}
-                                        </span>
-                                    </div>
-                                    <div className="bg-muted/50 rounded-2xl rounded-tr-none px-4 py-2 max-w-[80%] border border-muted/50">
-                                        <p className="text-sm text-foreground leading-relaxed">{req.query}</p>
-                                    </div>
-                                </div>
-
-                                {/* AI Response */}
-                                <div className="flex flex-col items-start space-y-2">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <div className="bg-primary/10 p-1.5 rounded-full">
-                                            <Cpu className="h-3 w-3 text-primary" />
-                                        </div>
-                                        <Badge variant="outline" className="text-[10px] border-primary/20 bg-primary/5 text-primary">
-                                            Verified by {req.layer?.replace("LAYER_", "Layer ")}
-                                        </Badge>
-                                        {isBlocked && (
-                                            <Badge variant="destructive" className="text-[10px] h-5">
-                                                SECURITY BLOCK
+        <div className="space-y-4">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Security Logs & Tool Traces</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {loading ? (
+                        <div className="flex justify-center p-8">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                        </div>
+                    ) : (
+                        <ScrollArea className="h-[600px] pr-4">
+                            <div className="space-y-4">
+                                {logs.map((log) => (
+                                    <div key={log.id} className="border rounded-lg p-4 bg-card text-card-foreground shadow-sm">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="space-y-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-semibold text-sm">Query:</span>
+                                                    <span className="text-sm font-mono bg-muted px-2 py-0.5 rounded">{log.query}</span>
+                                                </div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {new Date(log.created_at).toLocaleString()}
+                                                </div>
+                                            </div>
+                                            <Badge variant={log.action === "BLOCKED" ? "destructive" : "outline"}>
+                                                {log.action}
                                             </Badge>
+                                        </div>
+
+                                        {/* Tool Trace Visualization (Admin Only) */}
+                                        {(log.metadata?.tool_calls && log.metadata.tool_calls.length > 0) || log.action === "BLOCKED" || log.metadata?.analysis ? (
+                                            <div className="mt-4">
+                                                <ToolTrace 
+                                                    userPrompt={log.query}
+                                                    toolCalls={log.metadata?.tool_calls || []}
+                                                    allowedTools={log.metadata?.allowedTools || []}
+                                                    mlConfidence={log.metadata?.mlConfidence || 0}
+                                                    aiResponse={log.metadata.aiResponse || (log.action === "BLOCKED" ? "BLOCKED" : "No response")}
+                                                    layer1Verdict={log.action === "BLOCKED" ? "MALICIOUS" : "SAFE"}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2 text-xs text-muted-foreground italic pl-1">
+                                                No tool usage recorded.
+                                            </div>
                                         )}
                                     </div>
-                                    <div className={`rounded-2xl rounded-tl-none px-4 py-2 max-w-[80%] border ${isBlocked
-                                        ? "bg-red-500/5 border-red-500/20 text-red-500/90 italic"
-                                        : "bg-background border-muted text-muted-foreground"
-                                        }`}>
-                                        <p className="text-sm leading-relaxed">
-                                            {isBlocked ? "Request blocked: " + (req.reason || "High risk interaction detected.") : aiResponse}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div className="border-b border-muted/30 pt-4" />
+                                ))}
                             </div>
-                        )
-                    })}
-                </div>
-            )}
+                        </ScrollArea>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     )
 }
