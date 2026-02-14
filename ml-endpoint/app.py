@@ -63,10 +63,10 @@ async def predict_prompt(request: PromptRequest):
         
         # HEURISTIC DAMPENING: If it looks like a standard business/catalog query, 
         # reduce confidence to allow Layer 2 (Dual Agents) to take over instead of Layer 1 BLOCK.
-        benign_keywords = ["catalog", "price", "how much", "policy", "handbook", "oil", "item", "where", "guide"]
-        if any(kw in request.message.lower() for kw in benign_keywords):
-            if probability > 0.5:
-                probability = 0.35 # Force into "UNCERTAIN" range (Layer 2)
+        # benign_keywords = ["catalog", "price", "how much", "policy", "handbook", "oil", "item", "where", "guide"]
+        # if any(kw in request.message.lower() for kw in benign_keywords):
+        #     if probability > 0.5:
+        #         probability = 0.35 # Force into "UNCERTAIN" range (Layer 2)
         
         prediction = 1 if probability >= 0.5 else 0
         
@@ -80,6 +80,7 @@ async def predict_prompt(request: PromptRequest):
 
 @app.post("/feedback")
 async def receive_feedback(request: FeedbackRequest, background_tasks: BackgroundTasks):
+    global model
     try:
         # Save feedback to a CSV file for future retraining
         feedback_file = "feedback_data.csv"
@@ -92,6 +93,13 @@ async def receive_feedback(request: FeedbackRequest, background_tasks: Backgroun
         header = not os.path.exists(feedback_file)
         new_data.to_csv(feedback_file, mode='a', index=False, header=header)
         
+        # Update model live in memory so the next request benefits immediately
+        if model and vectorizer:
+            try:
+                model = train_model.update_model_live(model, vectorizer, request.prompt, request.human_label)
+            except Exception as e:
+                print(f"Live update failed (likely incompatible model): {e}")
+
         # Trigger retraining in background
         background_tasks.add_task(retrain_and_reload)
         

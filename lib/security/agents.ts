@@ -245,7 +245,7 @@ export async function getChatResponse(prompt: string, allowedTools: string[], sy
     const geminiTools = buildGeminiTools(allowedTools)
     const genAI = new GoogleGenerativeAI(apiKey)
     const model = genAI.getGenerativeModel({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
         // Setup tools
         tools: geminiTools,
         toolConfig: geminiTools ? {
