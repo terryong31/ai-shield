@@ -10,7 +10,7 @@ import { SettingsSection } from "@/components/dashboard/settings-section"
 
 const navItems = [
     { id: "overview", label: "Overview" },
-    { id: "history", label: "Security Logs" },
+    { id: "history", label: "Chat Logs" },
     { id: "settings", label: "Settings" },
 ]
 

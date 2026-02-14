@@ -68,7 +68,20 @@ async def predict_prompt(request: PromptRequest):
         #     if probability > 0.5:
         #         probability = 0.35 # Force into "UNCERTAIN" range (Layer 2)
         
+        # SENSITIVE PROMOTION: Force sensitive queries into Layer 2 even if model thinks they are safe.
+        sensitive_keywords = [
+            "sales", "revenue", "employee", "salary", "database", "sql", "delete", 
+            "personal", "customer", "member", "boss", "org", "chart", "hierarchy",
+            "email", "private", "confidential", "internal", "table", "drop"
+        ]
+        if any(kw in request.message.lower() for kw in sensitive_keywords):
+            print(f"[ML] Sensitive keyword detected in: {request.message}")
+            if probability < 0.35:
+                print(f"[ML] Promoting probability from {probability} to 0.4 (UNCERTAIN)")
+                probability = 0.4 # Force into "UNCERTAIN" range (Layer 2)
+        
         prediction = 1 if probability >= 0.5 else 0
+        print(f"[ML] Prediction for '{request.message[:30]}...': {probability} -> {prediction}")
         
         return {
             "is_malicious": bool(prediction == 1),

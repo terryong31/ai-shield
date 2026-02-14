@@ -2,6 +2,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ShieldAlert, ShieldCheck, Cpu, Clock } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 interface MessageBubbleProps {
     role: "user" | "assistant"
@@ -35,13 +37,36 @@ export function MessageBubble({ role, content, metadata, timestamp }: MessageBub
             </Avatar>
 
             <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : "items-start"}`}>
-                <Card className={`p-3 text-sm break-words overflow-wrap-anywhere ${isUser
+                <Card className={`p-3 text-sm break-all [overflow-wrap:anywhere] ${isUser
                     ? "bg-primary text-primary-foreground border-primary"
                     : isBlocked
                         ? "bg-destructive/10 border-destructive"
                         : "bg-muted/50"
                     }`}>
-                    {content}
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0 leading-relaxed" {...props} />,
+                            ul: ({ node, ...props }) => <ul className="list-disc pl-4 mb-2 last:mb-0 space-y-1" {...props} />,
+                            ol: ({ node, ...props }) => <ol className="list-decimal pl-4 mb-2 last:mb-0 space-y-1" {...props} />,
+                            li: ({ node, ...props }) => <li className="pl-1" {...props} />,
+                            a: ({ node, ...props }) => <a className="text-blue-500 hover:underline underline-offset-2 font-medium" target="_blank" rel="noopener noreferrer" {...props} />,
+                            blockquote: ({ node, ...props }) => <blockquote className="border-l-2 border-primary/50 pl-4 italic my-2" {...props} />,
+                            code: ({ node, inline, className, children, ...props }: any) => {
+                                return inline ? (
+                                    <code className={`px-1 py-0.5 rounded font-mono text-xs ${isUser ? "bg-primary-foreground/20" : "bg-black/10 dark:bg-white/10"}`} {...props}>
+                                        {children}
+                                    </code>
+                                ) : (
+                                    <pre className={`p-2 rounded mb-2 overflow-x-auto font-mono text-xs ${isUser ? "bg-primary-foreground/10" : "bg-black/10 dark:bg-white/10"}`} {...props}>
+                                        <code>{children}</code>
+                                    </pre>
+                                )
+                            }
+                        }}
+                    >
+                        {content}
+                    </ReactMarkdown>
                 </Card>
 
                 {timestamp && (

@@ -80,14 +80,14 @@ const initialEdges = [
         source: 'user',
         target: 'ml',
         animated: true,
-        style: { stroke: '#e4e4e7' }
+        style: { stroke: '#ffffff', strokeWidth: 5 }
     },
     {
         id: 'e2',
         source: 'ml',
         target: 'switch',
         animated: true,
-        style: { stroke: '#e4e4e7' }
+        style: { stroke: '#ffffff', strokeWidth: 5 }
     },
     // Switch -> Agent (Safe)
     {
@@ -97,7 +97,7 @@ const initialEdges = [
         target: 'agent',
         animated: false,
         label: 'Safe (<20%)',
-        style: { stroke: '#22c55e', opacity: 0.2 },
+        style: { stroke: '#ffffff', opacity: 0.2, strokeWidth: 5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
     },
     // Switch -> Dual Agent (Moderate)
@@ -108,7 +108,7 @@ const initialEdges = [
         target: 'dualAgent',
         animated: false,
         label: 'Uncertain',
-        style: { stroke: '#eab308', opacity: 0.2 },
+        style: { stroke: '#ffffff', opacity: 0.2, strokeWidth: 5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#eab308' },
     },
     // Switch -> Oblivion (Dangerous)
@@ -119,7 +119,7 @@ const initialEdges = [
         target: 'oblivion',
         animated: false,
         label: 'Dangerous (>85%)',
-        style: { stroke: '#ef4444', opacity: 0.2 },
+        style: { stroke: '#ffffff', opacity: 0.2, strokeWidth: 5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#ef4444' },
     },
     // Dual Agent -> Agent (If Approved)
@@ -129,7 +129,7 @@ const initialEdges = [
         target: 'agent',
         animated: false,
         label: 'Approved',
-        style: { stroke: '#22c55e', opacity: 0.2 },
+        style: { stroke: '#ffffff', opacity: 0.2, strokeWidth: 5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
     },
     // Dual Agent -> Oblivion (If Blocked)
@@ -139,25 +139,52 @@ const initialEdges = [
         target: 'oblivion',
         animated: false,
         label: 'Blocked',
-        style: { stroke: '#ef4444', opacity: 0.2 },
+        style: { stroke: '#ffffff', opacity: 0.2, strokeWidth: 5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#ef4444' },
     },
     {
         id: 'e8',
         source: 'agent',
+        sourceHandle: 'agent-source',
         target: 'toolbox',
+        targetHandle: 'toolbox-top',
         animated: true,
-        style: { stroke: '#3b82f6', strokeDasharray: '5,5' },
+        style: { stroke: '#ffffff', strokeDasharray: '5,5', strokeWidth: 5 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
     }
 ];
 
 interface WorkflowVisualizerProps {
     workflowState: any; // Using any for now, refine later
+    onNodeClick?: (event: React.MouseEvent, node: any) => void;
 }
 
-export function WorkflowVisualizer({ workflowState }: WorkflowVisualizerProps) {
+export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisualizerProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+    // Initial load from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem('workflow-node-positions');
+        if (saved) {
+            try {
+                const positions = JSON.parse(saved);
+                setNodes(nds => nds.map(node => ({
+                    ...node,
+                    position: positions[node.id] || node.position
+                })));
+            } catch (e) {
+                console.error("Failed to load node positions", e);
+            }
+        }
+    }, [setNodes]);
+
+    const onNodeDragStop = (_: any, node: any) => {
+        const saved = localStorage.getItem('workflow-node-positions');
+        const positions = saved ? JSON.parse(saved) : {};
+        positions[node.id] = node.position;
+        localStorage.setItem('workflow-node-positions', JSON.stringify(positions));
+    };
 
     // Sync workflowState with nodes/edges
     useEffect(() => {
@@ -221,7 +248,8 @@ export function WorkflowVisualizer({ workflowState }: WorkflowVisualizerProps) {
                         data: {
                             ...node.data,
                             status,
-                            currentMessage: workflowState.lastAgentMessage || ''
+                            currentMessage: workflowState.lastAgentMessage || '',
+                            agentDialogue: workflowState.agentDialogue
                         }
                     } as any;
                 }
@@ -247,15 +275,17 @@ export function WorkflowVisualizer({ workflowState }: WorkflowVisualizerProps) {
                 }
 
                 // Update Toolbox Node
+                // Update ToolboxNode
                 if (node.id === 'toolbox') {
                     // Default to ALLOW_ALL if not specified, 
                     // or inherit from workflow state if available
                     // We need to pass policy from ChatInterface -> WorkflowState -> Here
                     const policy = workflowState.blocked ? "SHUTDOWN" : (workflowState.toolPolicy || "ALLOW_ALL");
+                    const activeTools = workflowState.activeTools || [];
 
                     return {
                         ...node,
-                        data: { ...node.data, policy }
+                        data: { ...node.data, policy, activeTools }
                     };
                 }
 
@@ -269,26 +299,80 @@ export function WorkflowVisualizer({ workflowState }: WorkflowVisualizerProps) {
                 // Activate edges based on state
                 // Switch -> Safe
                 if (edge.id === 'e3') {
+                    const isActive = workflowState.mlVerdict === 'SAFE';
                     return {
                         ...edge,
-                        style: { ...edge.style, opacity: workflowState.mlVerdict === 'SAFE' ? 1 : 0.2, strokeWidth: workflowState.mlVerdict === 'SAFE' ? 2 : 1 } as any,
-                        animated: workflowState.mlVerdict === 'SAFE'
+                        style: {
+                            ...edge.style,
+                            stroke: isActive ? '#22c55e' : '#ffffff',
+                            opacity: isActive ? 1 : 0.2,
+                            strokeWidth: isActive ? 8 : 5
+                        } as any,
+                        animated: isActive
                     };
                 }
                 // Switch -> Moderate
                 if (edge.id === 'e4') {
+                    const isActive = workflowState.mlVerdict === 'UNCERTAIN';
                     return {
                         ...edge,
-                        style: { ...edge.style, opacity: workflowState.mlVerdict === 'UNCERTAIN' ? 1 : 0.2, strokeWidth: workflowState.mlVerdict === 'UNCERTAIN' ? 2 : 1 } as any,
-                        animated: workflowState.mlVerdict === 'UNCERTAIN'
+                        style: {
+                            ...edge.style,
+                            stroke: isActive ? '#eab308' : '#ffffff',
+                            opacity: isActive ? 1 : 0.2,
+                            strokeWidth: isActive ? 8 : 5
+                        } as any,
+                        animated: isActive
                     };
                 }
                 // Switch -> Dangerous
                 if (edge.id === 'e5') {
+                    const isActive = workflowState.mlVerdict === 'MALICIOUS';
                     return {
                         ...edge,
-                        style: { ...edge.style, opacity: workflowState.mlVerdict === 'MALICIOUS' ? 1 : 0.2, strokeWidth: workflowState.mlVerdict === 'MALICIOUS' ? 2 : 1 } as any,
-                        animated: workflowState.mlVerdict === 'MALICIOUS'
+                        style: {
+                            ...edge.style,
+                            stroke: isActive ? '#ef4444' : '#ffffff',
+                            opacity: isActive ? 1 : 0.2,
+                            strokeWidth: isActive ? 8 : 5
+                        } as any,
+                        animated: isActive
+                    };
+                }
+                // Dual Agent -> Approved
+                if (edge.id === 'e6') {
+                    const isActive = workflowState.dualAgentTriggered && !workflowState.blocked && workflowState.stage === 'final';
+                    return {
+                        ...edge,
+                        style: {
+                            ...edge.style,
+                            stroke: isActive ? '#22c55e' : '#ffffff',
+                            opacity: isActive ? 1 : 0.2,
+                            strokeWidth: isActive ? 8 : 5
+                        } as any,
+                        animated: isActive
+                    };
+                }
+                // Dual Agent -> Blocked
+                if (edge.id === 'e7') {
+                    const isActive = workflowState.dualAgentTriggered && workflowState.blocked;
+                    return {
+                        ...edge,
+                        style: {
+                            ...edge.style,
+                            stroke: isActive ? '#ef4444' : '#ffffff',
+                            opacity: isActive ? 1 : 0.2,
+                            strokeWidth: isActive ? 8 : 5
+                        } as any,
+                        animated: isActive
+                    };
+                }
+
+                // Default thickness for static edges
+                if (['e1', 'e2', 'e8'].includes(edge.id)) {
+                    return {
+                        ...edge,
+                        style: { ...edge.style, strokeWidth: 5 }
                     };
                 }
 
@@ -305,6 +389,8 @@ export function WorkflowVisualizer({ workflowState }: WorkflowVisualizerProps) {
                 edges={edges}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
+                onNodeClick={onNodeClick}
+                onNodeDragStop={onNodeDragStop}
                 nodeTypes={nodeTypes}
                 fitView
                 minZoom={0.1}

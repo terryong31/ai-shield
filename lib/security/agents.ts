@@ -128,10 +128,12 @@ Based on the conversation, decide:
 Also provide a ONE-SENTENCE summary for the user.
 
 Format your response EXACTLY like this:
-[DECISION: ALLOW_ALL] (or RESTRICTED/SHUTDOWN)
-[SUMMARY: Your one sentence summary here]
+Reasoning: [Your reasoning here]
+Decision: [ALLOW_ALL] (or [RESTRICTED] or [SHUTDOWN])
+Summary: [Your one sentence summary here]
 
-Explain your reasoning briefly before the decision.`
+CRITICAL: You MUST include the brackets [] around the decision and status.
+If you are unsure, default to [RESTRICTED].`
             },
             { role: "user", content: `Conversation so far:\nAnalyst: ${analyst1}\nWarden: ${warden1}\nAnalyst: ${analyst2}\n\nOriginal prompt: "${prompt}"\n\nMake your final decision.` }
         ])
@@ -142,34 +144,52 @@ Explain your reasoning briefly before the decision.`
         console.log(`[DualAgent] Warden Final: ${wardenFinalText}`)
 
         // Extract Summary
-        const summaryMatch = wardenFinalText.match(/\[SUMMARY: (.*?)\]/)
+        const summaryMatch = wardenFinalText.match(/Summary:\s*\[?(.*?)\]?$/m) || wardenFinalText.match(/\[SUMMARY: (.*?)\]/)
         const summary = summaryMatch ? summaryMatch[1] : "Security analysis completed."
         console.log(`[DualAgent] Summary: ${summary}`)
 
         // Extract the decision
-        let policy: ToolAccessPolicy = "ALLOW_ALL"
-        let verdict: SecurityVerdict = "SAFE"
+        let policy: ToolAccessPolicy = "RESTRICTED" // Default to RESTRICTED for safety
+        let verdict: SecurityVerdict = "UNCERTAIN"
 
-        if (wardenFinalText.includes("[DECISION: SHUTDOWN]")) {
-            policy = "SHUTDOWN"
-            verdict = "MALICIOUS"
-        } else if (wardenFinalText.includes("[DECISION: RESTRICTED]")) {
-            policy = "RESTRICTED"
-            verdict = "UNCERTAIN"
-        } else if (wardenFinalText.includes("[DECISION: ALLOW_ALL]")) {
-            policy = "ALLOW_ALL"
-            verdict = "SAFE"
-        } else {
-            // Fallback: analyze sentiment
-            const lowerText = wardenFinalText.toLowerCase()
-            if (lowerText.includes("block") || lowerText.includes("deny") || lowerText.includes("dangerous")) {
+        // refined regex to catch [DECISION: STATUS] or Decision: [STATUS]
+        console.log(`[DualAgent] RAW Warden Final Text: "${wardenFinalText}"`)
+
+        // More robust regex to catch "Decision: [ALLOW_ALL]" or "[DECISION: ALLOW_ALL]"
+        // We now match variations like "Decision: ALLOW ALL" or "DECISION:RESTRICTED"
+        const decisionMatch = wardenFinalText.match(/Decision:?\s*\[?([A-Z_ ]+)\]?/i) || wardenFinalText.match(/\[DECISION:?\s*([A-Z_ ]+)\]/i)
+
+        console.log(`[DualAgent] Decision Match:`, decisionMatch)
+
+        if (decisionMatch) {
+            const decision = decisionMatch[1].toUpperCase()
+            if (decision.includes("SHUTDOWN")) {
                 policy = "SHUTDOWN"
                 verdict = "MALICIOUS"
-            } else if (lowerText.includes("restrict") || lowerText.includes("caution") || lowerText.includes("careful")) {
+            } else if (decision.includes("RESTRICTED")) {
                 policy = "RESTRICTED"
                 verdict = "UNCERTAIN"
+            } else if (decision.includes("ALLOW_ALL")) {
+                policy = "ALLOW_ALL"
+                verdict = "SAFE"
+            }
+        } else {
+            console.warn("[DualAgent] Decision format not found, attempting fallback...")
+            // Fallback: analyze sentiment
+            const lowerText = wardenFinalText.toLowerCase()
+            if (lowerText.includes("block") || lowerText.includes("deny") || lowerText.includes("dangerous") || lowerText.includes("shutdown")) {
+                policy = "SHUTDOWN"
+                verdict = "MALICIOUS"
+            } else if (lowerText.includes("restrict") || lowerText.includes("caution") || lowerText.includes("careful") || lowerText.includes("limit")) {
+                policy = "RESTRICTED"
+                verdict = "UNCERTAIN"
+            } else if (lowerText.includes("allow") || lowerText.includes("safe") || lowerText.includes("proceed")) {
+                policy = "ALLOW_ALL"
+                verdict = "SAFE"
             }
         }
+
+        console.log(`[DualAgent] Final Policy: ${policy}, Verdict: ${verdict}`)
 
         // Calculate confidence based on how decisive the conversation was
         const confidenceIndicators = wardenFinalText.toLowerCase()
@@ -179,7 +199,7 @@ Explain your reasoning briefly before the decision.`
 
         return {
             verdict,
-            analysis: analyst1.substring(0, 200),
+            analysis: analyst1,
             policy,
             confidence,
             dialogue,
@@ -238,7 +258,7 @@ function buildGeminiTools(allowedToolNames: string[]) {
 // ------------------------------------------------------------------
 // Main Chat Function using Google Gemini
 // ------------------------------------------------------------------
-export async function getChatResponse(prompt: string, allowedTools: string[], systemPrompt?: string): Promise<string> {
+export async function getChatResponse(prompt: string, allowedTools: string[], systemPrompt?: string, onProgress?: (step: any) => void): Promise<string> {
     const apiKey = process.env.GOOGLE_API_KEY
     if (!apiKey) throw new Error("GOOGLE_API_KEY is missing")
 
@@ -315,7 +335,9 @@ CRITICAL RULES:
 
                 if (tool && allowedTools.includes(toolName)) {
                     try {
+                        if (onProgress) onProgress({ type: 'TOOL_START', tool: toolName, args })
                         const toolResult = await tool.execute(args)
+                        if (onProgress) onProgress({ type: 'TOOL_END', tool: toolName, result: toolResult })
                         console.log(`[Gemini] Tool Result:`, JSON.stringify(toolResult).substring(0, 200))
 
                         toolParts.push({

@@ -24,6 +24,7 @@ interface WorkflowState {
     dualAgentTriggered: boolean
     blocked: boolean
     toolPolicy?: string
+    activeTools: string[]
 }
 
 const initialWorkflowState: WorkflowState = {
@@ -33,7 +34,8 @@ const initialWorkflowState: WorkflowState = {
     mlVerdict: "",
     lastAgentMessage: "",
     dualAgentTriggered: false,
-    blocked: false
+    blocked: false,
+    activeTools: []
 }
 
 export default function ChatInterface() {
@@ -240,6 +242,20 @@ export default function ChatInterface() {
                                 fullMetadata.dualAgentTriggered = true
                                 break
 
+                            case 'TOOL_START':
+                                setWorkflowState(prev => ({
+                                    ...prev,
+                                    activeTools: [...prev.activeTools, data.tool]
+                                }))
+                                break
+
+                            case 'TOOL_END':
+                                setWorkflowState(prev => ({
+                                    ...prev,
+                                    activeTools: prev.activeTools.filter(t => t !== data.tool)
+                                }))
+                                break
+
                             case 'BLOCK':
                                 const blockDuration = (Date.now() - startTime) / 1000
                                 setWorkflowState(prev => ({ ...prev, blocked: true }))
@@ -258,6 +274,7 @@ export default function ChatInterface() {
                                 break
 
                             case 'POLICY_UPDATE':
+                                console.log(`[Frontend] Received POLICY_UPDATE: ${data.policy}`);
                                 setWorkflowState(prev => ({ ...prev, toolPolicy: data.policy }))
                                 fullMetadata.toolPolicy = data.policy
                                 break

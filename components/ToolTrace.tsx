@@ -24,13 +24,13 @@ export function ToolTrace({ userPrompt, layer1Verdict = "SAFE", toolCalls = [], 
         <div className="border rounded-lg p-2 bg-white dark:bg-gray-900 shadow-sm my-2">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center justify-between w-full text-left font-semibold text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded transition-colors"
+                className="flex items-center justify-between w-full text-left font-semibold text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded transition-colors focus:outline-none focus:ring-0 active:bg-white dark:active:bg-gray-900"
             >
                 <span className="flex items-center gap-2">
                     Tool Trace Analysis
                     {toolCalls.length > 0 && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{toolCalls.length} Tools</span>}
                 </span>
-                <span>{isOpen ? '▼' : '▶'}</span>
+                <span className="font-mono" style={{ fontVariantNumeric: 'tabular-nums', textRendering: 'geometricPrecision', WebkitFontSmoothing: 'antialiased' }}>{isOpen ? '▼' : '▶'}</span>
             </button>
 
             {isOpen && (

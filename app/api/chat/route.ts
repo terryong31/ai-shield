@@ -88,8 +88,16 @@ export async function POST(req: Request) {
                     console.error("ML Service Unavailable:", e)
                 }
 
+                // SENSITIVE PROMOTION HEURISTIC: Force into Layer 2 for specific risky keywords
+                const sensitiveKeywords = ["sales", "revenue", "employee", "salary", "database", "sql", "delete", "personal", "member", "boss", "org", "chart", "hierarchy", "email", "drop", "table"];
+                if (sensitiveKeywords.some(kw => message.toLowerCase().includes(kw))) {
+                    console.log(`[API] Sensitive keyword detected. Forcing UNCERTAIN verdict for Dual Agent review.`);
+                    mlVerdict = "UNCERTAIN";
+                }
+
                 logData.metadata.mlConfidence = mlConfidence;
                 send({ type: 'ML_RESULT', confidence: mlConfidence, verdict: mlVerdict });
+                console.log(`[API] ML Result: ${mlVerdict} (Confidence: ${mlConfidence})`);
                 send({ type: 'STAGE_CHANGE', stage: 'ml_done' });
 
                 // Handle Immediate Block
@@ -143,6 +151,7 @@ export async function POST(req: Request) {
 
                 // 4. Final Execution
                 send({ type: 'STAGE_CHANGE', stage: 'final' });
+                console.log(`[API] Final Policy Update: ${agentResult.policy}`);
                 send({ type: 'POLICY_UPDATE', policy: agentResult.policy });
 
                 let allowedTools = Object.keys(DANGEROUS_TOOLS);
@@ -155,7 +164,9 @@ export async function POST(req: Request) {
                 logData.metadata.toolPolicy = agentResult.policy;
                 logData.metadata.allowedTools = allowedTools;
 
-                const realResponse = await getChatResponse(message, allowedTools);
+                const realResponse = await getChatResponse(message, allowedTools, undefined, (event) => {
+                    send(event);
+                });
 
                 logData.metadata.aiResponse = realResponse;
                 logRequestToSupabase(logData);
