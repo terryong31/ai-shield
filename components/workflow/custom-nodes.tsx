@@ -39,8 +39,8 @@ export const UserNode = memo(({ data }: NodeProps) => {
         <NodeContainer status={data.status as string}>
             <Handle type="source" position={Position.Right} className="w-3 h-3 bg-muted-foreground" />
             <User className="w-8 h-8 mb-2" />
-            <div className="text-sm font-medium">User Prompt</div>
-            <div className="text-xs opacity-70 mt-1 max-w-[120px] truncate">{String(data.label || '')}</div>
+            <div className="text-base font-medium">User Prompt</div>
+            <div className="text-sm opacity-70 mt-1 max-w-[150px] truncate">{String(data.label || '')}</div>
         </NodeContainer>
     );
 });
@@ -51,9 +51,9 @@ export const MLNode = memo(({ data }: NodeProps) => {
             <Handle type="target" position={Position.Left} className="w-3 h-3 bg-muted-foreground" />
             <Handle type="source" position={Position.Right} className="w-3 h-3 bg-muted-foreground" />
             <Shield className="w-8 h-8 mb-2" />
-            <div className="text-sm font-medium">ML Endpoint</div>
+            <div className="text-base font-medium">ML Endpoint</div>
             {!!data.confidence && (
-                <div className="text-xs opacity-70 mt-1">
+                <div className="text-sm opacity-70 mt-1">
                     Confidence: {Number(data.confidence).toFixed(2)}
                 </div>
             )}
@@ -63,7 +63,7 @@ export const MLNode = memo(({ data }: NodeProps) => {
 
 export const SwitchNode = memo(({ data }: NodeProps) => {
     return (
-        <NodeContainer status={data.status as string} className="rounded-full w-24 h-24">
+        <NodeContainer status={data.status as string} className="rounded-full w-28 h-28">
             <Handle type="target" position={Position.Left} className="w-3 h-3 bg-muted-foreground" />
             {/* Output handles for different paths */}
             <Handle type="source" position={Position.Top} id="safe" className="w-3 h-3 bg-green-500 -top-1" />
@@ -71,8 +71,8 @@ export const SwitchNode = memo(({ data }: NodeProps) => {
             <Handle type="source" position={Position.Bottom} id="dangerous" className="w-3 h-3 bg-red-500 -bottom-1" />
 
             <Scale className="w-8 h-8 mb-1" />
-            <div className="text-xs font-bold">Router</div>
-            <div className="text-[10px] opacity-70 mt-1">{data.verdict as string || "Pending"}</div>
+            <div className="text-base font-bold">Router</div>
+            <div className="text-sm opacity-70 mt-1">{data.verdict as string || "Pending"}</div>
         </NodeContainer>
     );
 });
@@ -83,8 +83,8 @@ export const DualAgentNode = memo(({ data }: NodeProps) => {
             <Handle type="target" position={Position.Left} className="w-3 h-3 bg-muted-foreground" />
             <Handle type="source" position={Position.Right} className="w-3 h-3 bg-muted-foreground" />
             <BrainCircuit className="w-8 h-8 mb-2" />
-            <div className="text-sm font-medium">Dual-Agent Shield</div>
-            <div className="text-xs opacity-70 mt-1">
+            <div className="text-base font-medium">Dual-Agent Shield</div>
+            <div className="text-sm opacity-70 mt-1">
                 {data.status === 'active' ? "Analysing..." : "Analysis Complete"}
             </div>
         </NodeContainer>
@@ -97,8 +97,8 @@ export const AgentNode = memo(({ data }: NodeProps) => {
             <Handle type="target" position={Position.Left} className="w-3 h-3 bg-muted-foreground" />
             <Handle type="source" position={Position.Bottom} id="agent-source" className="w-3 h-3 bg-muted-foreground" />
             <Bot className="w-8 h-8 mb-2" />
-            <div className="text-sm font-medium">AI Agent</div>
-            <div className="text-xs opacity-70 mt-1">Generating Response</div>
+            <div className="text-base font-medium">AI Agent</div>
+            <div className="text-sm opacity-70 mt-1">Generating Response</div>
         </NodeContainer>
     );
 });
@@ -108,8 +108,8 @@ export const OblivionNode = memo(({ data }: NodeProps) => {
         <NodeContainer status={data.status as string} className="border-destructive/50 bg-destructive/5">
             <Handle type="target" position={Position.Left} className="w-3 h-3 bg-destructive" />
             <Trash2 className="w-8 h-8 mb-2 text-destructive" />
-            <div className="text-sm font-medium text-destructive">Oblivion</div>
-            <div className="text-xs opacity-70 mt-1">Request Blocked</div>
+            <div className="text-base font-medium text-destructive">Oblivion</div>
+            <div className="text-sm opacity-70 mt-1">Request Blocked</div>
         </NodeContainer>
     );
 });
@@ -137,7 +137,7 @@ export const ToolboxNode = memo(({ data }: NodeProps) => {
             <div className="overflow-hidden rounded-xl w-full">
                 <div className="bg-zinc-900/50 p-2 border-b border-zinc-800 flex items-center gap-2">
                     <Wrench className="w-4 h-4 text-zinc-400" />
-                    <span className="text-xs font-medium text-zinc-300">Live Tool Access</span>
+                    <span className="text-sm font-medium text-zinc-300">Live Tool Access</span>
                 </div>
                 <div className="p-2 space-y-1">
                     {tools.map((tool, idx) => {
@@ -150,7 +150,7 @@ export const ToolboxNode = memo(({ data }: NodeProps) => {
 
                         return (
                             <div key={idx} className={cn(
-                                "flex items-center justify-between text-[10px] p-1.5 rounded transition-all duration-300",
+                                "flex items-center justify-between text-[12px] p-1.5 rounded transition-all duration-300",
                                 enabled ? (isActive ? "bg-blue-500/20 border border-blue-500/50 shadow-[0_0_10px_rgba(59,130,246,0.3)]" : "bg-zinc-900") : "bg-zinc-900/30 opacity-50"
                             )}>
                                 <div className="flex items-center gap-2">
@@ -170,7 +170,7 @@ export const ToolboxNode = memo(({ data }: NodeProps) => {
                 </div>
                 <div className="bg-zinc-900/30 p-1.5 border-t border-zinc-800 text-center">
                     <span className={cn(
-                        "text-[9px] font-bold px-2 py-0.5 rounded",
+                        "text-[11px] font-bold px-2 py-0.5 rounded",
                         policy === "ALLOW_ALL" ? "text-green-400 bg-green-950/30" :
                             policy === "RESTRICTED" ? "text-yellow-400 bg-yellow-950/30" :
                                 "text-red-400 bg-red-950/30"
