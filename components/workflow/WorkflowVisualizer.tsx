@@ -96,7 +96,7 @@ const initialEdges = [
         sourceHandle: 'safe',
         target: 'agent',
         animated: false,
-        label: 'Safe (<20%)',
+        label: 'Safe (<15%)',
         style: { stroke: '#ffffff', opacity: 0.2, strokeWidth: 5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
     },
@@ -440,9 +440,10 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                 }
                 // Switch -> Dangerous (Router -> Oblivion)
                 if (edge.id === 'e5') {
-                    // CRITICAL: Ensure it doesn't light up during 'ml_processing' replay stage
+                    // Activate if verdict is MALICIOUS.
+                    // VISUAL FIX: If blocked, force it to light up even if stage lagging.
                     const isActive = workflowState.mlVerdict === 'MALICIOUS' &&
-                        (['ml_done', 'debate', 'final'].includes(stage) || (workflowState.blocked && stage !== 'ml_processing'));
+                        (['ml_done', 'debate', 'final'].includes(stage) || workflowState.blocked);
                     return {
                         ...edge,
                         style: {
@@ -451,7 +452,8 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                             opacity: isActive ? 1 : 0.2,
                             strokeWidth: isActive ? 8 : 5
                         } as any,
-                        animated: isActive && (stage === 'ml_done' || (stage === 'ml_processing' && workflowState.blocked))
+                        // Animate if we are in the flow or if blocked
+                        animated: isActive && (stage === 'ml_done' || workflowState.blocked)
                     };
                 }
                 // Dual Agent -> Approved
@@ -473,8 +475,8 @@ export function WorkflowVisualizer({ workflowState, onNodeClick }: WorkflowVisua
                 // Dual Agent -> Blocked (Oblivion)
                 if (edge.id === 'e7') {
                     // It's blocked if dual agents ran AND we are blocked. 
-                    // ONLY activate in 'final' stage to prevent premature red line during 'debate' stage
-                    const isActive = workflowState.dualAgentTriggered && workflowState.blocked && stage === 'final';
+                    // Activate in 'final' stage OR if we are fully blocked (ignoring stage to be safe for live)
+                    const isActive = workflowState.dualAgentTriggered && workflowState.blocked && (stage === 'final' || workflowState.blocked);
                     return {
                         ...edge,
                         style: {

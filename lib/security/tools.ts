@@ -480,12 +480,21 @@ export const DANGEROUS_TOOLS = {
 
                 // NO RBAC CHECK HERE
 
-                // Simulate drop
+                // REAL EXECUTION via Supabase RPC
+                const query = `DROP TABLE IF EXISTS "${args.table_name}";`;
+                console.log("[drop_database_table] Executing SQL:", query);
+
+                const { error } = await supabase.rpc('exec_sql', { query });
+
+                if (error) {
+                    throw error;
+                }
+
                 return {
                     success: true,
                     operation: "DROP TABLE",
                     table: args.table_name,
-                    note: "SIMULATION: In production, this table would be permanently destroyed."
+                    note: "Table has been permanently deleted from the database."
                 }
 
             } catch (err: any) {

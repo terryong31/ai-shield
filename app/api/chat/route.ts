@@ -83,7 +83,7 @@ export async function POST(req: Request) {
                             // Adjust ML thresholds
                             if (mlConfidence >= 0.85) {
                                 mlVerdict = "MALICIOUS"
-                            } else if (mlConfidence <= 0.2) {
+                            } else if (mlConfidence <= 0.15) {
                                 mlVerdict = "SAFE"
                             } else {
                                 mlVerdict = "UNCERTAIN"
@@ -99,20 +99,39 @@ export async function POST(req: Request) {
                 }
 
                 // SENSITIVE PROMOTION HEURISTIC: Force into Layer 2 for specific risky keywords
+                // BUT: Context is king. We need to avoid false positives like Base64 strings.
                 const sensitiveKeywords = ["delete", "drop", "update", "execute", "select", "insert", "sql", "database", "table", "schema", "admin", "truncate", "email", "send"];
-                const isSensitive = sensitiveKeywords.some(kw => message.toLowerCase().includes(kw));
 
-                // If sensitive, downgrade "SAFE" to "UNCERTAIN" to force Agent Review, unless explicitly malicious
-                if (isSensitive && mlVerdict === "SAFE" && mode === 'shield') {
-                    console.log(`[API] Sensitive keyword detected. Escalating to Dual Agents.`);
+                // Helper to check for Base64-like patterns (long strings with no spaces, mixed case numbers/letters)
+                const isBase64Like = (str: string) => {
+                    const base64Pattern = /^[A-Za-z0-9+/=]{20,}$/; // Simplistic check for long continuous alphanumeric blocks
+                    const words = str.split(/\s+/);
+                    return words.some(word => base64Pattern.test(word));
+                };
+
+                const containsSensitiveKeyword = sensitiveKeywords.some(kw => message.toLowerCase().includes(kw));
+                const appearsEncoded = isBase64Like(message);
+
+                // If sensitive AND NOT encoded AND ML is not extremely confident it's safe (>0.05)
+                // If confidence is < 0.05, we TRUST the model that it's safe (e.g. 0.00 confidence = 100% safe)
+                if (containsSensitiveKeyword && !appearsEncoded && mlConfidence > 0.05 && mlVerdict === "SAFE" && mode === 'shield') {
+                    console.log(`[API] Sensitive keyword detected (Confidence: ${mlConfidence}). Escalating to Dual Agents.`);
                     mlVerdict = "UNCERTAIN";
+                } else if (appearsEncoded) {
+                    console.log(`[API] Message appears to contain encoded/hash data. Skipping sensitive keyword sensitive check.`);
                 }
 
                 // Add Passphrase check heuristic: If passphrase is provided, we should run agents to verify it,
                 // BUT ONLY if the ML layer didn't already flag it as definitely MALICIOUS.
+                // AND: Don't trigger if it's extremely safe (Confidence < 0.1) and NOT sensitive.
+                // This prevents "Hello" or "Base64(Safe)" from being forced into Dual Agents just because a key exists.
                 if (passphrase && mode === 'shield' && mlVerdict !== "MALICIOUS") {
-                    console.log(`[API] Passphrase provided. Escalating to Dual Agents for Authorization.`);
-                    mlVerdict = "UNCERTAIN"; // Force agent review to validate passphrase
+                    if (containsSensitiveKeyword || mlVerdict === "UNCERTAIN" || mlConfidence > 0.1) {
+                        console.log(`[API] Passphrase provided AND request warrants review. Escalating to Dual Agents.`);
+                        mlVerdict = "UNCERTAIN";
+                    } else {
+                        console.log(`[API] Passphrase provided but request is high-confidence SAFE (${mlConfidence}). Skipping Dual Agents.`);
+                    }
                 }
 
 
@@ -125,6 +144,9 @@ export async function POST(req: Request) {
                 if (mlVerdict === "MALICIOUS") {
                     console.log(`[API] Blocking High-Confidence Malicious Request (Confidence: ${mlConfidence})`);
                     send({ type: 'BLOCK', reason: "High confidence ML detection triggered immediate block." });
+
+                    // Ensure frontend knows we are done
+                    send({ type: 'STAGE_CHANGE', stage: 'final' });
 
                     logData.action = "BLOCKED";
                     logData.reason = "High confidence ML detection";
@@ -156,6 +178,9 @@ export async function POST(req: Request) {
                 // If Agents decide to BLOCK (MALICIOUS)
                 if (agentResult.verdict === "MALICIOUS") {
                     send({ type: 'BLOCK', reason: agentResult.summary });
+
+                    // Ensure frontend knows we are done
+                    send({ type: 'STAGE_CHANGE', stage: 'final' });
 
                     // Log Block
                     logData.action = "BLOCKED";

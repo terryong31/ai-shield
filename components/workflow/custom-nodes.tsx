@@ -85,7 +85,7 @@ export const DualAgentNode = memo(({ data }: NodeProps) => {
             <BrainCircuit className="w-8 h-8 mb-2" />
             <div className="text-base font-medium">Dual-Agent Shield</div>
             <div className="text-sm opacity-70 mt-1">
-                {data.status === 'active' ? "Analysing..." : "Analysis Complete"}
+                {data.status === 'active' ? "Analysing..." : (data.status === 'idle' ? "Waiting..." : "Analysis Complete")}
             </div>
         </NodeContainer>
     );

@@ -129,7 +129,7 @@ export function ChatHistorySection() {
         if (!mlVerdict) {
             // Infer if missing
             if (mlConfidence > 0.85) mlVerdict = "MALICIOUS";
-            else if (mlConfidence > 0.2) mlVerdict = "UNCERTAIN";
+            else if (mlConfidence > 0.15) mlVerdict = "UNCERTAIN";
             else mlVerdict = "SAFE";
         }
 
@@ -138,9 +138,14 @@ export function ChatHistorySection() {
         const blocked = log.action === "BLOCKED";
 
         // Reconstruct dual agent state
-        // Strict visualization: Dual Agent is ONLY triggered if the ML verdict is UNCERTAIN.
-        // This prevents high-confidence blocks (0.99) from showing a ghost path through the dual agent.
-        const dualAgentTriggered = mlVerdict === "UNCERTAIN";
+        // It is triggered if the verdict was UNCERTAIN **OR** if the log says the action was taken by Layer 2
+        // We must check `log.layer` because the ML verdict might have been "SAFE" initially but escalated by heuristics.
+        const dualAgentTriggered = mlVerdict === "UNCERTAIN" || log.layer === "LAYER_2_DUAL_AGENT" || log.metadata.dualAgentTriggered;
+
+        // If it was triggered, ensure mlVerdict reflects that for the visualizer (so the Router -> Agent edge doesn't light up "Safe")
+        if (dualAgentTriggered && mlVerdict === "SAFE") {
+            mlVerdict = "UNCERTAIN";
+        }
 
         return {
             query: log.query,
@@ -169,7 +174,11 @@ export function ChatHistorySection() {
 
         // If dual agent is involved, show debate stage
         const log = logs.find(l => l.id === logId);
-        const dualAgentTriggered = log && (log.metadata.mlVerdict === "UNCERTAIN" || log.metadata.dualAgentTriggered);
+        const dualAgentTriggered = log && (
+            log.metadata.mlVerdict === "UNCERTAIN" ||
+            log.layer === "LAYER_2_DUAL_AGENT" || // Check layer!
+            log.metadata.dualAgentTriggered
+        );
 
         if (dualAgentTriggered) {
             setTimeout(() => setPlaybackState({ logId, stage: 'debate' }), 3500);
