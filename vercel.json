@@ -1,7 +1,19 @@
 {
-    "functions": {
-        "api/predict/index.py": {
-            "maxDuration": 10
+    "version": 2,
+    "builds": [
+        {
+            "src": "package.json",
+            "use": "@vercel/next"
+        },
+        {
+            "src": "ml-endpoint/app.py",
+            "use": "@vercel/python"
         }
-    }
+    ],
+    "rewrites": [
+        {
+            "source": "/api/predict",
+            "destination": "/ml-endpoint/app.py"
+        }
+    ]
 }

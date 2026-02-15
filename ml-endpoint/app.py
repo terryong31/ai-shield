@@ -27,8 +27,10 @@ class FeedbackRequest(BaseModel):
     human_label: int
 
 # Load model artifacts
-MODEL_PATH = "model.pkl"
-VECTORIZER_PATH = "vectorizer.pkl"
+# Use absolute paths for Vercel / Lambda environment
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
+VECTORIZER_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 
 model = None
 vectorizer = None

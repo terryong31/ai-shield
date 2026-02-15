@@ -45,6 +45,8 @@ next-env.d.ts
 # datasets
 injection_dataset/
 *.csv
+# *.pkl (Keep ignored generally, but allow for ml-endpoint)
 *.pkl
+!ml-endpoint/*.pkl
 __pycache__/
 
