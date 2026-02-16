@@ -7,19 +7,23 @@ AI Shield is a next-generation security platform designed to detect, analyze, an
 ## 🛡️ Key Features
 
 ### 1. Dual-Layer Defense System
+
 - **Layer 1 (Fast ML)**: A custom-trained Scikit-learn model immediately flags high-confidence threats (Confidence > 0.85) and clears safe prompts (Confidence < 0.15).
 - **Layer 2 (Dual Agents)**: For uncertain or sensitive requests, two AI agents ("The Analyst" and "The Warden") debate the user's intent and security clearance in real-time before authorizing any action.
 
 ### 2. Real-Time Security Dashboard
+
 - **Live Workflow Visualization**: Watch the decision-making process unfold with an interactive node-based graph.
 - **Threat Monitoring**: Track blocked requests, sensitive keywords, and user intent.
 - **Audit Logs**: Full history of every request, including the reasoning behind every block or approval.
 
 ### 3. Secure Tool Execution
+
 - **Pre-Authorization**: Authorized personnel (verified via passphrase) can execute sensitive tools (e.g., SQL Drop, Data Deletion) without redundant confirmation steps.
 - **Granular Policies**: Tools are dynamically allowed or restricted based on the Dual Agents' final verdict.
 
-### 4. RLHF (Reinforcement Learning from Human Feedback) 
+### 4. RLHF (Reinforcement Learning from Human Feedback)
+
 - **Live Model Updates**: The system learns from your interactions in real-time using Stochastic Gradient Descent (SGD).
 - **Instant Correction**: If the ML model misclassifies a prompt, your feedback (Safe/Malicious) immediately retrains the vectorizer and classifier in memory.
 - **Continuous Improvement**: Feedback is saved to a dataset for future batch training, ensuring the model gets smarter with every interaction.
@@ -35,6 +39,7 @@ AI Shield is a next-generation security platform designed to detect, analyze, an
 ## 🛠️ Getting Started
 
 ### Prerequisites
+
 - Node.js 18+
 - Python 3.9+
 - Supabase Account
@@ -44,36 +49,37 @@ AI Shield is a next-generation security platform designed to detect, analyze, an
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/yourusername/ai-shield.git
    cd ai-shield
    ```
-
 2. **Install Frontend Dependencies**
+
    ```bash
    npm install
    ```
-
 3. **Install ML Service Dependencies**
+
    ```bash
    pip install -r ml-endpoint/requirements.txt
    ```
-
 4. **Environment Setup**
    Create a `.env.local` file in the root directory:
+
    ```env
    # Database
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-   
+
    # AI Services
    GOOGLE_API_KEY=your_gemini_key
    GROQ_API_KEY=your_groq_key
-   
+
    # Security
    SECURE_PASSPHRASE=your_secret_passphrase
    (Please note that this is to simulate RBAC)
-   
+
    # ML Service (Local)
    ML_SERVICE_URL=http://localhost:8000/predict
    ```
@@ -81,12 +87,13 @@ AI Shield is a next-generation security platform designed to detect, analyze, an
 ### Running Locally
 
 1. **Start the ML Endpoint**
+
    ```bash
    cd ml-endpoint
    uvicorn app:app --reload --port 8000
    ```
-
 2. **Start the Next.js App** (in a new terminal)
+
    ```bash
    npm run dev
    ```

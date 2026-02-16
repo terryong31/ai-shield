@@ -50,3 +50,4 @@ injection_dataset/
 !ml-endpoint/*.pkl
 __pycache__/
 
+*/venv/
