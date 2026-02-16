@@ -480,11 +480,6 @@ export default function ChatInterface() {
                     </div>
 
                     <div className="p-4 border-t border-zinc-800 bg-background/50 backdrop-blur-sm shrink-0">
-                        {/* Resizer Handle */}
-                        <div
-                            className="absolute right-0 top-0 bottom-0 w-1 bg-zinc-800 hover:bg-primary/50 cursor-col-resize transition-colors z-50"
-                            onMouseDown={startResizing}
-                        />
 
                         <div className="max-w-2xl mx-auto relative">
                             <Input
@@ -506,6 +501,12 @@ export default function ChatInterface() {
                         </div>
                     </div>
                 </div>
+
+                {/* Resizer Handle */}
+                <div
+                    className="absolute right-0 top-0 bottom-0 w-1 hover:w-1.5 bg-zinc-800/50 hover:bg-primary cursor-col-resize transition-all z-50"
+                    onMouseDown={startResizing}
+                />
             </div>
 
             {/* Right Panel: Workflow Visualization */}
