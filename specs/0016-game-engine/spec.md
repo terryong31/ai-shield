@@ -10,7 +10,7 @@
 
 1. **Fixed pipeline:** `packages/engine` runs a single hardcoded pipeline (`Classifier -> Moderation -> Debate -> ToolPolicy`). Players cannot wire their own branching boards, test custom check orders, or get scored on protection, false alarms, speed, and cost.
 2. **Missing game API and scoreboard:** `apps/api` has no endpoints to list game levels, evaluate a player-built board against a level wave or custom prompt, or persist high scores in SQLite.
-3. **Web layout and copy:** `apps/web` needs three clear routes (`/` landing page, `/game` interactive Vue Flow builder, and `/_console` admin-only console gated by `spec 0012` clearance sessions) styled with a high-contrast monochrome design, plain English labels, zero emojis, and zero em-dashes (`brainstorm/06-ui-and-copy-standard.md`).
+3. **Web layout and copy:** `apps/web` needs three clear routes (`/` landing page, `/game` interactive Vue Flow builder, and `/_console` admin-only console gated by `spec 0012` clearance sessions) styled with a high-contrast monochrome design, plain English labels, zero emojis, and zero em-dashes.
 
 ## Goals
 

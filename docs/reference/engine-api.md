@@ -22,6 +22,7 @@ so `str(Verdict.SAFE) == "SAFE"`.
 - [`shield_engine.evaluation`](#shield_engineevaluation)
 - [`shield_engine.testing`](#shield_enginetesting)
 - [`shield_engine.adapters.groq`](#shield_engineadaptersgroq)
+- [`shield_engine.game`](#shield_enginegame)
 
 ## Top-level exports (`shield_engine.__all__`)
 

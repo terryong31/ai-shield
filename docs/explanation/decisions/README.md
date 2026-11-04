@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Significant decisions about the structure of AI S.H.I.E.L.D., recorded in the
+Significant decisions about the structure of `ai-shield`, recorded in the
 format described by Michael Nygard: **Context** (the forces at play),
 **Decision** (what we chose), **Consequences** (what follows, good and bad).
 

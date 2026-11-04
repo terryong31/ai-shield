@@ -11,7 +11,7 @@ ai-shield/
 ├── bun.lock                     # JavaScript lockfile
 ├── AGENTS.md, CLAUDE.md         # instructions for AI coding agents (see how-to/work-with-ai-agents.md)
 ├── .claude/                     # Claude Code settings, subagents, skills
-├── .github/                     # CI workflows and issue templates
+├── .github/                     # issue and pull request templates, dependabot
 ├── .dockerignore, .editorconfig, .gitignore
 │
 ├── packages/
@@ -33,6 +33,7 @@ ai-shield/
 │       │   ├── feedback.py      # InMemoryFeedbackStore, CsvFeedbackStore
 │       │   ├── detectors/       # classifier.py (Layer 1), moderation.py (Llama Guard)
 │       │   ├── adjudication/    # debate.py (Layer 2), fallback.py
+│       │   ├── game/            # workflow defence graph evaluator, custom ML training, wave scoring
 │       │   ├── models/          # hash-verified artifact loading + baseline/ artifacts
 │       │   ├── training.py      # train_baseline
 │       │   ├── evaluation/      # dataset.py, metrics.py, runner.py
@@ -53,8 +54,8 @@ ai-shield/
 │   │   │   ├── schemas.py       # HTTP models + ChatEvent union (the contract)
 │   │   │   ├── dependencies.py  # ContainerDep
 │   │   │   ├── openapi.py       # shield-api-export-openapi
-│   │   │   ├── routers/         # health, screening (/predict, /screen), chat, feedback, audit
-│   │   │   ├── services/        # chat.py (stream flow), access.py (clearance, modes), audit.py
+│   │   │   ├── routers/         # health, screening, chat, feedback, audit, clearance, game
+│   │   │   ├── services/        # chat.py, access.py, sessions.py, audit.py
 │   │   │   └── demo/            # assistant.py, tools.py (catalogue), gemini.py (adapter)
 │   │   └── tests/
 │   │

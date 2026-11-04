@@ -1,6 +1,6 @@
 # shield-engine
 
-The AI S.H.I.E.L.D. prompt-injection deflector as a standalone Python library.
+The `ai-shield` prompt-injection deflector and workflow defence game engine as a standalone Python library.
 It has no web framework, database or provider SDK in its core dependencies:
 you inject those through small ports.
 

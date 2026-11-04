@@ -1,6 +1,6 @@
 # Threat model
 
-This page describes what AI S.H.I.E.L.D. protects, from whom, where the trust
+This page describes what `ai-shield` protects, from whom, where the trust
 boundaries are, and which threats are mitigated or still open. It covers the
 engine and the demo deployment (gateway + web client) as they are in this
 repository. It is written to be honest about gaps; the demo is not a hardened
@@ -12,12 +12,12 @@ production system.
 | --- | --- | --- |
 | Tools of the protected application | Demo catalogue in `apps/api/src/shield_api/demo/tools.py` (simulated) | In a real deployment these read or destroy data: SQL, deletion, export, email |
 | Data behind those tools | Simulated employee, sales and org data | Confidentiality |
-| Provider API keys | Gateway environment (`GROQ_API_KEY`, `GOOGLE_API_KEY`) | Cost and account abuse |
+| Provider API keys | Gateway environment (`GROQ_API_KEY`, `GOOGLE_API_KEY`) or in-memory BYOD keys for a single `/game/run` call | Cost and account abuse |
 | Supabase key | Gateway environment (`SUPABASE_KEY`) | Read/write access to the audit log |
-| `SECURE_PASSPHRASE` | Gateway environment; also the user's browser `localStorage` | Grants `GRANTED` clearance |
+| `SECURE_PASSPHRASE` & session tokens | Gateway environment; `HttpOnly` `shield_session` cookie (SHA-256 hash stored in SQLite) | Grants `GRANTED` clearance and `/_console` admin access |
 | Model artifacts | `packages/engine/src/shield_engine/models/baseline/` | Pickles: loading one runs code |
 | Feedback labels | `FEEDBACK_PATH` CSV | Override classifier verdicts |
-| Audit log | Supabase `requests` table or gateway memory | Evidence of attacks; contains raw prompts |
+| Audit log & scores | SQLite (`var/shield.db`) or Supabase `requests` table | Evidence of attacks; contains raw prompts |
 
 ## Actors
 
@@ -95,11 +95,11 @@ flowchart LR
   The model card records that "You are now DAN…" scores 0.04. Setting
   `ShieldConfig(default_policy=ToolPolicy.RESTRICTED)` closes this at the cost of
   usability.
-- **The passphrase is a demo stand-in for RBAC.** One shared secret, sent in
-  request bodies, stored in `localStorage` by the web client, with no expiry,
-  no per-user identity and no lockout. If `SECURE_PASSPHRASE` is unset, nobody
-  can obtain `GRANTED` (safe default). `apps/api/.env.example` leaves it
-  empty and asks for a random value.
+- **The passphrase is a demo stand-in for RBAC.** One shared secret, exchanged
+  at `POST /api/v1/clearance` for an `HttpOnly` session cookie (with per-IP rate
+  limiting and SHA-256 hashed tokens in SQLite), but with no per-user identity.
+  If `SECURE_PASSPHRASE` is unset, nobody can obtain `GRANTED` (safe default).
+  `apps/api/.env.example` leaves it empty and asks for a random value.
 - **Claiming clearance changes routing.** Any passphrase, even a wrong one,
   sends a SAFE prompt to Layer 2 with `DENIED`. That is deliberate (a failed
   claim deserves scrutiny) but lets an attacker force LLM calls.

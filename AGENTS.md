@@ -6,7 +6,7 @@ working in this repository. `CLAUDE.md` files import this file. Package-level
 
 ## What this is
 
-AI S.H.I.E.L.D. is a layered **prompt-injection deflector** for LLM applications,
+`ai-shield` is a layered **prompt-injection deflector** and interactive workflow defence game for LLM applications,
 built to commercial and research standards. It has three separately deployable parts:
 
 | Path | What | Stack |

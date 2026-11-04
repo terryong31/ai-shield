@@ -49,6 +49,15 @@ Example 422:
 | POST | `/api/v1/feedback` | `FeedbackRequest` | `FeedbackResponse` | 200, 422 |
 | GET | `/api/v1/requests` | query `limit` | `AuditRecord[]` | 200, 422 |
 | GET | `/api/v1/stats` | none | `StatsResponse` | 200 |
+| POST | `/api/v1/clearance` | `ClearanceRequest` | `ClearanceStatus` | 200, 401, 422, 429 |
+| GET | `/api/v1/clearance` | none | `ClearanceStatus` | 200 |
+| DELETE | `/api/v1/clearance` | none | empty | 204 |
+| GET | `/api/v1/game/levels` | none | `GameCatalogResponse` | 200 |
+| POST | `/api/v1/game/train-classifier` | `TrainClassifierRequest` | `TrainClassifierResponse` | 200, 400, 422 |
+| POST | `/api/v1/game/run` | `GameRunRequest` | `GameRunResponse` | 200, 400, 422 |
+| GET | `/api/v1/game/scores` | query `level_id`, `limit` | `LeaderboardResponse` | 200, 422 |
+| POST | `/api/v1/game/scores` | `SubmitScoreRequest` | `LeaderboardEntrySchema` | 201, 400, 422 |
+| DELETE | `/api/v1/game/scores/{score_id}` | path `score_id` | empty | 204, 403, 404 |
 
 ### `GET /api/v1/health`
 

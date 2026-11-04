@@ -1,9 +1,9 @@
-# AI S.H.I.E.L.D. documentation
+# ai-shield documentation
 
-AI S.H.I.E.L.D. is a layered prompt-injection deflector for LLM applications.
+`ai-shield` is a layered prompt-injection deflector and interactive workflow defence game for LLM applications.
 The engine (`packages/engine`) decides whether a prompt may reach an
-application and with which tools; a demo gateway (`apps/api`) and web client
-(`apps/web`) show it working.
+application and with which tools, and powers the node-based defence board; the gateway (`apps/api`) and web client
+(`apps/web`) expose the game (`/`, `/game`) and the login-guarded security console (`/_console`).
 
 These docs follow the [Diátaxis](https://diataxis.fr) framework. Pick the
 quadrant that matches what you need right now:

@@ -2,13 +2,13 @@
 
 ## Three deployables
 
-AI S.H.I.E.L.D. is three separately deployable parts in one repository:
+`ai-shield` has three separately deployable parts in one repository:
 
 | Part | Role | Talks to |
 | --- | --- | --- |
-| `packages/engine` (`shield-engine`) | The product: a Python library that decides whether a prompt may reach an LLM application, and with which tools | Nothing directly; everything external comes in through ports |
-| `apps/api` (`shield-api`) | A demo gateway: puts the engine on HTTP, runs a protected demo assistant, owns persistence | Engine (in-process), Groq, Gemini, Supabase |
-| `apps/web` | A demo client that visualises the pipeline | The gateway only, over the published HTTP contract |
+| `packages/engine` (`shield-engine`) | The product: a Python library that decides whether a prompt may reach an LLM application (and with which tools), plus the `shield_engine.game` workflow graph evaluator and custom ML trainer | Nothing directly; everything external comes in through ports |
+| `apps/api` (`shield-api`) | Gateway: puts the engine and game endpoints on HTTP, runs a protected demo assistant, manages clearance sessions, and owns persistence | Engine (in-process), Groq, Gemini, SQLite / Supabase |
+| `apps/web` (`@ai-shield/web`) | Web client: game main menu (`/`), interactive node-based defence board (`/game`), and login-guarded admin console (`/_console`) | The gateway only, over the published HTTP contract |
 
 They are separate because they have different audiences and lifetimes. The
 engine is what someone embeds in their own application, benchmarks in a paper
@@ -78,14 +78,12 @@ fakes and pass it to `create_app(container)`, so no test patches module globals.
 
 | Layer | Modules | Rule |
 | --- | --- | --- |
-| Routers | `routers/*.py` | HTTP mapping only |
-| Services | `services/chat.py`, `access.py`, `audit.py` | The `/chat` flow, request options to engine inputs, persistence |
+| Routers | `routers/*.py` (`health`, `screening`, `chat`, `feedback`, `audit`, `clearance`, `game`) | HTTP mapping only |
+| Services | `services/chat.py`, `access.py`, `sessions.py`, `audit.py` | The `/chat` flow, session cookies to `Clearance`, request options to engine inputs, persistence |
 | Demo | `demo/assistant.py`, `tools.py`, `gemini.py` | The protected application: an assistant and a simulated toolbox |
 | Contract | `schemas.py` | Pydantic models exported to `contracts/shield-api.openapi.json` |
 
-`services/access.py` is where credentials stop. A passphrase becomes a
-`Clearance` (`NONE`, `DENIED`, `GRANTED`) with a constant-time comparison; a mode
-becomes a `ShieldConfig`. Nothing past this point sees the passphrase.
+`services/access.py` and `services/sessions.py` are where credentials stop. A passphrase is exchanged once at `POST /api/v1/clearance` for an `HttpOnly` session cookie (`shield_session`, stored only as a SHA-256 hash in SQLite), which resolves to a `Clearance` (`NONE`, `DENIED`, `GRANTED`); a mode becomes a `ShieldConfig`. Nothing past this point sees the passphrase or session token.
 
 ## Request lifecycle of `POST /api/v1/chat`
 
@@ -100,10 +98,10 @@ sequenceDiagram
     participant A as Demo assistant
     participant D as Audit log
 
-    B->>R: POST /api/v1/chat {message, mode, passphrase}
-    R->>S: chat_events(request, container)
+    B->>R: POST /api/v1/chat {message, mode} + Cookie: shield_session
+    R->>S: chat_events(request, clearance, container)
     S-->>B: START
-    S->>S: passphrase -> Clearance, mode -> ShieldConfig
+    S->>S: session -> Clearance, mode -> ShieldConfig
     S->>E: screen_stream(prompt, context, config)
     E-->>S: StageStarted(classifier), ClassifierScored
     S-->>B: STAGE_CHANGE(ml_processing), ML_RESULT
