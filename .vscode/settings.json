@@ -1,0 +1,20 @@
+{
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.venv/**": true,
+    "**/.nuxt/**": true,
+    "**/.output/**": true,
+    "**/__pycache__/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.venv": true,
+    "**/.nuxt": true,
+    "**/.output": true,
+    "**/__pycache__": true,
+    "**/bun.lock": true,
+    "**/uv.lock": true
+  }
+}

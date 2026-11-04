@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software in research, please cite it as below."
+title: "AI S.H.I.E.L.D.: a layered prompt-injection deflector for LLM applications"
+type: software
+authors:
+  - family-names: Ong
+    given-names: Terry
+repository-code: "https://github.com/terryong31/ai-shield"
+keywords:
+  - prompt injection
+  - LLM security
+  - guardrails
+  - AI safety
+version: 0.1.0
+date-released: 2026-09-23

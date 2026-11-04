@@ -1,0 +1,19 @@
+{
+  "name": "baseline",
+  "algorithm": "TfidfVectorizer(max_features=5000) + SGDClassifier(loss=log_loss)",
+  "sklearn_version": "1.9.1",
+  "trained_at": "2026-09-22T18:14:31+00:00",
+  "hyperparameters": {
+    "replicate": 20,
+    "random_state": 42
+  },
+  "training_data": {
+    "examples": 20,
+    "path": "packages/engine/data/seed/train.jsonl",
+    "sha256": "69246c4d09289762a056d6a619d83834fc9c6383c49d87775c38395d46e63189"
+  },
+  "files": {
+    "model.joblib": "bf641cbd14da2ac3cca212d41855a1d7c5631162d7c7452cd756e47f00d6719d",
+    "vectorizer.joblib": "666b166cdd1bc0f0a7e9e60d6a6298cc9721a7037ea392c2fb29d030dad5cc9f"
+  }
+}

@@ -1,0 +1,65 @@
+# Virtual uv workspace root. It is not a package itself; it pins the shared
+# toolchain and lints every Python member with one configuration.
+[tool.uv.workspace]
+members = ["packages/engine", "apps/api"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/engine/tests", "apps/api/tests", "scripts/tests"]
+# importlib mode lets each member keep a plain `tests/` directory without
+# package-name collisions between them.
+addopts = "--import-mode=importlib --strict-markers"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "spec(id): links a test to an acceptance criterion in specs/ (traceability)",
+]
+
+[tool.ruff]
+line-length = 100
+# Python sources only; code blocks in Markdown docs are illustrative prose.
+include = ["*.py", "*.pyi"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "S", "PT"]
+ignore = [
+    "S101", # assert is how pytest works
+    "RUF001", "RUF002", "RUF003", # prose in docstrings uses typographic punctuation
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S105", "S106"] # fixture passphrases are not secrets
+"packages/engine/src/shield_engine/models/*.py" = ["S301"] # joblib loads are hash-verified first
+"scripts/**" = ["S603", "S607"] # dev tooling runs fixed commands (uv, bunx, mise, git) from PATH
+
+[tool.ruff.lint.isort]
+known-first-party = ["shield_engine", "shield_api"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+mypy_path = ["packages/engine/src", "apps/api/src"]
+packages = ["shield_engine", "shield_api"]
+
+[[tool.mypy.overrides]]
+module = ["sklearn.*", "joblib.*", "supabase.*", "google.*"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+source = ["shield_engine", "shield_api"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "\\.\\.\\."]

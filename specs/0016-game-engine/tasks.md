@@ -1,0 +1,23 @@
+# 0016 Tasks: AI Defender workflow game
+
+- [x] **ENG-GAME-001** Validate board graphs (anchor nodes, unknown edges, cycle detection)
+- [x] **ENG-GAME-002** Implement `WordFilterDetector` and `TextCleaner`
+- [x] **ENG-GAME-003** Implement `evaluate_message` graph traversal with per-hop trace
+- [x] **ENG-GAME-004** Define built-in `easy`, `medium`, and `hard` level waves
+- [x] **ENG-GAME-005** Implement `score_wave` with false alarm and leak penalties
+- [x] **ENG-GAME-006** Prove cascading branch board beats all-LLM board on `medium` level
+- [x] **API-GAME-001** Add `GET /api/v1/game/levels` endpoint
+- [x] **API-GAME-002** Add `POST /api/v1/game/run` wave evaluation and board validation
+- [x] **API-GAME-003** Support `custom_message` red-team test in `POST /api/v1/game/run`
+- [x] **API-GAME-004** Persist and query high scores in SQLite via `POST` and `GET /api/v1/game/scores`
+- [x] **API-GAME-005** Guard `DELETE /api/v1/game/scores` behind admin clearance session
+- [x] **WEB-GAME-001** Build `/` landing page with level select cards and scoreboard table
+- [x] **WEB-GAME-002** Build `/game` interactive Vue Flow builder, wave runner, and custom message tester
+- [x] **WEB-GAME-003** Build `/_console` admin console with clearance gate and `/dashboard` redirects
+- [x] **WEB-GAME-004** Enforce monochrome Nuxt UI tokens, zero native inputs/buttons/tables, zero emojis, and zero em-dashes
+- [x] **ENG-GAME-007** Require intermediate tool nodes and add trainable `ml_classifier`, `length_limit`, and `secret_scan`
+- [x] **API-GAME-006** Add `POST /api/v1/game/train` for custom ML dataset training and Supabase Auth support on clearance
+- [x] **WEB-GAME-005** Redesign main menu, game top bars, quit modal, double-click node settings modal, `Safe`/`Assistant` node counters, and `UAuthForm` admin login
+- [ ] **ENG-GAME-007** Require intermediate tool nodes and add trainable `ml_classifier`, `length_limit`, and `secret_scan`
+- [ ] **API-GAME-006** Add `POST /api/v1/game/train` for custom ML dataset training and Supabase Auth support on clearance
+- [x] **WEB-GAME-005** Redesign main menu, game top bars, quit modal, double-click node settings modal, `Safe`/`Assistant` node counters, and `UAuthForm` admin login

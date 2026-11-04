@@ -1,53 +1,53 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+node_modules/
+.venv/
 
-# testing
-/coverage
+# build output
+.nuxt/
+.output/
+dist/
+build/
+*.tsbuildinfo
 
-# next.js
-/.next/
-/out/
+# python caches
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
-# production
-/build
+# runtime state written by the gateway (feedback labels, etc.)
+apps/api/var/
+var/
+*.db
+*.scpt
+
+# evaluation reports are regenerated; commit curated ones under docs/ instead
+reports/
+
+# env files (commit only examples)
+.env*
+!.env.example
+
+# local datasets and third-party documents (never commit)
+injection_dataset/
+company_document/
+*.csv
+
+# pickled models are only allowed as hash-verified engine artifacts
+*.pkl
 
 # misc
 .DS_Store
 *.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
 .vercel
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# active SDD cycle state (per checkout; results are recorded in specs on sdd:done)
+.sdd/
 
-/venv
-*/__pycache__/
-# datasets
-injection_dataset/
-*.csv
-# *.pkl (Keep ignored generally, but allow for ml-endpoint)
-*.pkl
-!ml-endpoint/*.pkl
-__pycache__/
+# Claude Code: personal settings stay local, shared settings are committed
+.claude/settings.local.json
 
-*/venv/
+.mypy_cache/

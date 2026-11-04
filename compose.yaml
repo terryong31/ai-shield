@@ -1,0 +1,44 @@
+# Runs the demo as containers: `mise run up` (or `docker compose up --build`).
+#   web  http://localhost:3000
+#   api  http://localhost:8000/api/v1/docs
+#
+# Audit log: SQLite in the `shield-data` volume by default. To use Supabase,
+# set SUPABASE_URL and SUPABASE_KEY in apps/api/.env. For the local Supabase
+# stack (`mise run db:start`), use SUPABASE_URL=http://host.docker.internal:54321.
+
+name: ai-shield
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - path: apps/api/.env
+        required: false
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000}
+    ports:
+      - "8000:8000"
+    volumes:
+      - shield-data:/app/var
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      # Read by the browser, so it must be the API address as seen from the host.
+      NUXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  shield-data:

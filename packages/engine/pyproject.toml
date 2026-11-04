@@ -1,0 +1,44 @@
+[project]
+name = "shield-engine"
+version = "0.1.0"
+description = "Layered prompt-injection deflector: classifier, moderation and adjudication behind one pipeline."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "AI S.H.I.E.L.D. contributors" }]
+keywords = ["llm", "prompt-injection", "guardrails", "ai-safety", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+# The core stays free of web frameworks, databases and provider SDKs so it can
+# be embedded anywhere. Providers are opt-in extras.
+dependencies = [
+    "scikit-learn>=1.9,<1.10",
+    "joblib>=1.4",
+]
+
+[project.optional-dependencies]
+groq = ["groq>=0.37"]
+
+[project.scripts]
+shield-engine = "shield_engine.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shield_engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib --strict-markers"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "spec(id): links a test to an acceptance criterion in specs/ (traceability)",
+]

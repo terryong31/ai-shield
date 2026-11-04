@@ -1,0 +1,15 @@
+name: Feature request
+description: Propose new behaviour (becomes a spec)
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: Problem, description: Who is affected and why does it matter? }
+    validations: { required: true }
+  - type: textarea
+    id: outcome
+    attributes: { label: Desired outcome, description: Observable behaviour. Draft acceptance criteria are welcome. }
+    validations: { required: true }
+  - type: textarea
+    id: alternatives
+    attributes: { label: Alternatives considered }

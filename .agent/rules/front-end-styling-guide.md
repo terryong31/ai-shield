@@ -2,11 +2,4 @@
 trigger: always_on
 ---
 
-DO NOT FUCKING USE SVG ICONS, IF YOU USE IT I WILL FUCKING REFUND GOOGLE AI PRO. 
-
-I REPEAT DO NOT FUCKING USE SVG ICONS FUCKTARD. 
-
-MY APP IS CALLED "AI S.H.I.E.L.D." NOT SOME FUCKING "Security Analytics
-Real-time threat monitoring and injection analysis." FUCK THAT SHIT.
-
-ALWAYS FOLLOW SHADCN UI STYLING!!!
+Use Nuxt 4, Nuxt UI and Vueflow only components. Use MCP if uncertain. 

@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+html,
+body,
+#__nuxt {
+  height: 100%;
+}
+
+body {
+  background-color: var(--ui-bg);
+  color: var(--ui-text);
+  overflow: hidden;
+}
+
+/* Vue Flow monochrome canvas overrides */
+.vue-flow__panel {
+  background: transparent;
+}
+
+.vue-flow__edge-path {
+  stroke: var(--ui-border-accented);
+  stroke-width: 1.75;
+}
+
+.vue-flow__edge.animated path {
+  stroke: var(--ui-text-highlighted);
+  stroke-width: 2.25;
+}
+
+.vue-flow__controls {
+  box-shadow: none;
+}
+
+.vue-flow__controls-button {
+  background: var(--ui-bg-elevated);
+  border-bottom: 1px solid var(--ui-border);
+  fill: var(--ui-text-muted);
+}
+
+.vue-flow__controls-button:hover {
+  background: var(--ui-bg-accented);
+  fill: var(--ui-text-highlighted);
+}
+
+/* Minimal scrollbar */
+.chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-border-accented) transparent;
+}
+
+.chat-scroll:hover {
+  scrollbar-color: var(--ui-text-dimmed) transparent;
+}
+
+@supports not (scrollbar-width: thin) {
+  .chat-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .chat-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .chat-scroll::-webkit-scrollbar-thumb {
+    background-color: var(--ui-border-accented);
+    border-radius: 9999px;
+  }
+
+  .chat-scroll:hover::-webkit-scrollbar-thumb {
+    background-color: var(--ui-text-dimmed);
+  }
+}

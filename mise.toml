@@ -1,0 +1,216 @@
+# Toolchain pins and the task runner for the whole monorepo.
+# `mise tasks` lists everything; `mise run check` is the pre-push gate.
+
+[tools]
+node = "24.20.0"
+bun = "1.4.0"
+uv = "0.12.13"
+python = "3.12"
+supabase = "2.116.0"
+
+[env]
+UV_PYTHON = "3.12"
+
+# --- setup -------------------------------------------------------------------
+
+[tasks.setup]
+description = "Install all Python and JavaScript dependencies"
+run = ["uv sync --all-packages", "bun install"]
+
+# --- dev servers ---------------------------------------------------------------
+
+[tasks."api:dev"]
+description = "Run the gateway API with reload on :8000"
+dir = "apps/api"
+run = "uv run uvicorn shield_api.main:app --reload --port 8000"
+
+[tasks."web:dev"]
+description = "Run the Nuxt web client on :3000"
+dir = "apps/web"
+run = "bun run dev"
+
+[tasks.dev]
+description = "Run API and web together"
+depends = ["api:dev", "web:dev"]
+
+# --- tests ---------------------------------------------------------------------
+
+[tasks."test:engine"]
+description = "Engine unit tests with coverage (fails under 90%)"
+run = "uv run pytest packages/engine --cov=shield_engine --cov-fail-under=90"
+
+[tasks."test:api"]
+description = "Gateway tests with coverage (fails under 85%)"
+run = "uv run pytest apps/api --cov=shield_api --cov-fail-under=85"
+
+[tasks."test:tooling"]
+description = "Tests for repo tooling (SDD workflow, spec checker)"
+run = "uv run pytest scripts/tests"
+
+[tasks."test:web"]
+description = "Web unit tests (Vitest)"
+dir = "apps/web"
+run = "bun run test"
+
+[tasks.test]
+description = "All tests"
+depends = ["test:engine", "test:api", "test:tooling", "test:web"]
+
+# --- static checks -------------------------------------------------------------
+
+[tasks."lint:py"]
+description = "Ruff lint + format check"
+run = ["uv run ruff check .", "uv run ruff format --check ."]
+
+[tasks."lint:web"]
+description = "ESLint"
+dir = "apps/web"
+run = "bun run lint"
+
+[tasks.lint]
+description = "All linters"
+depends = ["lint:py", "lint:web"]
+
+[tasks."typecheck:py"]
+description = "mypy --strict over engine and API"
+run = "uv run mypy"
+
+[tasks."typecheck:web"]
+description = "vue-tsc via nuxt typecheck"
+dir = "apps/web"
+run = "bun run typecheck"
+
+[tasks.typecheck]
+description = "All type checkers"
+depends = ["typecheck:py", "typecheck:web"]
+
+[tasks.format]
+description = "Auto-format everything"
+run = ["uv run ruff format .", "uv run ruff check --fix .", "bun run --cwd apps/web lint:fix"]
+
+# --- contracts & specs -----------------------------------------------------------
+
+[tasks.contract]
+description = "Regenerate the OpenAPI contract and the web client's types from it"
+run = ["uv run shield-api-export-openapi", "bun run --cwd apps/web contract"]
+
+[tasks."contract:check"]
+description = "Fail if the committed contract or generated types are stale"
+run = [
+  "uv run shield-api-export-openapi",
+  "bun run --cwd apps/web contract",
+  "git diff --exit-code -- contracts apps/web/app/types/api.gen.ts",
+]
+
+[tasks."spec:check"]
+description = "Every acceptance criterion in accepted specs has a test"
+run = "uv run python scripts/check_spec_coverage.py"
+
+# --- enforced SDD + TDD cycle (spec 0010) ----------------------------------------
+# spec ─▶ red ─▶ green ─▶ verified ─▶ done. Each step checks evidence; see AGENTS.md.
+
+[tasks."sdd:start"]
+description = "Start a cycle: sdd:start <spec> [IDs…]  |  sdd:start --refactor \"reason\""
+run = "python3 scripts/sdd.py start"
+
+[tasks."sdd:red"]
+description = "Run the target criteria's tests; advance only if every criterion has a failing test"
+run = "python3 scripts/sdd.py red"
+
+[tasks."sdd:green"]
+description = "Run the target criteria's tests; advance only if all pass"
+run = "python3 scripts/sdd.py green"
+
+[tasks."sdd:verify"]
+description = "Run the full gate (mise run check); advance only if it passes"
+run = "python3 scripts/sdd.py verify"
+
+[tasks."sdd:done"]
+description = "Close the cycle: mark the spec Implemented and record the verification"
+run = "python3 scripts/sdd.py done"
+
+[tasks."sdd:status"]
+description = "Show the active cycle and the next required step"
+run = "python3 scripts/sdd.py status"
+
+[tasks."sdd:abort"]
+description = "Discard the active cycle (nothing is recorded)"
+run = "python3 scripts/sdd.py abort"
+
+[tasks."spec:new"]
+description = "Scaffold a new spec folder: mise run spec:new <slug>"
+run = "uv run python scripts/new_spec.py"
+
+# --- database (Supabase CLI; needs Docker) ----------------------------------------
+# Without Supabase the API uses SQLite at apps/api/var/shield.db; nothing to run.
+
+[tasks."db:start"]
+description = "Start the local Supabase stack (applies migrations + seed on first run)"
+run = "supabase start"
+
+[tasks."db:stop"]
+description = "Stop the local Supabase stack (data is kept)"
+run = "supabase stop"
+
+[tasks."db:status"]
+description = "Show local URLs and keys (API URL + service_role key go in apps/api/.env)"
+run = "supabase status"
+
+[tasks."db:env"]
+description = "Print SUPABASE_URL / SUPABASE_KEY lines for apps/api/.env from the local stack"
+run = "supabase status -o json | python3 -c \"import json,sys; s=json.load(sys.stdin); print('SUPABASE_URL=' + s['API_URL']); print('SUPABASE_KEY=' + (s.get('SERVICE_ROLE_KEY') or s['SECRET_KEY']))\""
+
+[tasks."db:reset"]
+description = "Recreate the local database from migrations, then run supabase/seed.sql"
+run = "supabase db reset"
+
+[tasks."db:migration"]
+description = "Create a new migration: mise run db:migration <name>"
+run = "supabase migration new"
+
+[tasks."db:diff"]
+description = "Generate SQL for schema changes made in Studio: mise run db:diff -f <name>"
+run = "supabase db diff --schema public"
+
+[tasks."db:lint"]
+description = "Lint the local database schema"
+run = "supabase db lint --schema public"
+
+[tasks."db:link"]
+description = "Link this repo to a hosted project: mise run db:link --project-ref <ref>"
+run = "supabase link"
+
+[tasks."db:push"]
+description = "Apply pending migrations to the linked hosted project (never runs seed)"
+run = "supabase db push"
+
+# --- docker ------------------------------------------------------------------------
+
+[tasks.up]
+description = "Build and run API + web with Docker Compose"
+run = "docker compose up --build"
+
+[tasks.down]
+description = "Stop the Compose stack (the audit-log volume is kept)"
+run = "docker compose down"
+
+# --- research --------------------------------------------------------------------
+
+[tasks.eval]
+description = "Evaluate the baseline pipeline on the held-out seed set"
+run = "uv run shield-engine eval --data packages/engine/data/seed/eval.jsonl --report reports/eval-classifier.json"
+
+[tasks.train]
+description = "Retrain the bundled baseline classifier"
+run = "uv run shield-engine train --data packages/engine/data/seed/train.jsonl"
+
+# --- gate ------------------------------------------------------------------------
+
+[tasks.check]
+description = "Everything CI runs. Must pass before pushing."
+depends = ["lint", "typecheck", "test", "spec:check", "contract:check"]
+
+[tasks."build:web"]
+description = "Production build of the web client"
+dir = "apps/web"
+run = "bun run build"
