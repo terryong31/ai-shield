@@ -92,6 +92,11 @@ Check locally with `mise run spec:check`.
 | 0016 | [AI Defender workflow game](0016-game-engine/spec.md) | ENG, API, WEB | Implemented |
 | 0017 | [Game gateway API](0017-game-api/spec.md) | API | Superseded by 0016 |
 | 0018 | [Web Defender game](0018-game-web/spec.md) | WEB | Superseded by 0016 |
+| 0020 | [Game AI Agent, scoring and run quotas](0020-game-ai-agent/spec.md) | ENG, API, WEB | Implemented |
+| 0021 | [Game level tiers](0021-game-level-tiers/spec.md) | ENG, API, WEB | Implemented |
+| 0022 | [Custom sandbox (BYOD, BYOK)](0022-game-custom-sandbox/spec.md) | ENG, API, WEB | Implemented |
+| 0023 | [Saved boards](0023-game-saved-boards/spec.md) | API, WEB | Implemented |
+| 0024 | [Domain-scoped database schemas (`audit`, `game`, `players`)](0024-domain-schema-storage/spec.md) | API | Implemented |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

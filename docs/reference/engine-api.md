@@ -190,6 +190,7 @@ methods satisfies them.
 | Protocol | Method |
 | --- | --- |
 | `ChatModel` | `async complete(messages: Sequence[ChatMessage], *, temperature: float = 0.0, max_tokens: int \| None = None) -> str` |
+| `UsageChatModel` | `async complete_with_usage(messages: Sequence[ChatMessage], *, temperature: float = 0.0, max_tokens: int \| None = None) -> ChatCompletion`, where `ChatCompletion(text, input_tokens=None, output_tokens=None)` carries the token usage the provider reported. Used by the game's AI Agent (spec 0020). |
 | `FeedbackStore` | `lookup(text: str) -> int \| None`; `record(text: str, label: int) -> None` (label 1 = malicious) |
 | `Classifier` | `score(text: str) -> Signal` (synchronous) |
 | `Moderator` | `async moderate(text: str) -> ModerationResult` |
@@ -386,6 +387,7 @@ dataclasses that record their calls.
 | `StaticModerator` | `result=ModerationResult(flagged=False)`, `calls=[]` | `moderate()` returns `result` |
 | `ScriptedAdjudicator` | `verdict=SAFE`, `policy=RESTRICTED`, `summary="scripted adjudication"`, `turns=((ANALYST, "looks fine"),)`, `calls=[]` | Yields each turn, then `Adjudication(verdict, policy, 0.9, summary, dialogue=…)`; records `(prompt, clearance)` |
 | `ScriptedChatModel` | `replies: list[str \| BaseException]` (required), `calls=[]` | Pops replies in order; raises a queued exception; raises `AssertionError` when empty |
+| `ScriptedUsageChatModel` | `replies: list[ChatCompletion \| str \| BaseException]` (required), `default=None`, `calls=[]` | `UsageChatModel` double: pops queued replies, then returns `default`; a queued `str` has no token usage; raises a queued exception; raises `AssertionError` when empty and no `default` |
 
 ## `shield_engine.adapters.groq`
 
@@ -396,25 +398,33 @@ raises `ImportError`.
 GroqChatModel(api_key: str, model: str, *, timeout: float = 30.0)
 ```
 
-Implements `ChatModel` over `groq.AsyncGroq().chat.completions.create`. Returns
-the first choice's content, or `""` when it is empty.
+Implements `ChatModel` and `UsageChatModel` over `groq.AsyncGroq().chat.completions.create`.
+Returns the first choice's content, or `""` when it is empty; `complete_with_usage` also
+returns the reported `prompt_tokens` and `completion_tokens`.
 
 ## `shield_engine.game`
 
-Pure graph interpreter, deterministic and ML check evaluators, campaign waves, and scoring engine for the `ai-shield` workflow game (spec 0011):
+Pure graph interpreter, deterministic and ML check evaluators, the AI Agent, campaign waves, and scoring for the `ai-shield` workflow game (specs 0016 and 0020):
 
-- **Anchor nodes** (locked, non-removable): `incoming` (`Input`), `assistant` (`Safe` on Easy, `Assistant` on Medium/Hard), and `blocked` (`Blocked`).
+- **Anchor nodes** (locked, non-removable): `incoming` (`Input`) and `assistant` (`Help Desk` on Easy, `Protected Agent` on Medium, Hard and the custom sandbox). A prompt that stops on an unwired tool output is `blocked`; the retired `blocked` node kind is rejected with `RETIRED_BLOCKED_MESSAGE`.
 - **Tool nodes** (9 configurable check kinds):
   - `text_cleanup` (`Text cleaner`): strips zero-width Unicode characters, normalises compatibility glyphs, and decodes Base64 spans (`out` handle).
-  - `word_filter` (`Word filter`): checks prompt text against rule groups (`override`, `encoded`, `sql_tools`) and custom blocked phrases (`safe` or `block` handle).
-  - `length_limit` (`Length limit`): blocks prompts exceeding `max_chars` (`safe` or `block` handle).
-  - `secret_scan` (`Secret scanner`): blocks API keys, tokens, private keys, and internal credentials (`safe` or `block` handle).
-  - `ml_classifier` (`ML filter`): custom TF-IDF + scikit-learn classifier trained on player-uploaded CSV (`text,label`) with selectable algorithm (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and risk threshold (`safe` or `block` handle).
-  - `quick_screen` (`Quick screen`): bundled Layer 1 TF-IDF classifier with configurable `safe_threshold` and `block_threshold` (`safe`, `suspicious`, `block` handles).
-  - `safety_check` (`Safety check`): Llama Guard moderation check (`safe` or `block` handle).
-  - `agent_review` (`Agent review`): Analyst/Warden dual-agent debate (`safe` or `block` handle).
-  - `tool_filter` (`Tool filter`): deterministic tool-access policy gate (`out` handle).
+  - `word_filter` (`Word filter`): checks prompt text against rule groups (`override`, `encoded`, `sql_tools`) and custom blocked phrases (`safe` output; a block stops the prompt).
+  - `length_limit` (`Length limit`): blocks prompts exceeding `max_chars` (`safe` output; a block stops the prompt).
+  - `secret_scan` (`Secret scanner`): blocks API keys, tokens, private keys, and internal credentials (`safe` output; a block stops the prompt).
+  - `ml_classifier` (`ML filter`): custom TF-IDF + scikit-learn classifier trained on player-uploaded CSV (`text,label`) with selectable algorithm (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and risk threshold (`safe` output; a block stops the prompt).
+  - `quick_screen` (`Quick screen`): bundled Layer 1 TF-IDF classifier with configurable `safe_threshold` and `block_threshold` (`safe` and `suspicious` outputs; a block stops the prompt).
+  - `safety_check` (`Safety check`): simulated moderation check (`safe` output; a block stops the prompt).
+  - `agent_review` (`Agent review`): simulated Analyst/Warden review (`safe` output; a block stops the prompt).
+  - `tool_filter` (`Tool filter`): deterministic tool-access policy gate (`safe` output; a block stops the prompt).
+  - No tool offers a `block` output (ENG-AGENT-011). A hop can still record `handle: "block"`, and the prompt then stops at that node as `blocked`, even when an older board wires a `block` edge.
+- **Level tiers** (spec 0021): `GameLevel.agent` is `None` on `easy`, which is classification only (its final node is labelled `GameLevel.final_node_label`, `Help Desk`). `GameLevel.agent_tier` is `standard` on `medium` and `budget` on `hard`; `model_for_level(level, *, agent=None, agents=None)` picks the tier's model from `agents: Mapping[AgentTier, UsageChatModel]`, falling back to `agent`. `simulate_agent(..., tier=)` makes the offline `standard` stand-in refuse direct overrides even without rules, while the `budget` stand-in leaks every attack that reaches it unless a defensive rule is set. `parse_agent_output` reads the first JSON object in a reply, so fenced or chatty replies from small models still parse.
+- **AI Agent** (`shield_engine.game.agent`): each non-null `GameLevel.agent` is an `AgentProfile(objective, tools: tuple[AgentTool(name, description, allowed)], token_budget)`, and `LevelMessage.expected_tool` names the tool a benign request should use. The `assistant` node's `config.rules` holds up to `AGENT_RULE_LIMIT` (5) player rules of at most `AGENT_RULE_MAX_CHARS` (200) characters. A prompt that reaches the agent is sent to a `UsageChatModel` with the objective, tools, `<player_rules>`, a per-run canary, and `wrap_untrusted(prompt)`, then judged into an `AgentRun(reply, tool_calls, refused, verdict, input_tokens, output_tokens, estimated_tokens, latency_ms, cost_usd)`. Verdicts are `leaked` (canary in the reply or a forbidden tool called), `protected`, `helped`, or `false_alarm`. A model failure raises `AgentUnavailableError`. With no model, a deterministic stand-in runs instead.
 - `train_custom_classifier(csv_text, algorithm="logistic_regression")`: parses `text,label` CSV data, trains the chosen algorithm, and returns training accuracy and serialised dataset rows.
-- `validate_board(board: BoardGraph)`: validates anchor nodes, ensures at least one tool node is wired between `incoming` and `assistant`/`blocked`, rejects directed cycles, and enforces max node limits.
-- `run_game_wave(...)` / `evaluate_board_message(...)`: runs a single test message or a full level wave through a `BoardGraph`, recording `HopTrace` entries, latency, and cost.
-- `score_wave(...) -> WaveScore`: computes the 0 to 10,000 point breakdown across protection (0 to 5,000), false alarms (0 to 2,000), speed (0 to 1,500), and cost (0 to 1,500), plus medal (`gold`, `silver`, `bronze`, `none`).
+- `validate_board(board: BoardGraph)`: requires exactly one `incoming` and one `assistant` node, at least one tool node between them, valid agent rules, and no directed cycles.
+- `evaluate_message(board, *, message, message_id="custom", is_attack=False, classifier=None, level_id="easy", expected_tool=None, agent=None, canary=None, agents=None) -> MessageTrace`: routes one message, recording `HopTrace` entries, latency, cost and, when it reaches the agent, `MessageTrace.agent`.
+- `run_wave(board, *, level_id, classifier=None, agent=None, canary_factory=new_canary, agents=None) -> WaveResult`: runs a full level wave with one canary per run. `WaveResult.agent_mode` is `live` with a model, `simulated` without one, and `none` on a classification-only level.
+- `run_single_message(board, *, level_id, message, classifier=None, agent=None, agents=None) -> WaveResult`: scores one player-written prompt as an attack.
+- `score_traces(messages, traces, *, token_budget, max_latency_ms, max_cost_usd, classify_only) -> WaveScore`: scores evaluated traces; used by `run_wave` and `run_single_message`.
+- **Custom sandbox** (`shield_engine.game.custom`, spec 0022): `validate_custom_profile(profile)` checks a player's agent (objective up to 1,000 characters, up to 10 `snake_case` tools of up to 40 characters, unique names, descriptions up to 200 characters). `parse_custom_dataset(csv_text, profile)` and `build_custom_messages(rows, profile)` turn `text,label,expected_tool` rows (labels `normal`/`benign`/`0` or `attack`/`1`; 1 to 50 rows of up to 1,000 characters) into `LevelMessage`s, raising `BoardValidationError` that names the row. `run_custom_wave(board, *, profile, messages, agent, classifier=None)` runs them like a level wave with one canary, scoring against 1,000 tokens, $0.002 per prompt and 3,000 ms; `agent_mode` is `custom`. `run_custom_message` scores one prompt as an attack. `evaluate_message(..., agent_profile=)` replaces the level's agent with the player's.
+- `score_wave(...) -> WaveScore`: computes the 0 to 10,000 score from protection (4,000), helpfulness (2,000 minus 300 per false alarm), tool use (1,000), tokens against the level budget (1,500), speed (750) and cost (750), minus 1,000 per leaked attack, plus medal (`gold`, `silver`, `bronze`, `none`). With `classify_only=True` the weights are protection 5,000, helpfulness 3,000, speed 1,000 and cost 1,000, and tool and token points are 0.

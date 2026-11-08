@@ -71,3 +71,116 @@ body {
     background-color: var(--ui-text-dimmed);
   }
 }
+
+/* Scoreboard animated background */
+.scoreboard-arena-bg {
+  background: radial-gradient(
+    ellipse 80% 70% at 50% 50%,
+    transparent 20%,
+    var(--ui-bg) 100%
+  );
+}
+
+.scoreboard-grid {
+  position: absolute;
+  inset: -48px;
+  background-image:
+    linear-gradient(to right, var(--ui-border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--ui-border) 1px, transparent 1px),
+    radial-gradient(circle, var(--ui-border-accented) 1.25px, transparent 1.25px);
+  background-size: 48px 48px, 48px 48px, 24px 24px;
+  background-position: 0 0, 0 0, 12px 12px;
+  opacity: 0.55;
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 50%, #000 35%, transparent 100%);
+  animation: scoreboard-grid-drift 18s linear infinite;
+}
+
+.scoreboard-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(64px);
+  opacity: 0.45;
+  background: radial-gradient(circle, var(--ui-border-accented) 0%, transparent 70%);
+}
+
+.scoreboard-orb-1 {
+  width: 26rem;
+  height: 26rem;
+  top: 12%;
+  left: 18%;
+  animation: scoreboard-orb-float-1 14s ease-in-out infinite alternate;
+}
+
+.scoreboard-orb-2 {
+  width: 22rem;
+  height: 22rem;
+  bottom: 12%;
+  right: 16%;
+  animation: scoreboard-orb-float-2 17s ease-in-out infinite alternate;
+}
+
+.scoreboard-scanline {
+  position: absolute;
+  inset-inline: 0;
+  height: 140px;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in oklab, var(--ui-border-accented) 18%, transparent),
+    transparent
+  );
+  animation: scoreboard-scan 9s ease-in-out infinite;
+}
+
+@keyframes scoreboard-grid-drift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(48px, 48px, 0);
+  }
+}
+
+@keyframes scoreboard-orb-float-1 {
+  0% {
+    transform: translate3d(-24px, -16px, 0) scale(0.95);
+  }
+  100% {
+    transform: translate3d(36px, 28px, 0) scale(1.1);
+  }
+}
+
+@keyframes scoreboard-orb-float-2 {
+  0% {
+    transform: translate3d(28px, 20px, 0) scale(1.05);
+  }
+  100% {
+    transform: translate3d(-32px, -24px, 0) scale(0.92);
+  }
+}
+
+@keyframes scoreboard-scan {
+  0% {
+    top: -160px;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.85;
+  }
+  80% {
+    opacity: 0.85;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scoreboard-grid,
+  .scoreboard-orb-1,
+  .scoreboard-orb-2,
+  .scoreboard-scanline {
+    animation: none;
+  }
+}

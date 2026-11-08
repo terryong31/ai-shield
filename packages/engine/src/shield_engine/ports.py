@@ -31,6 +31,27 @@ class ChatModel(Protocol):
     ) -> str: ...
 
 
+@dataclass(frozen=True, slots=True)
+class ChatCompletion:
+    """A completion plus the token usage the provider reported (``None`` when it didn't)."""
+
+    text: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+class UsageChatModel(Protocol):
+    """A chat model that also reports token usage, used to score the game's AI Agent."""
+
+    async def complete_with_usage(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ChatCompletion: ...
+
+
 class FeedbackStore(Protocol):
     """Human-reviewed labels keyed by exact prompt text (1 = malicious)."""
 

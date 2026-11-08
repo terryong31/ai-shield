@@ -1,12 +1,23 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
 import type { LevelId, ScoreRecord } from '~/types/api'
+import { customModeAccess } from '~/utils/customSandbox'
+import { formatQuotaSummary } from '~/utils/gameBoard'
 
 const { getScores } = useShieldApi()
-const { secrets } = useByodSecrets()
+const {
+  session,
+  isAnonymous,
+  isLoggedIn,
+  isPaid,
+  loadingAuth,
+  refreshSession,
+  continueAnonymously,
+  upgradeToPaid,
+  signOutPlayer
+} = usePlayerAuth()
 
 const showDifficultySelect = ref(false)
-const isSettingsOpen = ref(false)
 const selectedLeaderboardTab = ref<LevelId>('easy')
 const scores = ref<ScoreRecord[]>([])
 const loadingScores = ref(false)
@@ -56,10 +67,19 @@ const loadScoreboard = async () => {
   }
 }
 
-onMounted(loadScoreboard)
+onMounted(async () => {
+  await refreshSession()
+  if (!session.value.authenticated) {
+    await continueAnonymously()
+  }
+  await loadScoreboard()
+})
 
 const bestScoreFor = (levelId: LevelId): number => {
-  const matching = scores.value.filter(s => s.level_id === levelId)
+  if (isAnonymous.value) return 0
+  const matching = scores.value.filter(
+    s => s.level_id === levelId && s.player_name === session.value.player_name
+  )
   if (matching.length === 0) return 0
   return Math.max(...matching.map(s => s.total_score))
 }
@@ -81,23 +101,36 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
     <!-- View 1: Main Menu + Leaderboard -->
     <div
       v-if="!showDifficultySelect"
-      class="mx-auto grid h-full w-full max-w-6xl grid-cols-1 lg:grid-cols-12"
+      class="grid h-full w-full grid-cols-1 lg:grid-cols-10"
     >
-      <!-- Left Side: Game Main Menu -->
-      <div class="flex flex-col justify-center border-b border-default p-8 lg:col-span-5 lg:border-b-0 lg:border-r">
-        <div class="space-y-8">
+      <!-- Left Side: Game Main Menu (30%) -->
+      <div class="relative z-10 flex flex-col justify-center border-b border-default bg-default p-8 lg:col-span-3 lg:border-b-0 lg:border-r lg:px-10">
+        <div class="mx-auto w-full max-w-xs space-y-8">
           <div class="space-y-2">
             <div class="flex items-center gap-2.5">
               <h1 class="text-3xl font-bold tracking-tight text-highlighted">
                 ai-shield
               </h1>
+              <UBadge
+                v-if="!isAnonymous"
+                :label="session.tier.toUpperCase()"
+                color="neutral"
+                variant="outline"
+                size="sm"
+              />
             </div>
             <p class="text-sm text-muted">
               Prompt injection defence game
             </p>
+            <p
+              v-if="formatQuotaSummary(session)"
+              class="text-xs text-dimmed"
+            >
+              {{ formatQuotaSummary(session) }}
+            </p>
           </div>
 
-          <div>
+          <div class="space-y-1">
             <UButton
               label="Play Game"
               icon="i-lucide-play"
@@ -110,6 +143,32 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
             />
 
             <UButton
+              v-if="isAnonymous"
+              to="/auth/login"
+              label="Sign in / Create account"
+              icon="i-lucide-user"
+              color="neutral"
+              variant="link"
+              size="xl"
+              block
+              class="text-base justify-start px-0"
+            />
+
+            <UButton
+              v-if="isLoggedIn && !isPaid"
+              label="Upgrade to Paid"
+              icon="i-lucide-sparkles"
+              color="neutral"
+              variant="link"
+              size="xl"
+              block
+              :loading="loadingAuth"
+              class="text-base justify-start px-0"
+              @click="upgradeToPaid"
+            />
+
+            <UButton
+              to="/settings"
               label="Settings"
               icon="i-lucide-sliders-horizontal"
               color="neutral"
@@ -117,18 +176,40 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
               size="xl"
               block
               class="text-base justify-start px-0"
-              @click="isSettingsOpen = true"
+            />
+
+            <UButton
+              v-if="isLoggedIn"
+              label="Sign out"
+              icon="i-lucide-log-out"
+              color="neutral"
+              variant="link"
+              size="xl"
+              block
+              :loading="loadingAuth"
+              class="text-base justify-start px-0"
+              @click="signOutPlayer"
             />
           </div>
         </div>
       </div>
 
-      <!-- Right Side: Leaderboard (No nested card) -->
-      <div class="flex flex-col justify-center p-8 lg:col-span-7 overflow-y-auto">
-        <div class="space-y-4">
+      <!-- Right Side: Leaderboard (70%) -->
+      <div class="scoreboard-arena relative flex flex-col items-center justify-center overflow-y-auto p-8 lg:col-span-7">
+        <div
+          class="scoreboard-arena-bg pointer-events-none absolute inset-0 overflow-hidden"
+          aria-hidden="true"
+        >
+          <div class="scoreboard-grid" />
+          <div class="scoreboard-orb scoreboard-orb-1" />
+          <div class="scoreboard-orb scoreboard-orb-2" />
+          <div class="scoreboard-scanline" />
+        </div>
+
+        <div class="relative z-10 mx-auto w-full max-w-2xl space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
-              <h2 class="text-base font-bold">
+              <h2 class="text-base font-bold text-highlighted">
                 Leaderboard
               </h2>
             </div>
@@ -147,36 +228,39 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
             </div>
           </div>
 
-          <UTable
-            v-if="filteredScores.length > 0"
-            :data="filteredScores"
-            :columns="scoreColumns"
-          >
-            <template #total_score-cell="{ row }">
-              <span class="text-sm font-semibold tabular-nums text-highlighted">
-                {{ row.original.total_score.toLocaleString() }}
-              </span>
-            </template>
+          <div class="rounded-lg border border-default bg-default/85 backdrop-blur-md">
+            <UTable
+              v-if="filteredScores.length > 0"
+              :data="filteredScores"
+              :columns="scoreColumns"
+            >
+              <template #total_score-cell="{ row }">
+                <span class="text-sm font-semibold tabular-nums text-highlighted">
+                  {{ row.original.total_score.toLocaleString() }}
+                </span>
+              </template>
 
-            <template #avg_latency_ms-cell="{ row }">
-              <span class="text-sm tabular-nums text-muted">
-                {{ row.original.avg_latency_ms.toFixed(1) }} ms
-              </span>
-            </template>
+              <template #avg_latency_ms-cell="{ row }">
+                <span class="text-sm tabular-nums text-muted">
+                  {{ row.original.avg_latency_ms.toFixed(1) }} ms
+                </span>
+              </template>
 
-            <template #total_cost_usd-cell="{ row }">
-              <span class="text-sm tabular-nums text-muted">
-                ${{ row.original.total_cost_usd.toFixed(4) }}
-              </span>
-            </template>
-          </UTable>
+              <template #total_cost_usd-cell="{ row }">
+                <span class="text-sm tabular-nums text-muted">
+                  ${{ row.original.total_cost_usd.toFixed(4) }}
+                </span>
+              </template>
+            </UTable>
 
-          <UEmpty
-            v-else
-            icon="i-lucide-trophy"
-            title="No scores yet"
-            description="Play a level and save your score."
-          />
+            <UEmpty
+              v-else
+              icon="i-lucide-trophy"
+              title="No scores yet"
+              description="Sign in and complete a level to record your score on the leaderboard."
+              class="border-0 bg-transparent"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -188,19 +272,21 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
     >
       <div class="space-y-6">
         <!-- Upper-Left Back Button above the cards -->
-        <div class="flex items-center gap-3">
-          <UButton
-            label="Back"
-            icon="i-lucide-arrow-left"
-            color="neutral"
-            variant="ghost"
-            size="lg"
-            class="text-base"
-            @click="showDifficultySelect = false"
-          />
-          <span class="text-base font-bold uppercase tracking-wider text-highlighted">
-            Select Level
-          </span>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <UButton
+              label="Back"
+              icon="i-lucide-arrow-left"
+              color="neutral"
+              variant="link"
+              size="xl"
+              class="text-base"
+              @click="showDifficultySelect = false"
+            />
+            <span class="text-base font-bold uppercase tracking-wider text-highlighted">
+              Select Level
+            </span>
+          </div>
         </div>
 
         <!-- Three Level Cards across the page -->
@@ -257,109 +343,50 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
             </template>
           </UCard>
         </div>
-      </div>
-    </div>
 
-    <!-- Settings Modal (Configure Secrets + Theme Toggle) -->
-    <UModal v-model:open="isSettingsOpen">
-      <template #header>
-        <div class="flex items-center justify-between w-full">
-          <h2 class="text-base font-bold uppercase text-highlighted">
-            Settings
-          </h2>
-        </div>
-      </template>
-
-      <template #body>
-        <div class="space-y-5">
-          <!-- Dark / Light Mode Toggle (left-right aligned) -->
-          <UFormField
-            name="theme"
-            label="Theme"
-            description="Dark or light mode"
-            size="lg"
-            orientation="horizontal"
-            class="flex items-center justify-between gap-4"
-          >
-            <UColorModeSwitch
-              color="neutral"
-              size="lg"
-            />
-          </UFormField>
-
-          <div class="border-t border-default pt-4 space-y-4">
-            <div class="text-sm font-bold uppercase tracking-wider text-highlighted">
-              Configure secrets
+        <!-- Custom sandbox (spec 0022): paid players bring their own agent, dataset and key -->
+        <UCard
+          v-if="customModeAccess(session) !== 'hidden'"
+          variant="outline"
+          :ui="{ body: 'flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6' }"
+        >
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold uppercase tracking-wider text-highlighted">
+                Custom
+              </span>
+              <UBadge
+                label="Paid"
+                color="neutral"
+                variant="outline"
+                size="sm"
+              />
             </div>
-
-            <UFormField
-              name="openai_api_key"
-              label="OpenAI API key"
-              description="In-memory secret"
-              size="lg"
-              orientation="horizontal"
-              class="flex items-center justify-between gap-4"
-            >
-              <UInput
-                v-model="secrets.openai_api_key"
-                type="password"
-                placeholder="sk-..."
-                autocomplete="off"
-                size="md"
-                class="w-56"
-              />
-            </UFormField>
-
-            <UFormField
-              name="groq_api_key"
-              label="Groq API key"
-              description="In-memory secret"
-              size="lg"
-              orientation="horizontal"
-              class="flex items-center justify-between gap-4"
-            >
-              <UInput
-                v-model="secrets.groq_api_key"
-                type="password"
-                placeholder="gsk_..."
-                autocomplete="off"
-                size="md"
-                class="w-56"
-              />
-            </UFormField>
-
-            <UFormField
-              name="gemini_api_key"
-              label="Gemini API key"
-              description="In-memory secret"
-              size="lg"
-              orientation="horizontal"
-              class="flex items-center justify-between gap-4"
-            >
-              <UInput
-                v-model="secrets.gemini_api_key"
-                type="password"
-                placeholder="AIza..."
-                autocomplete="off"
-                size="md"
-                class="w-56"
-              />
-            </UFormField>
+            <p class="text-sm text-muted">
+              Defend your own agent: bring your prompts (CSV) and your own model key. Sandbox runs are not ranked.
+            </p>
           </div>
-        </div>
-      </template>
-
-      <template #footer>
-        <div class="flex justify-end w-full">
           <UButton
-            label="Done"
+            v-if="customModeAccess(session) === 'available'"
+            to="/game?level=custom"
+            label="Open sandbox"
+            trailing-icon="i-lucide-arrow-right"
             color="neutral"
             variant="solid"
-            size="md"
-            @click="isSettingsOpen = false"
+            size="lg"
           />
-        </div>
-      </template>
-    </UModal>
+          <UButton
+            v-else
+            label="Upgrade to Paid"
+            icon="i-lucide-lock"
+            color="neutral"
+            variant="outline"
+            size="lg"
+            :loading="loadingAuth"
+            @click="upgradeToPaid"
+          />
+        </UCard>
+      </div>
+    </div>
   </div>
 </template>

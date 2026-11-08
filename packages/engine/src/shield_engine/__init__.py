@@ -19,7 +19,13 @@ from shield_engine.detectors import ClassifierDetector, LlamaGuardModerator
 from shield_engine.feedback import CsvFeedbackStore, InMemoryFeedbackStore
 from shield_engine.pipeline import Shield
 from shield_engine.policy import ToolSpec, allowed_tools
-from shield_engine.ports import ChatMessage, ChatModel, FeedbackStore
+from shield_engine.ports import (
+    ChatCompletion,
+    ChatMessage,
+    ChatModel,
+    FeedbackStore,
+    UsageChatModel,
+)
 from shield_engine.types import (
     Adjudication,
     Agent,
@@ -44,6 +50,7 @@ except PackageNotFoundError:  # pragma: no cover - running from a source checkou
 __all__ = [
     "Adjudication",
     "Agent",
+    "ChatCompletion",
     "ChatMessage",
     "ChatModel",
     "ClassifierDetector",
@@ -65,6 +72,7 @@ __all__ = [
     "Stage",
     "ToolPolicy",
     "ToolSpec",
+    "UsageChatModel",
     "Verdict",
     "__version__",
     "allowed_tools",

@@ -9,11 +9,14 @@ The demo client. Root rules in [../../AGENTS.md](../../AGENTS.md) apply; these a
 | `app/composables/useShieldApi.ts` | The only backend client (fetch + NDJSON stream + game endpoints) |
 | `app/composables/useByodSecrets.ts` | In-memory BYOD API keys (`openai_api_key`, `groq_api_key`, `base_url`) |
 | `app/utils/gameBoard.ts` | Pure board graph builder, node catalog, hop trace folding, and console access guard |
+| `app/utils/customSandbox.ts` | Custom sandbox limits, dataset CSV parsing and access rules (spec 0022); never stores the API key |
 | `app/utils/chatStream.ts` | Pure NDJSON parsing + event reducer (spec 0008), unit-tested |
 | `app/types/api.gen.ts` | **Generated** from the contract. Never edit; run `mise run contract` |
 | `app/types/api.ts` | Friendly aliases over the generated types |
 | `app/components/workflow/` | Vue Flow nodes (`GameNode.vue`, pipeline visualisers) |
-| `app/pages/index.vue` | Game main menu, level selector cards, BYOD settings modal, and leaderboard |
+| `app/pages/index.vue` | Game main menu, level selector cards, and leaderboard |
+| `app/pages/settings.vue` | Dedicated player settings page (`UColorModeSelect`) |
+| `app/pages/auth/` | Player authentication pages (`/auth/login`, `/auth/register`, `/auth/recover`) |
 | `app/pages/game.vue` | Interactive node-based defence board, double-click node configuration modal, custom ML training |
 | `app/pages/console/` | Guarded `/_console` admin console (`UAuthForm` login, telemetry, audit log, settings) |
 

@@ -1,11 +1,14 @@
-"""Groq adapter for the :class:`ChatModel` port. Requires ``shield-engine[groq]``."""
+"""Groq adapter for the :class:`ChatModel` and :class:`UsageChatModel` ports.
+
+Requires ``shield-engine[groq]``.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
 
-from shield_engine.ports import ChatMessage
+from shield_engine.ports import ChatCompletion, ChatMessage
 
 try:
     from groq import AsyncGroq
@@ -25,6 +28,18 @@ class GroqChatModel:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> str:
+        completion = await self.complete_with_usage(
+            messages, temperature=temperature, max_tokens=max_tokens
+        )
+        return completion.text
+
+    async def complete_with_usage(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ChatCompletion:
         # The SDK's per-role TypedDicts can't be inferred from a dynamic role.
         messages_payload: list[Any] = [{"role": m.role, "content": m.content} for m in messages]
         response = await self._client.chat.completions.create(
@@ -33,4 +48,9 @@ class GroqChatModel:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        return response.choices[0].message.content or ""
+        usage = response.usage
+        return ChatCompletion(
+            text=response.choices[0].message.content or "",
+            input_tokens=usage.prompt_tokens if usage else None,
+            output_tokens=usage.completion_tokens if usage else None,
+        )

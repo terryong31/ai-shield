@@ -1,12 +1,22 @@
 # Persist the audit log (SQLite or Supabase)
 
-The gateway stores every screened request in an audit log. Which backend it
-uses is decided at startup ([spec 0009](../../specs/0009-audit-log-storage/spec.md)):
+The gateway stores every screened request in an audit log, plus clearance
+sessions, the game leaderboard, saved boards and player accounts. Which backend
+it uses is decided at startup ([spec 0009](../../specs/0009-audit-log-storage/spec.md),
+[spec 0024](../../specs/0024-domain-schema-storage/spec.md)):
 
 | Condition | Backend | `GET /api/v1/health` → `audit_backend` |
 | --- | --- | --- |
-| `SUPABASE_URL` **and** `SUPABASE_KEY` set in `apps/api/.env` | Supabase table `public.requests` | `supabase` |
-| otherwise | SQLite file at `SQLITE_PATH` (default `apps/api/var/shield.db`) | `sqlite` |
+| `SUPABASE_URL` **and** `SUPABASE_KEY` set in `apps/api/.env` | Supabase schemas `audit`, `game`, `players` | `supabase` |
+| otherwise | SQLite domain files beside `SQLITE_PATH` (default `apps/api/var/shield.db`) | `sqlite` |
+
+Every table lives in a domain schema; nothing is stored in `public`:
+
+| Schema | Tables |
+| --- | --- |
+| `audit` | `requests` (screened prompts), `clearance_sessions` (admin console sessions) |
+| `game` | `scores` (leaderboard), `saved_boards` (one board per player and level) |
+| `players` | `accounts`, `sessions`, `daily_usage` (run quotas) |
 
 SQLite needs no setup, and records survive restarts. Use Supabase when you want
 a hosted database, several gateway replicas, or SQL access from Studio.
@@ -16,11 +26,17 @@ The browser never talks to either store. It reads the log through
 
 ## Use SQLite (default)
 
-Do nothing. To move the file, set `SQLITE_PATH=/some/dir/shield.db`. Parent
-directories are created. In Docker Compose the file lives in the
-`shield-data` volume at `/app/var/shield.db`.
+Do nothing. Each schema is its own SQLite file next to `SQLITE_PATH`, attached
+under the schema's name, so queries read `audit.requests` exactly as in Postgres:
+`var/shield.audit.db`, `var/shield.game.db` and `var/shield.players.db`
+(`var/shield.db` itself stays empty). To move them, set
+`SQLITE_PATH=/some/dir/shield.db`. Parent directories are created. In Docker
+Compose the files live in the `shield-data` volume under `/app/var/`.
 
-To inspect it: `sqlite3 apps/api/var/shield.db 'select created_at, action, query from requests order by created_at desc limit 10'`.
+Databases from before spec 0024 kept tables in `shield.db`; they are not
+migrated. Delete the old file, or keep it for reference.
+
+To inspect it: `sqlite3 apps/api/var/shield.audit.db 'select created_at, action, query from requests order by created_at desc limit 10'`.
 
 ## The Supabase project in this repo
 
@@ -30,7 +46,8 @@ To inspect it: `sqlite3 apps/api/var/shield.db 'select created_at, action, query
 supabase/
 ├── config.toml                                   # local stack config (project_id = "ai-shield")
 ├── migrations/
-│   └── 20260922183717_create_requests_table.sql  # public.requests + indexes + RLS
+│   ├── 20260922183717_create_requests_table.sql  # the original requests table + RLS
+│   └── 20261108120000_domain_schemas.sql         # audit, game, players schemas; moves requests
 └── seed.sql                                      # demo rows, local only
 ```
 
@@ -39,8 +56,10 @@ supabase/
 - **`seed.sql`** runs after the migrations on the first `supabase start` and on
   every `supabase db reset` (configured under `[db.seed]` in `config.toml`).
   It never runs on `db push`, so demo rows cannot reach production.
-- **RLS** is enabled with no policies for `anon` or `authenticated`, and their
-  grants are revoked. Only the server-side key the gateway uses can read or write.
+- **RLS** is enabled on every table with no policies for `anon` or `authenticated`,
+  and their grants on the tables and the schemas are revoked. Only the server-side
+  key the gateway uses can read or write. `config.toml` exposes only `audit`, `game`
+  and `players` to the Data API, not `public`.
 
 The Supabase CLI is pinned in `mise.toml`, so `mise install` provides it. Docker must be running.
 
@@ -64,9 +83,10 @@ If the API runs in Docker Compose instead, use
 
 ## Change the schema
 
-Schema changes follow the same spec-driven rules as code: update spec 0009,
-and keep the SQLite schema in `services/audit.py` in sync. The test for
-API-STORE-006 fails if the two drift.
+Schema changes follow the same spec-driven rules as code: update the owning
+spec, and keep the SQLite tables in `services/audit.py`, `services/sessions.py`
+and `services/players.py` in sync. The test for API-SCHEMA-006 fails if any
+table drifts from the migrations.
 
 ```bash
 mise run db:migration add_request_tags   # creates supabase/migrations/<timestamp>_add_request_tags.sql
@@ -102,5 +122,6 @@ manager. `SUPABASE_ANON_KEY` is still read as a fallback name for older `.env` f
 | --- | --- |
 | `audit_backend` is `sqlite` although Supabase is configured | Only one of `SUPABASE_URL` / `SUPABASE_KEY` is set (API-STORE-004). |
 | Dashboard shows HTTP 500 on `/requests` | Supabase is unreachable. Writes are logged and skipped, but reads fail loudly. |
-| `permission denied for table requests` | The gateway is using the anon/publishable key. Use the service_role/secret key. |
+| `permission denied for table requests` or `schema "audit" does not exist` in the API | The gateway is using the anon/publishable key, or the domain schema migration has not been applied (`mise run db:reset` locally, `mise run db:push` remotely). |
+| `The schema must be one of the following` from PostgREST | `[api].schemas` in `config.toml` (or the hosted project's Data API settings) does not list `audit`, `game` and `players`. |
 | `db:env` fails with `KeyError` | The auth service was excluded from `supabase start`, so the CLI does not print keys. |

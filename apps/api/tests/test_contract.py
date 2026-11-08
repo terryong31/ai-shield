@@ -14,11 +14,19 @@ def test_only_versioned_routes_are_published() -> None:
 
     assert all(path.startswith("/api/v1/") for path in paths)
     assert sorted(paths) == [
+        "/api/v1/auth/anonymous",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/recover",
+        "/api/v1/auth/register",
+        "/api/v1/auth/session",
+        "/api/v1/auth/upgrade",
         "/api/v1/chat",
         "/api/v1/clearance",
         "/api/v1/feedback",
         "/api/v1/game/levels",
         "/api/v1/game/run",
+        "/api/v1/game/saves/{level_id}",  # spec 0023
         "/api/v1/game/scores",
         "/api/v1/game/train",
         "/api/v1/health",

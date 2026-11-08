@@ -4,6 +4,146 @@
  */
 
 export interface paths {
+    "/api/v1/auth/anonymous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign In Anonymous Player
+         * @description Create a free anonymous player session.
+         */
+        post: operations["sign_in_anonymous_player_api_v1_auth_anonymous_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login Player
+         * @description Sign in an existing player account.
+         */
+        post: operations["login_player_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Logout Player
+         * @description End the current player session and clear the session cookie.
+         */
+        post: operations["logout_player_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recover Player Password
+         * @description Trigger a password recovery email via Supabase Auth when configured.
+         */
+        post: operations["recover_player_password_api_v1_auth_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Player
+         * @description Register a logged-in player account on the free tier.
+         */
+        post: operations["register_player_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Player Session
+         * @description Return current player authentication status, tier, and daily run usage.
+         */
+        get: operations["get_player_session_api_v1_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upgrade Player Plan
+         * @description Upgrade the currently signed-in player from the free tier to the paid tier.
+         */
+        post: operations["upgrade_player_plan_api_v1_auth_upgrade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat": {
         parameters: {
             query?: never;
@@ -106,6 +246,30 @@ export interface paths {
          * @description Run either a full level wave or a single custom message against a player's board.
          */
         post: operations["run_game_board_api_v1_game_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/game/saves/{level_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Saved Board
+         * @description Load the player's saved board for a level.
+         */
+        get: operations["get_saved_board_api_v1_game_saves__level_id__get"];
+        /**
+         * Put Saved Board
+         * @description Save the player's board for a level, replacing any earlier save. Never stores keys.
+         */
+        put: operations["put_saved_board_api_v1_game_saves__level_id__put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -258,6 +422,48 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentProfileSchema */
+        AgentProfileSchema: {
+            /** Objective */
+            objective: string;
+            /** Token Budget */
+            token_budget: number;
+            /** Tools */
+            tools: components["schemas"]["AgentToolSchema"][];
+        };
+        /** AgentRunSchema */
+        AgentRunSchema: {
+            /** Cost Usd */
+            cost_usd: number;
+            /** Estimated Tokens */
+            estimated_tokens: boolean;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Refused */
+            refused: boolean;
+            /** Reply */
+            reply: string;
+            /** Tool Calls */
+            tool_calls: string[];
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "leaked" | "protected" | "helped" | "false_alarm";
+        };
+        /** AgentToolSchema */
+        AgentToolSchema: {
+            /** Allowed */
+            allowed: boolean;
+            /** Description */
+            description: string;
+            /** Name */
+            name: string;
+        };
         /** AuditRecord */
         AuditRecord: {
             /**
@@ -330,26 +536,26 @@ export interface components {
             };
             /** Id */
             id: string;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "quick_screen" | "safety_check" | "agent_review" | "tool_filter" | "assistant" | "blocked";
+            /** Kind */
+            kind: ("incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "quick_screen" | "safety_check" | "agent_review" | "tool_filter" | "assistant") | "blocked";
         };
-        /** ByodConfigSchema */
-        ByodConfigSchema: {
-            /** Api Key */
-            api_key?: string | null;
-            /** Base Url */
-            base_url?: string | null;
+        /**
+         * ByokModelSchema
+         * @description Provider, model and key for one custom run. There is deliberately no URL field.
+         */
+        ByokModelSchema: {
+            /**
+             * Api Key
+             * Format: password
+             */
+            api_key: string;
             /** Model */
-            model?: string | null;
+            model: string;
             /**
              * Provider
-             * @default offline
              * @enum {string}
              */
-            provider: "offline" | "openai" | "groq";
+            provider: "openai" | "anthropic" | "google" | "groq" | "deepseek" | "qwen" | "moonshot";
         };
         ChatEvent: components["schemas"]["StartEvent"] | components["schemas"]["StageChangeEvent"] | components["schemas"]["MlResultEvent"] | components["schemas"]["ModerationEvent"] | components["schemas"]["DebateTurnEvent"] | components["schemas"]["BlockEvent"] | components["schemas"]["PolicyUpdateEvent"] | components["schemas"]["ToolStartEvent"] | components["schemas"]["ToolEndEvent"] | components["schemas"]["FinalResponseEvent"] | components["schemas"]["ErrorEvent"];
         /** ChatRequest */
@@ -373,7 +579,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "quick_screen" | "safety_check" | "agent_review" | "tool_filter" | "assistant" | "blocked";
+            kind: "incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "quick_screen" | "safety_check" | "agent_review" | "tool_filter" | "assistant";
             /** Label */
             label: string;
             /** Latency Ms */
@@ -394,6 +600,55 @@ export interface components {
             expires_at: string | null;
             /** Granted */
             granted: boolean;
+        };
+        /**
+         * CustomAgentSchema
+         * @description The player's own agent (spec 0022). Limits are checked by the engine.
+         */
+        CustomAgentSchema: {
+            /** Objective */
+            objective: string;
+            /** Tools */
+            tools?: components["schemas"]["AgentToolSchema"][];
+        };
+        /** CustomDatasetRowSchema */
+        CustomDatasetRowSchema: {
+            /** Expected Tool */
+            expected_tool?: string | null;
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "normal" | "attack";
+            /** Text */
+            text: string;
+        };
+        /** CustomRunSchema */
+        CustomRunSchema: {
+            agent: components["schemas"]["CustomAgentSchema"];
+            /** Dataset */
+            dataset: components["schemas"]["CustomDatasetRowSchema"][];
+            model: components["schemas"]["ByokModelSchema"];
+        };
+        /**
+         * CustomSetupSchema
+         * @description A saved custom sandbox setup (spec 0023). Deliberately has no key field.
+         */
+        CustomSetupSchema: {
+            agent: components["schemas"]["CustomAgentSchema"];
+            /** Dataset */
+            dataset?: components["schemas"]["CustomDatasetRowSchema"][];
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Provider
+             * @default openai
+             * @enum {string}
+             */
+            provider: "openai" | "anthropic" | "google" | "groq" | "deepseek" | "qwen" | "moonshot";
         };
         /** DebateTurnEvent */
         DebateTurnEvent: {
@@ -467,11 +722,16 @@ export interface components {
         };
         /** GameLevelSchema */
         GameLevelSchema: {
+            agent: components["schemas"]["AgentProfileSchema"] | null;
+            /** Agent Tier */
+            agent_tier: ("standard" | "budget") | null;
             /**
              * Difficulty
              * @enum {string}
              */
             difficulty: "Easy" | "Medium" | "Hard";
+            /** Final Node Label */
+            final_node_label: string;
             /**
              * Id
              * @enum {string}
@@ -493,18 +753,22 @@ export interface components {
         /** GameRunRequest */
         GameRunRequest: {
             board: components["schemas"]["BoardGraphSchema"];
-            byod?: components["schemas"]["ByodConfigSchema"] | null;
+            custom?: components["schemas"]["CustomRunSchema"] | null;
             /** Custom Message */
             custom_message?: string | null;
             /**
              * Level Id
              * @default easy
-             * @enum {string}
              */
-            level_id: "easy" | "medium" | "hard";
+            level_id: ("easy" | "medium" | "hard") | "custom";
         };
         /** GameRunResponse */
         GameRunResponse: {
+            /**
+             * Agent Mode
+             * @enum {string}
+             */
+            agent_mode: "live" | "simulated" | "none" | "custom";
             /** Level Id */
             level_id: string;
             score: components["schemas"]["WaveScoreSchema"];
@@ -586,6 +850,8 @@ export interface components {
         LevelMessageSchema: {
             /** Category */
             category: string;
+            /** Expected Tool */
+            expected_tool?: string | null;
             /** Id */
             id: string;
             /** Is Attack */
@@ -595,6 +861,7 @@ export interface components {
         };
         /** MessageTraceSchema */
         MessageTraceSchema: {
+            agent?: components["schemas"]["AgentRunSchema"] | null;
             /** Hops */
             hops: components["schemas"]["HopTraceSchema"][];
             /** Is Attack */
@@ -636,6 +903,77 @@ export interface components {
              */
             type: "LLAMAGUARD_RESULT";
         };
+        /** NodePositionSchema */
+        NodePositionSchema: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** PlayerLoginRequest */
+        PlayerLoginRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** PlayerRecoverRequest */
+        PlayerRecoverRequest: {
+            /** Email */
+            email: string;
+        };
+        /** PlayerRecoverResponse */
+        PlayerRecoverResponse: {
+            /**
+             * Status
+             * @default ok
+             * @constant
+             */
+            status: "ok";
+        };
+        /** PlayerRegisterRequest */
+        PlayerRegisterRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Player Name */
+            player_name?: string | null;
+        };
+        /** PlayerSessionStatus */
+        PlayerSessionStatus: {
+            /** Ai Nodes Allowed */
+            ai_nodes_allowed: boolean;
+            /** Authenticated */
+            authenticated: boolean;
+            /** Can Record Scores */
+            can_record_scores: boolean;
+            /** Daily Test Limit */
+            daily_test_limit?: number | null;
+            /** Daily Wave Limit */
+            daily_wave_limit?: number | null;
+            /** Email */
+            email?: string | null;
+            /** Is Anonymous */
+            is_anonymous: boolean;
+            /** Player Name */
+            player_name: string;
+            /**
+             * Test Runs Used
+             * @default 0
+             */
+            test_runs_used: number;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "anonymous" | "free" | "paid";
+            /**
+             * Wave Runs Used
+             * @default 0
+             */
+            wave_runs_used: number;
+        };
         /** PolicyUpdateEvent */
         PolicyUpdateEvent: {
             /** Allowed Tools */
@@ -661,6 +999,31 @@ export interface components {
             /** Override */
             override: boolean;
             verdict: components["schemas"]["Verdict"];
+        };
+        /** SavedBoardRequest */
+        SavedBoardRequest: {
+            board: components["schemas"]["BoardGraphSchema"];
+            custom?: components["schemas"]["CustomSetupSchema"] | null;
+            /** Positions */
+            positions?: {
+                [key: string]: components["schemas"]["NodePositionSchema"];
+            };
+        };
+        /** SavedBoardResponse */
+        SavedBoardResponse: {
+            board: components["schemas"]["BoardGraphSchema"];
+            custom?: components["schemas"]["CustomSetupSchema"] | null;
+            /** Level Id */
+            level_id: ("easy" | "medium" | "hard") | "custom";
+            /** Positions */
+            positions?: {
+                [key: string]: components["schemas"]["NodePositionSchema"];
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ScoreCreateRequest */
         ScoreCreateRequest: {
@@ -720,6 +1083,11 @@ export interface components {
             medal: "none" | "bronze" | "silver" | "gold";
             /** Player Name */
             player_name: string;
+            /**
+             * Score Version
+             * @default 2
+             */
+            score_version: number;
             /** Total Cost Usd */
             total_cost_usd: number;
             /** Total Score */
@@ -835,24 +1203,26 @@ export interface components {
         Verdict: "SAFE" | "UNCERTAIN" | "MALICIOUS";
         /** WaveScoreSchema */
         WaveScoreSchema: {
-            /** Accuracy Points */
-            accuracy_points: number;
-            /** Attacks Blocked */
-            attacks_blocked: number;
             /** Attacks Leaked */
             attacks_leaked: number;
+            /** Attacks Protected */
+            attacks_protected: number;
             /** Attacks Total */
             attacks_total: number;
             /** Avg Latency Ms */
             avg_latency_ms: number;
-            /** Benign Passed */
-            benign_passed: number;
+            /** Benign Helped */
+            benign_helped: number;
             /** Benign Total */
             benign_total: number;
             /** Cost Points */
             cost_points: number;
             /** False Alarms */
             false_alarms: number;
+            /** Helpfulness Points */
+            helpfulness_points: number;
+            /** Leak Penalty */
+            leak_penalty: number;
             /**
              * Medal
              * @enum {string}
@@ -862,10 +1232,16 @@ export interface components {
             protection_points: number;
             /** Speed Points */
             speed_points: number;
+            /** Token Points */
+            token_points: number;
+            /** Tool Points */
+            tool_points: number;
             /** Total Cost Usd */
             total_cost_usd: number;
             /** Total Score */
             total_score: number;
+            /** Total Tokens */
+            total_tokens: number;
         };
     };
     responses: never;
@@ -876,6 +1252,204 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    sign_in_anonymous_player_api_v1_auth_anonymous_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+        };
+    };
+    login_player_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+            /** @description Invalid email or password. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    logout_player_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    recover_player_password_api_v1_auth_recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerRecoverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerRecoverResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_player_api_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+            /** @description An account with this email already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_player_session_api_v1_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+        };
+    };
+    upgrade_player_plan_api_v1_auth_upgrade_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+            /** @description Sign in required to upgrade plan. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     chat_api_v1_chat_post: {
         parameters: {
             query?: never;
@@ -1069,7 +1643,127 @@ export interface operations {
                     "application/json": components["schemas"]["GameRunResponse"];
                 };
             };
+            /** @description Sign in required for AI agent nodes. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Invalid board graph */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daily run limit reached. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Custom mode: the player's model provider failed or rejected the key. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The AI Agent model is unavailable; the run was not counted. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_saved_board_api_v1_game_saves__level_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                level_id: ("easy" | "medium" | "hard") | "custom";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedBoardResponse"];
+                };
+            };
+            /** @description Sign in required (paid plan for custom). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No board saved for this level. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_saved_board_api_v1_game_saves__level_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                level_id: ("easy" | "medium" | "hard") | "custom";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedBoardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedBoardResponse"];
+                };
+            };
+            /** @description Sign in required (paid plan for custom). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The save is over 256 KB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid save, too many nodes or edges, or a key in the save. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1131,6 +1825,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ScoreRecord"];
                 };
+            };
+            /** @description Sign in required to record leaderboard scores. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

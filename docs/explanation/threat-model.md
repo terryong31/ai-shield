@@ -12,7 +12,7 @@ production system.
 | --- | --- | --- |
 | Tools of the protected application | Demo catalogue in `apps/api/src/shield_api/demo/tools.py` (simulated) | In a real deployment these read or destroy data: SQL, deletion, export, email |
 | Data behind those tools | Simulated employee, sales and org data | Confidentiality |
-| Provider API keys | Gateway environment (`GROQ_API_KEY`, `GOOGLE_API_KEY`) or in-memory BYOD keys for a single `/game/run` call | Cost and account abuse |
+| Provider API keys | Gateway environment (`GROQ_API_KEY`, `GOOGLE_API_KEY`); paid players' own keys, held in browser memory and sent with each custom sandbox `/game/run` call (spec 0022) | Cost and account abuse |
 | Supabase key | Gateway environment (`SUPABASE_KEY`) | Read/write access to the audit log |
 | `SECURE_PASSPHRASE` & session tokens | Gateway environment; `HttpOnly` `shield_session` cookie (SHA-256 hash stored in SQLite) | Grants `GRANTED` clearance and `/_console` admin access |
 | Model artifacts | `packages/engine/src/shield_engine/models/baseline/` | Pickles: loading one runs code |
@@ -85,6 +85,8 @@ flowchart LR
 | **Denial of wallet**: flooding requests that trigger Layer 2 (up to five LLM calls) and the assistant | 8000-character prompt limit; Layer 1 blocks obvious attacks before any LLM call | **Open**: no rate limiting or quotas |
 | **Stream error leakage**: stack traces or internals in responses | Generic `ERROR` message; details only in server logs (API-CHAT-006) | Mitigated |
 | **Provider outage used as bypass** | Layer 2 failures fall back to `RESTRICTED`, not `ALLOW_ALL` (except for cleared callers) | Mitigated |
+| **Player key leakage** (custom sandbox): a paid player's own provider key ends up in logs, errors, the database or another player's hands | The key arrives as a `SecretStr`, builds one client for one run, and is dropped. Errors log only the exception type, and provider error bodies are discarded because they can echo the key. The key length is checked in the router so a validation error cannot echo it. The save schema (spec 0023) has no key field. The browser keeps it in a component ref, never in storage or the URL (API-SANDBOX-003, WEB-SANDBOX-002) | Mitigated |
+| **SSRF through BYOK**: a player points the gateway at an internal address | No URL field; providers are an allowlist with fixed HTTPS base URLs in `demo/byok.py`, and unknown fields are rejected (API-SANDBOX-004) | Mitigated |
 | **Mislabelled tool risk** | Risk labels of destructive demo tools pinned by API-TOOLS-001 | Mitigated for the demo catalogue |
 
 ## Known gaps

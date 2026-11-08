@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import json
 import logging
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from pydantic import ValidationError
 from shield_api.openapi import render
 from shield_api.schemas import ChatRequest, ScreenRequest
 from shield_api.services.sessions import SqliteSessionStore
+from shield_api.services.sqlite import connect_domains
 from shield_api.settings import Settings
 from shield_engine import Clearance
 
@@ -88,8 +88,11 @@ def test_neither_passphrase_nor_token_is_persisted_or_logged(
         assert secret not in json.dumps(
             [r.model_dump(mode="json") for r in harness.audit_log._records]
         )
-    with sqlite3.connect(db) as connection:
-        hashes = [row[0] for row in connection.execute("select token_hash from sessions")]
+    # Clearance sessions live in the attached `audit` schema (spec 0024).
+    with connect_domains(db) as connection:
+        hashes = [
+            row[0] for row in connection.execute("select token_hash from audit.clearance_sessions")
+        ]
     assert hashes == [hashlib.sha256(token.encode()).hexdigest()]
 
 
@@ -159,8 +162,8 @@ def test_sqlite_sessions_survive_a_restart_and_expired_rows_are_purged(tmp_path:
 
     assert asyncio.run(reopened.lookup(live)) == expires_at
     assert asyncio.run(reopened.lookup(stale)) is None
-    with sqlite3.connect(db) as connection:
-        (count,) = connection.execute("select count(*) from sessions").fetchone()
+    with connect_domains(db) as connection:
+        (count,) = connection.execute("select count(*) from audit.clearance_sessions").fetchone()
     assert count == 1
 
 

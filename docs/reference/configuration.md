@@ -20,7 +20,9 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `GROQ_CHAT_MODEL` | `llama-3.3-70b-versatile` | Groq model for assistant answers (tried after Gemini) |
 | `GOOGLE_API_KEY` | unset | Enables Gemini as the assistant's primary chat model |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model for assistant answers |
-| `SUPABASE_URL` | `""` | Supabase project URL. With `SUPABASE_KEY`, the audit log uses Supabase instead of SQLite |
+| `GAME_MODEL_STANDARD` | unset | Game AI Agent model for `medium` (modern tier). Unset uses `GEMINI_MODEL` with a Google key, else `GROQ_CHAT_MODEL` |
+| `GAME_MODEL_BUDGET` | `llama-3.1-8b-instant` | Game AI Agent model for `hard` (budget tier), served by Groq; needs `GROQ_API_KEY` |
+| `SUPABASE_URL` | `""` | Supabase project URL. With `SUPABASE_KEY`, the audit log, clearance sessions, players and game data all use Supabase schemas `audit`, `game` and `players` instead of SQLite (spec 0024) |
 | `SUPABASE_KEY` | unset | Server-side Supabase key. Also accepted as `SUPABASE_ANON_KEY` (legacy alias) |
 | `SUPABASE_ANON_KEY` | unset | Alias for `SUPABASE_KEY` |
 | `SECURE_PASSPHRASE` | unset | Passphrase accepted by `POST /clearance`. Unset: no caller can obtain `GRANTED` |
@@ -28,7 +30,7 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `SESSION_COOKIE_SECURE` | `true` | Adds `Secure` to the session cookie. Browsers accept it on `http://localhost`; set `false` only for other plain-HTTP hosts (and Safari on localhost) |
 | `CLEARANCE_MAX_ATTEMPTS` | `5` | Failed `POST /clearance` attempts allowed per client address in the window |
 | `CLEARANCE_WINDOW_MINUTES` | `10` | Rate-limit window; a failure inside it also yields `DENIED` clearance |
-| `SQLITE_PATH` | `var/shield.db` | SQLite file. Always holds clearance sessions (spec 0012); holds the audit log when Supabase is not fully configured (spec 0009). The Docker image sets `/app/var/shield.db` |
+| `SQLITE_PATH` | `var/shield.db` | Base path for the SQLite domain files used when Supabase is not fully configured: `<stem>.audit.db`, `<stem>.game.db` and `<stem>.players.db`, attached as schemas `audit`, `game` and `players` (spec 0024). The Docker image sets `/app/var/shield.db` |
 | `FEEDBACK_PATH` | `var/feedback.csv` | CSV file where reviewer labels are appended (relative to the working directory). The Docker image sets `/app/var/feedback.csv` |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000` | Comma-separated list of browser origins allowed to call the API with credentials. `*` is rejected |
 

@@ -7,6 +7,7 @@ from shield_api.services.access import clearance_for
 from shield_engine import Clearance
 
 SESSION_COOKIE = "shield_session"
+PLAYER_SESSION_COOKIE = "shield_player_session"
 
 
 def get_container(request: Request) -> Container:

@@ -1,6 +1,117 @@
 {
   "components": {
     "schemas": {
+      "AgentProfileSchema": {
+        "properties": {
+          "objective": {
+            "title": "Objective",
+            "type": "string"
+          },
+          "token_budget": {
+            "title": "Token Budget",
+            "type": "integer"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/AgentToolSchema"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "objective",
+          "tools",
+          "token_budget"
+        ],
+        "title": "AgentProfileSchema",
+        "type": "object"
+      },
+      "AgentRunSchema": {
+        "properties": {
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "estimated_tokens": {
+            "title": "Estimated Tokens",
+            "type": "boolean"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "number"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "boolean"
+          },
+          "reply": {
+            "title": "Reply",
+            "type": "string"
+          },
+          "tool_calls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tool Calls",
+            "type": "array"
+          },
+          "verdict": {
+            "enum": [
+              "leaked",
+              "protected",
+              "helped",
+              "false_alarm"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply",
+          "tool_calls",
+          "refused",
+          "verdict",
+          "input_tokens",
+          "output_tokens",
+          "estimated_tokens",
+          "latency_ms",
+          "cost_usd"
+        ],
+        "title": "AgentRunSchema",
+        "type": "object"
+      },
+      "AgentToolSchema": {
+        "properties": {
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "allowed"
+        ],
+        "title": "AgentToolSchema",
+        "type": "object"
+      },
       "AuditRecord": {
         "properties": {
           "action": {
@@ -159,22 +270,29 @@
             "type": "string"
           },
           "kind": {
-            "enum": [
-              "incoming",
-              "word_filter",
-              "text_cleanup",
-              "length_limit",
-              "secret_scan",
-              "ml_classifier",
-              "quick_screen",
-              "safety_check",
-              "agent_review",
-              "tool_filter",
-              "assistant",
-              "blocked"
+            "anyOf": [
+              {
+                "enum": [
+                  "incoming",
+                  "word_filter",
+                  "text_cleanup",
+                  "length_limit",
+                  "secret_scan",
+                  "ml_classifier",
+                  "quick_screen",
+                  "safety_check",
+                  "agent_review",
+                  "tool_filter",
+                  "assistant"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "blocked",
+                "type": "string"
+              }
             ],
-            "title": "Kind",
-            "type": "string"
+            "title": "Kind"
           }
         },
         "required": [
@@ -184,53 +302,43 @@
         "title": "BoardNodeSchema",
         "type": "object"
       },
-      "ByodConfigSchema": {
+      "ByokModelSchema": {
+        "additionalProperties": false,
+        "description": "Provider, model and key for one custom run. There is deliberately no URL field.",
         "properties": {
           "api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Api Key"
-          },
-          "base_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Base Url"
+            "format": "password",
+            "title": "Api Key",
+            "type": "string",
+            "writeOnly": true
           },
           "model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model"
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._:/-]+$",
+            "title": "Model",
+            "type": "string"
           },
           "provider": {
-            "default": "offline",
             "enum": [
-              "offline",
               "openai",
-              "groq"
+              "anthropic",
+              "google",
+              "groq",
+              "deepseek",
+              "qwen",
+              "moonshot"
             ],
             "title": "Provider",
             "type": "string"
           }
         },
-        "title": "ByodConfigSchema",
+        "required": [
+          "provider",
+          "model",
+          "api_key"
+        ],
+        "title": "ByokModelSchema",
         "type": "object"
       },
       "ChatEvent": {
@@ -343,8 +451,7 @@
               "safety_check",
               "agent_review",
               "tool_filter",
-              "assistant",
-              "blocked"
+              "assistant"
             ],
             "title": "Kind",
             "type": "string"
@@ -423,6 +530,134 @@
           "expires_at"
         ],
         "title": "ClearanceStatus",
+        "type": "object"
+      },
+      "CustomAgentSchema": {
+        "additionalProperties": false,
+        "description": "The player's own agent (spec 0022). Limits are checked by the engine.",
+        "properties": {
+          "objective": {
+            "maxLength": 1000,
+            "title": "Objective",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/AgentToolSchema"
+            },
+            "maxItems": 10,
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "objective"
+        ],
+        "title": "CustomAgentSchema",
+        "type": "object"
+      },
+      "CustomDatasetRowSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Tool"
+          },
+          "label": {
+            "enum": [
+              "normal",
+              "attack"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "label"
+        ],
+        "title": "CustomDatasetRowSchema",
+        "type": "object"
+      },
+      "CustomRunSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/CustomAgentSchema"
+          },
+          "dataset": {
+            "items": {
+              "$ref": "#/components/schemas/CustomDatasetRowSchema"
+            },
+            "maxItems": 50,
+            "title": "Dataset",
+            "type": "array"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ByokModelSchema"
+          }
+        },
+        "required": [
+          "agent",
+          "dataset",
+          "model"
+        ],
+        "title": "CustomRunSchema",
+        "type": "object"
+      },
+      "CustomSetupSchema": {
+        "additionalProperties": false,
+        "description": "A saved custom sandbox setup (spec 0023). Deliberately has no key field.",
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/CustomAgentSchema"
+          },
+          "dataset": {
+            "items": {
+              "$ref": "#/components/schemas/CustomDatasetRowSchema"
+            },
+            "maxItems": 50,
+            "title": "Dataset",
+            "type": "array"
+          },
+          "model": {
+            "default": "",
+            "maxLength": 100,
+            "pattern": "^[A-Za-z0-9._:/-]*$",
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "default": "openai",
+            "enum": [
+              "openai",
+              "anthropic",
+              "google",
+              "groq",
+              "deepseek",
+              "qwen",
+              "moonshot"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "title": "CustomSetupSchema",
         "type": "object"
       },
       "DebateTurnEvent": {
@@ -576,6 +811,31 @@
       },
       "GameLevelSchema": {
         "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentProfileSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "agent_tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "standard",
+                  "budget"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Tier"
+          },
           "difficulty": {
             "enum": [
               "Easy",
@@ -583,6 +843,10 @@
               "Hard"
             ],
             "title": "Difficulty",
+            "type": "string"
+          },
+          "final_node_label": {
+            "title": "Final Node Label",
             "type": "string"
           },
           "id": {
@@ -630,7 +894,10 @@
           "protected_asset",
           "max_latency_ms",
           "max_cost_usd",
-          "messages"
+          "messages",
+          "agent",
+          "agent_tier",
+          "final_node_label"
         ],
         "title": "GameLevelSchema",
         "type": "object"
@@ -640,10 +907,10 @@
           "board": {
             "$ref": "#/components/schemas/BoardGraphSchema"
           },
-          "byod": {
+          "custom": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ByodConfigSchema"
+                "$ref": "#/components/schemas/CustomRunSchema"
               },
               {
                 "type": "null"
@@ -662,14 +929,22 @@
             "title": "Custom Message"
           },
           "level_id": {
-            "default": "easy",
-            "enum": [
-              "easy",
-              "medium",
-              "hard"
+            "anyOf": [
+              {
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "custom",
+                "type": "string"
+              }
             ],
-            "title": "Level Id",
-            "type": "string"
+            "default": "easy",
+            "title": "Level Id"
           }
         },
         "required": [
@@ -680,6 +955,16 @@
       },
       "GameRunResponse": {
         "properties": {
+          "agent_mode": {
+            "enum": [
+              "live",
+              "simulated",
+              "none",
+              "custom"
+            ],
+            "title": "Agent Mode",
+            "type": "string"
+          },
           "level_id": {
             "title": "Level Id",
             "type": "string"
@@ -698,7 +983,8 @@
         "required": [
           "level_id",
           "traces",
-          "score"
+          "score",
+          "agent_mode"
         ],
         "title": "GameRunResponse",
         "type": "object"
@@ -880,6 +1166,17 @@
             "title": "Category",
             "type": "string"
           },
+          "expected_tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Tool"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -904,6 +1201,16 @@
       },
       "MessageTraceSchema": {
         "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentRunSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "hops": {
             "items": {
               "$ref": "#/components/schemas/HopTraceSchema"
@@ -1002,6 +1309,195 @@
         "title": "ModerationEvent",
         "type": "object"
       },
+      "NodePositionSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "NodePositionSchema",
+        "type": "object"
+      },
+      "PlayerLoginRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "PlayerLoginRequest",
+        "type": "object"
+      },
+      "PlayerRecoverRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PlayerRecoverRequest",
+        "type": "object"
+      },
+      "PlayerRecoverResponse": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "PlayerRecoverResponse",
+        "type": "object"
+      },
+      "PlayerRegisterRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 512,
+            "minLength": 6,
+            "title": "Password",
+            "type": "string"
+          },
+          "player_name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player Name"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "PlayerRegisterRequest",
+        "type": "object"
+      },
+      "PlayerSessionStatus": {
+        "properties": {
+          "ai_nodes_allowed": {
+            "title": "Ai Nodes Allowed",
+            "type": "boolean"
+          },
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "can_record_scores": {
+            "title": "Can Record Scores",
+            "type": "boolean"
+          },
+          "daily_test_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Test Limit"
+          },
+          "daily_wave_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Wave Limit"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "is_anonymous": {
+            "title": "Is Anonymous",
+            "type": "boolean"
+          },
+          "player_name": {
+            "title": "Player Name",
+            "type": "string"
+          },
+          "test_runs_used": {
+            "default": 0,
+            "title": "Test Runs Used",
+            "type": "integer"
+          },
+          "tier": {
+            "enum": [
+              "anonymous",
+              "free",
+              "paid"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "wave_runs_used": {
+            "default": 0,
+            "title": "Wave Runs Used",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "authenticated",
+          "is_anonymous",
+          "tier",
+          "player_name",
+          "ai_nodes_allowed",
+          "can_record_scores"
+        ],
+        "title": "PlayerSessionStatus",
+        "type": "object"
+      },
       "PolicyUpdateEvent": {
         "properties": {
           "allowed_tools": {
@@ -1068,6 +1564,90 @@
           "override"
         ],
         "title": "PredictResponse",
+        "type": "object"
+      },
+      "SavedBoardRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "board": {
+            "$ref": "#/components/schemas/BoardGraphSchema"
+          },
+          "custom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomSetupSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "positions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NodePositionSchema"
+            },
+            "title": "Positions",
+            "type": "object"
+          }
+        },
+        "required": [
+          "board"
+        ],
+        "title": "SavedBoardRequest",
+        "type": "object"
+      },
+      "SavedBoardResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "board": {
+            "$ref": "#/components/schemas/BoardGraphSchema"
+          },
+          "custom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CustomSetupSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "level_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "easy",
+                  "medium",
+                  "hard"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "custom",
+                "type": "string"
+              }
+            ],
+            "title": "Level Id"
+          },
+          "positions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/NodePositionSchema"
+            },
+            "title": "Positions",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "board",
+          "level_id",
+          "updated_at"
+        ],
+        "title": "SavedBoardResponse",
         "type": "object"
       },
       "ScoreCreateRequest": {
@@ -1192,6 +1772,11 @@
           "player_name": {
             "title": "Player Name",
             "type": "string"
+          },
+          "score_version": {
+            "default": 2,
+            "title": "Score Version",
+            "type": "integer"
           },
           "total_cost_usd": {
             "title": "Total Cost Usd",
@@ -1463,16 +2048,12 @@
       },
       "WaveScoreSchema": {
         "properties": {
-          "accuracy_points": {
-            "title": "Accuracy Points",
-            "type": "integer"
-          },
-          "attacks_blocked": {
-            "title": "Attacks Blocked",
-            "type": "integer"
-          },
           "attacks_leaked": {
             "title": "Attacks Leaked",
+            "type": "integer"
+          },
+          "attacks_protected": {
+            "title": "Attacks Protected",
             "type": "integer"
           },
           "attacks_total": {
@@ -1483,8 +2064,8 @@
             "title": "Avg Latency Ms",
             "type": "number"
           },
-          "benign_passed": {
-            "title": "Benign Passed",
+          "benign_helped": {
+            "title": "Benign Helped",
             "type": "integer"
           },
           "benign_total": {
@@ -1497,6 +2078,14 @@
           },
           "false_alarms": {
             "title": "False Alarms",
+            "type": "integer"
+          },
+          "helpfulness_points": {
+            "title": "Helpfulness Points",
+            "type": "integer"
+          },
+          "leak_penalty": {
+            "title": "Leak Penalty",
             "type": "integer"
           },
           "medal": {
@@ -1517,6 +2106,14 @@
             "title": "Speed Points",
             "type": "integer"
           },
+          "token_points": {
+            "title": "Token Points",
+            "type": "integer"
+          },
+          "tool_points": {
+            "title": "Tool Points",
+            "type": "integer"
+          },
           "total_cost_usd": {
             "title": "Total Cost Usd",
             "type": "number"
@@ -1524,21 +2121,29 @@
           "total_score": {
             "title": "Total Score",
             "type": "integer"
+          },
+          "total_tokens": {
+            "title": "Total Tokens",
+            "type": "integer"
           }
         },
         "required": [
           "total_score",
           "medal",
           "protection_points",
-          "accuracy_points",
+          "helpfulness_points",
+          "tool_points",
+          "token_points",
           "speed_points",
           "cost_points",
-          "attacks_blocked",
+          "leak_penalty",
+          "attacks_protected",
           "attacks_total",
           "attacks_leaked",
-          "benign_passed",
+          "benign_helped",
           "benign_total",
           "false_alarms",
+          "total_tokens",
           "avg_latency_ms",
           "total_cost_usd"
         ],
@@ -1554,6 +2159,222 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/anonymous": {
+      "post": {
+        "description": "Create a free anonymous player session.",
+        "operationId": "sign_in_anonymous_player_api_v1_auth_anonymous_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sign In Anonymous Player",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "Sign in an existing player account.",
+        "operationId": "login_player_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Invalid email or password."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login Player",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "End the current player session and clear the session cookie.",
+        "operationId": "logout_player_api_v1_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout Player",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/recover": {
+      "post": {
+        "description": "Trigger a password recovery email via Supabase Auth when configured.",
+        "operationId": "recover_player_password_api_v1_auth_recover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerRecoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerRecoverResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recover Player Password",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "Register a logged-in player account on the free tier.",
+        "operationId": "register_player_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "An account with this email already exists."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Player",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "description": "Return current player authentication status, tier, and daily run usage.",
+        "operationId": "get_player_session_api_v1_auth_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Player Session",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/upgrade": {
+      "post": {
+        "description": "Upgrade the currently signed-in player from the free tier to the paid tier.",
+        "operationId": "upgrade_player_plan_api_v1_auth_upgrade_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in required to upgrade plan."
+          }
+        },
+        "summary": "Upgrade Player Plan",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/v1/chat": {
       "post": {
         "description": "Screen the prompt, then run the demo assistant under the resulting tool policy.",
@@ -1766,11 +2587,148 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "Sign in required for AI agent nodes."
+          },
           "422": {
             "description": "Invalid board graph"
+          },
+          "429": {
+            "description": "Daily run limit reached."
+          },
+          "502": {
+            "description": "Custom mode: the player's model provider failed or rejected the key."
+          },
+          "503": {
+            "description": "The AI Agent model is unavailable; the run was not counted."
           }
         },
         "summary": "Run Game Board",
+        "tags": [
+          "Game"
+        ]
+      }
+    },
+    "/api/v1/game/saves/{level_id}": {
+      "get": {
+        "description": "Load the player's saved board for a level.",
+        "operationId": "get_saved_board_api_v1_game_saves__level_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "level_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "easy",
+                    "medium",
+                    "hard"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "custom",
+                  "type": "string"
+                }
+              ],
+              "title": "Level Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedBoardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in required (paid plan for custom)."
+          },
+          "404": {
+            "description": "No board saved for this level."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Saved Board",
+        "tags": [
+          "Game"
+        ]
+      },
+      "put": {
+        "description": "Save the player's board for a level, replacing any earlier save. Never stores keys.",
+        "operationId": "put_saved_board_api_v1_game_saves__level_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "level_id",
+            "required": true,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "easy",
+                    "medium",
+                    "hard"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "custom",
+                  "type": "string"
+                }
+              ],
+              "title": "Level Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavedBoardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedBoardResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in required (paid plan for custom)."
+          },
+          "413": {
+            "description": "The save is over 256 KB."
+          },
+          "422": {
+            "description": "Invalid save, too many nodes or edges, or a key in the save."
+          }
+        },
+        "summary": "Put Saved Board",
         "tags": [
           "Game"
         ]
@@ -1885,6 +2843,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in required to record leaderboard scores."
           },
           "422": {
             "content": {

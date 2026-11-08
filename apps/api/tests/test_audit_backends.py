@@ -1,7 +1,6 @@
 """One behavioural contract, run against every AuditLog backend (spec 0009)."""
 
 import re
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from shield_api.services.audit import (
     SqliteAuditLog,
     SupabaseAuditLog,
 )
+from shield_api.services.sqlite import connect_domains
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 
@@ -92,7 +92,11 @@ def test_sqlite_schema_mirrors_the_supabase_migration(tmp_path: Path) -> None:
     path = tmp_path / "audit.db"
     SqliteAuditLog(path)
 
-    with sqlite3.connect(path) as connection:
-        columns = {row[1] for row in connection.execute("pragma table_info(requests)")}
+    # Spec 0024 moved the table into the attached `audit` schema (audit.requests).
+    connection = connect_domains(path)
+    try:
+        columns = {row[1] for row in connection.execute("pragma audit.table_info(requests)")}
+    finally:
+        connection.close()
 
     assert columns == _migration_columns()

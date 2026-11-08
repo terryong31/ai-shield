@@ -139,24 +139,63 @@ class Result:
     count: int | None = None
 
 
+def _matches(row: dict[str, Any], tests: list[tuple[str, str, Any]]) -> bool:
+    for op, column, value in tests:
+        cell = row.get(column)
+        if op == "eq" and cell != value:
+            return False
+        if op == "neq" and cell == value:
+            return False
+        if op == "lte" and not (cell is not None and cell <= value):
+            return False
+        if op == "lt" and not (cell is not None and cell < value):
+            return False
+        if op == "gte" and not (cell is not None and cell >= value):
+            return False
+    return True
+
+
 @dataclass
 class FakeQuery:
     table: "FakeTable"
     op: str
     payload: Any = None
-    filters: dict[str, Any] = field(default_factory=dict)
+    tests: list[tuple[str, str, Any]] = field(default_factory=list)
+    orders: list[tuple[str, bool]] = field(default_factory=list)
     count_mode: str | None = None
     limit_n: int | None = None
+    on_conflict: str | None = None
+
+    @property
+    def filters(self) -> dict[str, Any]:
+        return {column: value for op, column, value in self.tests if op == "eq"}
 
     def select(self, *_: str, count: str | None = None, head: bool = False) -> "FakeQuery":
         self.count_mode = count
         return self
 
     def eq(self, column: str, value: Any) -> "FakeQuery":
-        self.filters[column] = value
+        self.tests.append(("eq", column, value))
+        return self
+
+    def neq(self, column: str, value: Any) -> "FakeQuery":
+        self.tests.append(("neq", column, value))
+        return self
+
+    def lte(self, column: str, value: Any) -> "FakeQuery":
+        self.tests.append(("lte", column, value))
+        return self
+
+    def lt(self, column: str, value: Any) -> "FakeQuery":
+        self.tests.append(("lt", column, value))
+        return self
+
+    def gte(self, column: str, value: Any) -> "FakeQuery":
+        self.tests.append(("gte", column, value))
         return self
 
     def order(self, column: str, desc: bool = False) -> "FakeQuery":
+        self.orders.append((column, desc))
         return self
 
     def limit(self, n: int) -> "FakeQuery":
@@ -164,51 +203,97 @@ class FakeQuery:
         return self
 
     def execute(self) -> Result:
-        if self.table.fail:
+        table = self.table
+        if table.fail:
             raise RuntimeError("network down")
-        rows = self.table.rows
+        rows = table.rows
         if self.op == "insert":
-            rows.append(
-                {"id": str(len(rows)), "created_at": "2026-09-23T00:00:00Z", **self.payload}
-            )
-            return Result()
-        matching = [r for r in rows if all(r.get(k) == v for k, v in self.filters.items())]
+            table.counter += 1
+            row = {
+                "id": str(len(rows)),
+                "created_at": f"2026-09-23T00:00:{table.counter:02d}+00:00",
+                **self.payload,
+            }
+            rows.append(row)
+            return Result(data=[dict(row)])
+        if self.op == "upsert":
+            keys = [k.strip() for k in (self.on_conflict or "id").split(",")]
+            for row in rows:
+                if all(row.get(k) == self.payload.get(k) for k in keys):
+                    row.update(self.payload)
+                    return Result(data=[dict(row)])
+            rows.append(dict(self.payload))
+            return Result(data=[dict(self.payload)])
+        matching = [r for r in rows if _matches(r, self.tests)]
         if self.op == "update":
             for row in matching:
                 row.update(self.payload)
-            return Result()
+            return Result(data=[dict(r) for r in matching])
+        if self.op == "delete":
+            table.rows = [r for r in rows if r not in matching]
+            return Result(data=matching)
         if self.count_mode:
             return Result(count=len(matching))
-        return Result(data=list(reversed(matching))[: self.limit_n])
+        ordered = list(matching)
+        for column, desc in reversed(self.orders):
+            ordered.sort(key=lambda r, c=column: r.get(c), reverse=desc)
+        return Result(data=[dict(r) for r in ordered[: self.limit_n]])
 
 
 @dataclass
 class FakeTable:
     rows: list[dict[str, Any]] = field(default_factory=list)
     fail: bool = False
+    counter: int = 0
 
     def insert(self, row: dict[str, Any]) -> FakeQuery:
         return FakeQuery(self, "insert", row)
 
+    def upsert(self, row: dict[str, Any], on_conflict: str | None = None) -> FakeQuery:
+        return FakeQuery(self, "upsert", row, on_conflict=on_conflict)
+
     def update(self, values: dict[str, Any]) -> FakeQuery:
         return FakeQuery(self, "update", values)
+
+    def delete(self) -> FakeQuery:
+        return FakeQuery(self, "delete")
 
     def select(self, *columns: str, **kwargs: Any) -> FakeQuery:
         return FakeQuery(self, "select").select(*columns, **kwargs)
 
 
 @dataclass
-class FakeClient:
-    requests: FakeTable = field(default_factory=FakeTable)
+class FakeSchema:
+    client: "FakeClient"
+    name: str
 
     def table(self, name: str) -> FakeTable:
-        assert name == "requests"
-        return self.requests
+        self.client.accessed.append((self.name, name))
+        return self.client.tables.setdefault((self.name, name), FakeTable(fail=self.client.fail))
+
+
+@dataclass
+class FakeClient:
+    """Tables are keyed by ``(schema, table)``; nothing lives in ``public`` (spec 0024)."""
+
+    fail: bool = False
+    tables: dict[tuple[str, str], FakeTable] = field(default_factory=dict)
+    accessed: list[tuple[str, str]] = field(default_factory=list)
+
+    def schema(self, name: str) -> FakeSchema:
+        return FakeSchema(self, name)
+
+    def table(self, name: str) -> FakeTable:
+        raise AssertionError(f"query {name!r} through client.schema(...), not public")
+
+    @property
+    def requests(self) -> FakeTable:
+        return self.schema("audit").table("requests")
 
 
 @pytest.fixture
 def fake_supabase() -> Callable[..., FakeClient]:
     def build(fail: bool = False) -> FakeClient:
-        return FakeClient(FakeTable(fail=fail))
+        return FakeClient(fail=fail)
 
     return build

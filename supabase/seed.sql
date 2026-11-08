@@ -1,7 +1,7 @@
 -- Demo rows for local development. Runs after migrations on `supabase start`
 -- (first run) and on every `supabase db reset`. Never runs against production.
 
-insert into public.requests (created_at, query, action, reason, layer, metadata, reviewed, human_label)
+insert into audit.requests (created_at, query, action, reason, layer, metadata, reviewed, human_label)
 values
   (now() - interval '50 minutes', 'What is the price of lavender essential oil?', 'ALLOWED',
    'Passed Layer 1 screening', 'SYSTEM',

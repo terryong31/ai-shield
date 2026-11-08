@@ -11,6 +11,14 @@ import type {
   GameTrainRequest,
   GameTrainResponse,
   LevelId,
+  PlayerLoginRequest,
+  PlayerRecoverRequest,
+  PlayerRecoverResponse,
+  PlayerRegisterRequest,
+  PlayerSessionStatus,
+  RunLevelId,
+  SavedBoardRequest,
+  SavedBoardResponse,
   ScoreCreateRequest,
   ScoreRecord,
   Stats
@@ -61,6 +69,16 @@ export const useShieldApi = () => {
     grantClearance: (passphrase: string, email?: string) =>
       api<ClearanceStatus>('/clearance', { method: 'POST', body: { passphrase, email: email ?? null } }),
     revokeClearance: () => api('/clearance', { method: 'DELETE' }),
+    getAuthSession: () => api<PlayerSessionStatus>('/auth/session'),
+    signInAnonymously: () => api<PlayerSessionStatus>('/auth/anonymous', { method: 'POST' }),
+    registerPlayer: (body: PlayerRegisterRequest) =>
+      api<PlayerSessionStatus>('/auth/register', { method: 'POST', body }),
+    loginPlayer: (body: PlayerLoginRequest) =>
+      api<PlayerSessionStatus>('/auth/login', { method: 'POST', body }),
+    recoverPlayer: (body: PlayerRecoverRequest) =>
+      api<PlayerRecoverResponse>('/auth/recover', { method: 'POST', body }),
+    upgradePlayer: () => api<PlayerSessionStatus>('/auth/upgrade', { method: 'POST' }),
+    logoutPlayer: () => api('/auth/logout', { method: 'POST' }),
     sendFeedback: (body: FeedbackRequest) =>
       api<FeedbackResponse>('/feedback', { method: 'POST', body }),
     getLevels: () => api<GameCatalogResponse>('/game/levels'),
@@ -68,6 +86,10 @@ export const useShieldApi = () => {
       api<GameRunResponse>('/game/run', { method: 'POST', body }),
     trainClassifier: (body: GameTrainRequest) =>
       api<GameTrainResponse>('/game/train', { method: 'POST', body }),
+    getSave: (levelId: RunLevelId) =>
+      api<SavedBoardResponse>(`/game/saves/${levelId}`),
+    putSave: (levelId: RunLevelId, body: SavedBoardRequest) =>
+      api<SavedBoardResponse>(`/game/saves/${levelId}`, { method: 'PUT', body }),
     getScores: (levelId?: LevelId, limit = 25) =>
       api<ScoreRecord[]>('/game/scores', {
         query: levelId ? { level_id: levelId, limit } : { limit }

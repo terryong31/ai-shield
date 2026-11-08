@@ -26,6 +26,10 @@ class Settings(BaseSettings):
 
     GOOGLE_API_KEY: SecretStr | None = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Game AI Agent models per level tier (spec 0021). Standard defaults to the Gemini
+    # model (or GROQ_CHAT_MODEL without a Google key); budget runs on Groq.
+    GAME_MODEL_STANDARD: str | None = None
+    GAME_MODEL_BUDGET: str = "llama-3.1-8b-instant"
 
     SUPABASE_URL: str = ""
     # Server-side key. The anon-key alias keeps older .env files working.

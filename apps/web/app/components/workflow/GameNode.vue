@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { NODE_CATALOG, type GameNodeData } from '~/utils/gameBoard'
-import { statusAppearance } from '~/utils/pipelineGraph'
 
 const props = defineProps<{
   id: string
@@ -11,137 +10,89 @@ const props = defineProps<{
 }>()
 
 const meta = computed(() => NODE_CATALOG[props.data.kind])
-const appearance = computed(() => statusAppearance(props.data.status))
+const hasRun = computed(() => props.data.traffic.in > 0)
 
-const handleTopPercent = (index: number, total: number): string => {
-  if (total <= 1) return '50%'
-  if (total === 2) return index === 0 ? '35%' : '72%'
-  return index === 0 ? '28%' : index === 1 ? '54%' : '80%'
+const summary = computed(() => {
+  if (props.data.kind === 'incoming') return 'Prompts enter the board here'
+  if (props.data.kind === 'assistant') return 'Answers the prompts that reach it'
+  return props.data.subtitle
+})
+
+// Vue Flow joins a wire to the outer edge of a handle's box (left edge for an input,
+// right edge for an output). A zero-size handle puts that point at the dot's centre on
+// both sides, and the dot itself is drawn as a child sitting over the node border.
+const HANDLE_ANCHOR = {
+  width: '0px',
+  height: '0px',
+  minWidth: '0px',
+  minHeight: '0px',
+  border: 'none',
+  background: 'transparent',
+  transform: 'none'
 }
+const IN_PORT_STYLE = { ...HANDLE_ANCHOR, left: '-1px' }
+const OUT_PORT_STYLE = { ...HANDLE_ANCHOR, right: '-1px', left: 'auto' }
 
 const handleLabel = (handle: string): string => {
   if (handle === 'suspicious') return 'unclear'
+  if (handle === 'safe') return 'pass'
   return handle
 }
 </script>
 
 <template>
   <div
-    class="w-48 rounded border transition-colors duration-150 select-none"
-    :class="[
-      appearance.class,
-      selected ? 'ring-2 ring-inverted' : '',
-      data.status === 'blocked' ? 'bg-inverted text-inverted border-inverted' : 'bg-default text-default'
-    ]"
+    class="w-56 rounded-md border-2 bg-default text-default transition-colors duration-150 select-none"
+    :class="selected
+      ? 'border-solid border-inverted'
+      : data.isAnchor ? 'border-dashed border-accented' : 'border-solid border-default'"
   >
-    <Handle
-      v-if="data.hasInput"
-      type="target"
-      :position="Position.Left"
-      :connectable="true"
-      class="w-3.5 h-3.5 bg-elevated border border-accented"
-    />
-
-    <!-- Header -->
-    <div
-      class="flex items-center justify-between gap-1.5 px-3 py-2.5 border-b"
-      :class="data.status === 'blocked' ? 'border-inverted/20' : 'border-default bg-elevated/60'"
-    >
-      <div class="flex items-center gap-1.5 min-w-0">
-        <UIcon
-          :name="meta.icon"
-          class="size-4 shrink-0"
-        />
-        <span class="text-sm font-semibold tracking-tight truncate">
-          {{ data.label }}
-        </span>
-      </div>
-
-      <UBadge
-        v-if="data.isAnchor"
-        label="LOCKED"
-        color="neutral"
-        variant="outline"
-        size="sm"
-        class="text-xs uppercase shrink-0"
+    <!-- Header: type icon and name -->
+    <div class="flex min-w-0 items-center gap-1.5 border-b border-default bg-elevated/60 px-3 py-2">
+      <UIcon
+        :name="meta.icon"
+        class="size-4 shrink-0"
       />
+      <span class="truncate text-sm font-semibold tracking-tight">
+        {{ data.label }}
+      </span>
     </div>
 
     <!-- Body -->
-    <div class="px-3 py-2.5 space-y-2">
-      <!-- Live counters for Safe/Assistant and Blocked nodes -->
-      <div
-        v-if="data.kind === 'assistant'"
-        class="grid grid-cols-2 gap-1.5 text-xs tabular-nums"
-      >
-        <div class="rounded border border-default/60 px-2 py-1">
-          <div class="text-[11px] uppercase opacity-70">
-            In
-          </div>
-          <div class="text-sm font-bold">
-            {{ data.arrivedCount }}
-          </div>
-        </div>
-        <div class="rounded border border-default/60 px-2 py-1">
-          <div class="text-[11px] uppercase opacity-70">
-            Leaked
-          </div>
-          <div class="text-sm font-bold">
-            {{ data.flaggedCount }}
-          </div>
-        </div>
-      </div>
+    <p class="truncate px-3 pt-2 text-xs text-muted">
+      {{ summary }}
+    </p>
 
+    <!-- Ports below the description: input on the left, outputs on the right -->
+    <div
+      v-if="data.hasInput || data.handles.length > 0"
+      class="flex items-start justify-between gap-2 py-2"
+    >
       <div
-        v-else-if="data.kind === 'blocked'"
-        class="grid grid-cols-2 gap-1.5 text-xs tabular-nums"
+        v-if="data.hasInput"
+        class="relative px-3 text-xs uppercase tracking-wider text-dimmed"
       >
-        <div class="rounded border border-default/60 px-2 py-1">
-          <div class="text-[11px] uppercase opacity-70">
-            Blocked
-          </div>
-          <div class="text-sm font-bold">
-            {{ data.arrivedCount }}
-          </div>
-        </div>
-        <div class="rounded border border-default/60 px-2 py-1">
-          <div class="text-[11px] uppercase opacity-70">
-            False
-          </div>
-          <div class="text-sm font-bold">
-            {{ data.flaggedCount }}
-          </div>
-        </div>
+        in
+        <Handle
+          type="target"
+          :position="Position.Left"
+          :connectable="true"
+          :style="IN_PORT_STYLE"
+        >
+          <span class="pointer-events-auto absolute top-0 left-0 size-2 -translate-1/2 rounded-full border-2 border-inverted bg-default" />
+        </Handle>
       </div>
+      <span v-else />
 
-      <div
-        v-else-if="data.kind === 'incoming'"
-        class="flex items-center justify-between text-xs tabular-nums"
-      >
-        <span class="opacity-75">Sent</span>
-        <span class="text-sm font-bold">{{ data.arrivedCount }}</span>
-      </div>
-
-      <!-- Tool node metrics -->
-      <div
-        v-else
-        class="flex items-center justify-between text-xs tabular-nums"
-        :class="data.status === 'blocked' ? 'opacity-90' : 'text-dimmed'"
-      >
-        <span>{{ data.latencyMs.toFixed(1) }}ms</span>
-        <span>${{ data.costUsd.toFixed(4) }}</span>
-        <span>{{ data.hits }}x</span>
-      </div>
-
+      <!-- Output ports, labelled even when wired -->
       <div
         v-if="data.handles.length > 0"
-        class="pt-1 flex flex-col items-end gap-1"
+        class="space-y-1"
       >
         <div
-          v-for="(handle, idx) in data.handles"
+          v-for="handle in data.handles"
           :key="handle"
-          class="flex items-center gap-1 text-xs uppercase tracking-wider"
-          :class="data.status === 'blocked' ? 'opacity-90' : 'text-dimmed'"
+          class="relative flex items-center justify-end gap-2 px-3 text-xs uppercase tracking-wider text-dimmed"
         >
           <span>{{ handleLabel(handle) }}</span>
           <Handle
@@ -149,11 +100,29 @@ const handleLabel = (handle: string): string => {
             type="source"
             :position="Position.Right"
             :connectable="true"
-            :style="{ top: handleTopPercent(idx, data.handles.length) }"
-            class="w-3.5 h-3.5 bg-elevated border border-accented"
-          />
+            :style="OUT_PORT_STYLE"
+          >
+            <span class="pointer-events-auto absolute top-0 left-0 size-2 -translate-1/2 rounded-full border-2 border-inverted bg-default" />
+          </Handle>
         </div>
       </div>
+    </div>
+
+    <!-- Live counts after a run -->
+    <div
+      v-if="hasRun"
+      class="grid grid-cols-3 gap-1 border-t border-default px-3 py-2 text-xs tabular-nums"
+    >
+      <template v-if="data.kind === 'assistant'">
+        <span><span class="text-dimmed">in</span> {{ data.arrivedCount }}</span>
+        <span><span class="text-dimmed">leaked</span> {{ data.flaggedCount }}</span>
+        <span><span class="text-dimmed">tok</span> {{ data.tokens.toLocaleString() }}</span>
+      </template>
+      <template v-else>
+        <span><span class="text-dimmed">in</span> {{ data.traffic.in }}</span>
+        <span><span class="text-dimmed">pass</span> {{ data.traffic.pass }}</span>
+        <span><span class="text-dimmed">block</span> {{ data.traffic.block }}</span>
+      </template>
     </div>
   </div>
 </template>

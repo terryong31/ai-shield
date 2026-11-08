@@ -55,6 +55,8 @@ Example 422:
 | GET | `/api/v1/game/levels` | none | `GameCatalogResponse` | 200 |
 | POST | `/api/v1/game/train-classifier` | `TrainClassifierRequest` | `TrainClassifierResponse` | 200, 400, 422 |
 | POST | `/api/v1/game/run` | `GameRunRequest` | `GameRunResponse` | 200, 400, 422 |
+| GET | `/api/v1/game/saves/{level_id}` | path `level_id` | `SavedBoardResponse` | 200, 403, 404 |
+| PUT | `/api/v1/game/saves/{level_id}` | `SavedBoardRequest` | `SavedBoardResponse` | 200, 403, 413, 422 |
 | GET | `/api/v1/game/scores` | query `level_id`, `limit` | `LeaderboardResponse` | 200, 422 |
 | POST | `/api/v1/game/scores` | `SubmitScoreRequest` | `LeaderboardEntrySchema` | 201, 400, 422 |
 | DELETE | `/api/v1/game/scores/{score_id}` | path `score_id` | empty | 204, 403, 404 |
@@ -329,31 +331,79 @@ Split on `\n`, keep the trailing partial line for the next chunk, skip blank
 lines, and parse each line as JSON. The web client does this in
 [`app/utils/chatStream.ts`](../../apps/web/app/utils/chatStream.ts).
 
+## `ai-shield` player authentication endpoints
+
+### `GET /api/v1/auth/session`
+
+Returns `PlayerSessionStatus` (`authenticated`, `is_anonymous`, `tier`, `email`, `player_name`, `ai_nodes_allowed`, `can_record_scores`, `daily_wave_limit`, `wave_runs_used`, `daily_test_limit`, `test_runs_used`).
+
+### `POST /api/v1/auth/anonymous`
+
+Creates a free anonymous player session (`is_anonymous=true`, `tier="anonymous"`, `ai_nodes_allowed=false`, `can_record_scores=false`), setting the `HttpOnly` cookie `shield_player_session` (and calling Supabase `sign_in_anonymously()` when configured).
+
+### `POST /api/v1/auth/register`
+
+Registers a logged-in account (`email`, `password`, optional `player_name`) on the `free` tier (`ai_nodes_allowed=true`, `can_record_scores=true`, `daily_wave_limit=5`, `daily_test_limit=20`), setting `shield_player_session`. Returns `409 Conflict` if the email already exists.
+
+### `POST /api/v1/auth/login`
+
+Signs in an existing player (`email`, `password`) and sets `shield_player_session`. Returns `401 Unauthorized` on invalid credentials.
+
+### `POST /api/v1/auth/recover`
+
+Triggers a password recovery email via Supabase `reset_password_for_email` when configured and returns `PlayerRecoverResponse` (`{"status": "ok"}`).
+
+### `POST /api/v1/auth/upgrade`
+
+Upgrades a signed-in `free` player to `tier="paid"` (`daily_wave_limit=300`, `daily_test_limit=1000`). Returns `403 Forbidden` for anonymous or unauthenticated callers.
+
+### `POST /api/v1/auth/logout`
+
+Revokes the active player session and clears `shield_player_session` (`204 No Content`).
+
 ## `ai-shield` game endpoints
 
 ### `GET /api/v1/game/levels`
 
 Returns `GameCatalogResponse`:
 
-- `levels`: campaign definitions (`easy`, `medium`, `hard`), each with `id`, `title`, `difficulty`, `summary`, `protected_asset`, `max_latency_ms`, `max_cost_usd`, and `messages`.
+- `levels`: campaign definitions (`easy`, `medium`, `hard`), each with `id`, `title`, `difficulty`, `summary`, `protected_asset`, `max_latency_ms`, `max_cost_usd`, `messages` (each with an optional `expected_tool`), `agent` (`objective`, `tools` with `name`/`description`/`allowed`, `token_budget`; `null` on `easy`, which runs no model), `agent_tier` (`null`, `standard` or `budget`) and `final_node_label` (`Help Desk` on `easy`, else `Protected Agent`). The per-run canary is never included.
 - `checks`: available tool node definitions (`text_cleanup`, `word_filter`, `length_limit`, `secret_scan`, `ml_classifier`, `quick_screen`, `safety_check`, `agent_review`, `tool_filter`) with handles, typical latency, and cost.
 
-### `POST /api/v1/game/train-classifier`
+### `POST /api/v1/game/train`
 
-Trains and validates a custom in-game ML classifier (`ml_classifier` node) from player-supplied `csv_text` (`text,label` rows) and `algorithm` (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`). Returns `TrainClassifierResponse` with `algorithm`, `sample_count`, `accuracy`, and parsed `dataset`.
+Trains and validates a custom in-game ML classifier (`ml_classifier` node) from player-supplied `csv_text` (`text,label` rows) and `algorithm` (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`). Returns `GameTrainResponse` with `algorithm`, `sample_count`, `accuracy`, and parsed `dataset`.
 
 ### `POST /api/v1/game/run`
 
-Evaluates a player's `BoardGraphSchema` against the selected level wave (or a single `custom_message` for live board testing) with optional `byod` credentials (`openai_api_key`, `groq_api_key`, `model`, `base_url`). BYOD keys are used in memory only and never logged or persisted. Returns `GameRunResponse` with `traces` (`MessageTraceSchema[]`) and `score` (`WaveScoreSchema`).
+Evaluates a player's `BoardGraphSchema` against the selected level wave (or a single `custom_message` for live board testing) using server-side master API keys:
+
+- The board needs one `incoming` and one `assistant` (AI Agent) node. A board that still contains a `blocked` node returns `422` with `Remove the Blocked node; unreached prompts are blocked automatically.` The AI Agent's `config.rules` accepts up to 5 rules of at most 200 characters.
+- `easy` is classification only: a prompt that reaches the final node (`Help Desk`) is let through, no model runs, and the response says `agent_mode: "none"`. Its score has no tool or token points (protection 5,000, helpfulness 3,000, speed 1,000, cost 1,000).
+- On `medium` and `hard`, prompts that reach the AI Agent run against the model for the level's tier (`GAME_MODEL_STANDARD` for `medium`, `GAME_MODEL_BUDGET` for `hard`) with the level objective and the player's rules. With no model for the tier, a deterministic stand-in runs and the response says `agent_mode: "simulated"`.
+- Each trace includes `agent` (`reply`, `tool_calls`, `refused`, `verdict`, `input_tokens`, `output_tokens`, `estimated_tokens`, `latency_ms`, `cost_usd`) when the prompt reached the agent. `score` includes `protection_points`, `helpfulness_points`, `tool_points`, `token_points`, `speed_points`, `cost_points`, `leak_penalty` and `total_tokens`.
+- Anonymous callers are rejected with `403 Forbidden` if the board includes AI agent nodes (`safety_check` or `agent_review`), and their scores are not recorded on the leaderboard.
+- Daily limits per UTC day: anonymous 1 wave and 3 tests, `free` 5 waves and 20 tests, `paid` 300 waves and 1000 tests (`429 Too Many Requests` when exceeded). The quota is checked before the run and charged only after it succeeds. `easy` runs and tests never count toward the quota.
+- If the chat model fails, the response is `503 Service Unavailable`, no run is charged and nothing is recorded.
+- **Custom sandbox** (`level_id: "custom"`, paid players only, spec 0022): the body adds `custom` with `agent` (`objective` up to 1,000 characters, up to 10 `tools` with `name`/`description`/`allowed`), `dataset` (1 to 50 rows of `text`, `label` `normal`/`attack`, optional `expected_tool`) and `model` (`provider`, one of `openai`, `anthropic`, `google`, `groq`, `deepseek`, `qwen`, `moonshot`; `model`, matching `[A-Za-z0-9._:/-]`, up to 100 characters; `api_key`, up to 200 characters). There is no URL field, and unknown fields return `422`. Non-paid callers get `403`. The run uses the player's key for that one request, returns `agent_mode: "custom"`, never counts toward the quota and is never recorded. A provider that rejects the key returns `502` with `The model provider rejected the API key.`; any other provider failure returns `502` with `The model provider did not respond.`
+- Completed level wave runs by logged-in players record the score on the leaderboard under their account `player_name` when `agent_mode` is `live` or `none`. Simulated runs are never recorded.
+
+### `GET /api/v1/game/saves/{level_id}` and `PUT /api/v1/game/saves/{level_id}`
+
+Saved boards (spec 0023), one per signed-in player and level (`easy`, `medium`, `hard`, `custom`), stored in `game.saved_boards`.
+
+- `PUT` takes `SavedBoardRequest`: `board` (`BoardGraphSchema`), `positions` (node id to `{x, y}`) and, for `custom` only, `custom` (`agent`, `dataset`, `provider`, `model`). There is no key field, and unknown fields return `422`, so an `api_key` can never be stored. A save replaces the previous one. Limits: 60 nodes, 200 edges (`422`) and 256 KB (`413`). The board is not run through `validate_board`, so unfinished boards can be saved.
+- `GET` returns `SavedBoardResponse` (the save plus `level_id` and `updated_at`), or `404` when nothing is saved.
+- Anonymous callers get `403 Sign in to save your board.`; `custom` saves need a paid plan (`403`).
 
 ### `GET /api/v1/game/scores`
 
-Returns `LeaderboardResponse` (`entries: LeaderboardEntrySchema[]`), ordered by `total_score DESC`, with optional `level_id` and `limit` query parameters.
+Returns `ScoreRecord[]` ordered by `total_score DESC` (tie-broken by `avg_latency_ms ASC` and `total_cost_usd ASC`), with optional `level_id` and `limit` query parameters. Only rows with the current `score_version` (`2`) are listed; rows recorded before spec 0021 stay stored as version `1`.
 
 ### `POST /api/v1/game/scores`
 
-Stores a player's score record (`player_name`, `level_id`, `total_score`, `medal`, `attacks_blocked`, `attacks_total`, `false_alarms`, `avg_latency_ms`, `total_cost_usd`, `board`) and returns `LeaderboardEntrySchema` (`201 Created`).
+Stores a signed-in player's score record (`403 Forbidden` for anonymous users).
 
-### `DELETE /api/v1/game/scores/{score_id}`
+### `DELETE /api/v1/game/scores`
 
-Requires an active admin clearance session (`Cookie: shield_session=...`). Deletes the score record (`204 No Content`), returning `403 Forbidden` when clearance is not granted or `404 Not Found` when the ID does not exist.
+Requires an active admin clearance session (`Cookie: shield_session=...`). Clears the scoreboard (`204 No Content`), returning `401 Unauthorized` when clearance is not granted.

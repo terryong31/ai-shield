@@ -7,10 +7,19 @@ These models are the public contract. Changing them changes
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from shield_engine import DecisionLayer, ToolPolicy, Verdict
-from shield_engine.game import HandleKind, MedalKind, NodeKind, OutcomeKind
+from shield_engine.game import (
+    AgentMode,
+    AgentTier,
+    AgentVerdict,
+    HandleKind,
+    MedalKind,
+    NodeKind,
+    OutcomeKind,
+    RetiredNodeKind,
+)
 
 Mode = Literal["shield", "guardrail", "chaos"]
 Prompt = Annotated[str, Field(min_length=1, max_length=8000)]
@@ -184,7 +193,8 @@ LevelId = Literal["easy", "medium", "hard"]
 
 class BoardNodeSchema(BaseModel):
     id: str
-    kind: NodeKind
+    # "blocked" is accepted only so the engine can explain its removal (spec 0020).
+    kind: NodeKind | RetiredNodeKind
     config: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -214,6 +224,19 @@ class LevelMessageSchema(BaseModel):
     text: str
     is_attack: bool
     category: str
+    expected_tool: str | None = None
+
+
+class AgentToolSchema(BaseModel):
+    name: str
+    description: str
+    allowed: bool
+
+
+class AgentProfileSchema(BaseModel):
+    objective: str
+    tools: list[AgentToolSchema]
+    token_budget: int
 
 
 class GameLevelSchema(BaseModel):
@@ -225,6 +248,10 @@ class GameLevelSchema(BaseModel):
     max_latency_ms: float
     max_cost_usd: float
     messages: list[LevelMessageSchema]
+    # ``null`` on a classification-only level, where no model runs (spec 0021).
+    agent: AgentProfileSchema | None
+    agent_tier: AgentTier | None
+    final_node_label: str
 
 
 class GameCatalogResponse(BaseModel):
@@ -232,18 +259,124 @@ class GameCatalogResponse(BaseModel):
     checks: list[CheckDefinitionSchema]
 
 
-class ByodConfigSchema(BaseModel):
-    provider: Literal["offline", "openai", "groq"] = "offline"
-    api_key: str | None = None
-    model: str | None = None
-    base_url: str | None = None
+PlayerTier = Literal["anonymous", "free", "paid"]
+
+
+class PlayerRegisterRequest(BaseModel):
+    email: Annotated[str, Field(min_length=3, max_length=254)]
+    password: Annotated[str, Field(min_length=6, max_length=512)]
+    player_name: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+
+
+class PlayerLoginRequest(BaseModel):
+    email: Annotated[str, Field(min_length=3, max_length=254)]
+    password: Annotated[str, Field(min_length=1, max_length=512)]
+
+
+class PlayerRecoverRequest(BaseModel):
+    email: Annotated[str, Field(min_length=3, max_length=254)]
+
+
+class PlayerRecoverResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+
+
+class PlayerSessionStatus(BaseModel):
+    authenticated: bool
+    is_anonymous: bool
+    tier: PlayerTier
+    email: str | None = None
+    player_name: str
+    ai_nodes_allowed: bool
+    can_record_scores: bool
+    daily_wave_limit: int | None = None
+    wave_runs_used: int = 0
+    daily_test_limit: int | None = None
+    test_runs_used: int = 0
+
+
+ProviderId = Literal["openai", "anthropic", "google", "groq", "deepseek", "qwen", "moonshot"]
+
+
+class CustomAgentSchema(BaseModel):
+    """The player's own agent (spec 0022). Limits are checked by the engine."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    objective: Annotated[str, Field(max_length=1000)]
+    tools: Annotated[list[AgentToolSchema], Field(max_length=10)] = Field(default_factory=list)
+
+
+class CustomDatasetRowSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: Annotated[str, Field(max_length=1000)]
+    label: Literal["normal", "attack"]
+    expected_tool: str | None = None
+
+
+class ByokModelSchema(BaseModel):
+    """Provider, model and key for one custom run. There is deliberately no URL field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: ProviderId
+    model: Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9._:/-]+$")]
+    # Length is checked in the router: a validation error here would echo the key.
+    api_key: SecretStr
+
+
+class CustomRunSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent: CustomAgentSchema
+    dataset: Annotated[list[CustomDatasetRowSchema], Field(max_length=50)]
+    model: ByokModelSchema
+
+
+RunLevelId = LevelId | Literal["custom"]
+
+
+class NodePositionSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    x: float
+    y: float
+
+
+class CustomSetupSchema(BaseModel):
+    """A saved custom sandbox setup (spec 0023). Deliberately has no key field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent: CustomAgentSchema
+    dataset: Annotated[list[CustomDatasetRowSchema], Field(max_length=50)] = Field(
+        default_factory=list
+    )
+    provider: ProviderId = "openai"
+    model: Annotated[str, Field(max_length=100, pattern=r"^[A-Za-z0-9._:/-]*$")] = ""
+
+
+class SavedBoardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    board: BoardGraphSchema
+    positions: dict[str, NodePositionSchema] = Field(default_factory=dict)
+    # Only for level "custom" (paid players).
+    custom: CustomSetupSchema | None = None
+
+
+class SavedBoardResponse(SavedBoardRequest):
+    level_id: RunLevelId
+    updated_at: datetime
 
 
 class GameRunRequest(BaseModel):
-    level_id: LevelId = "easy"
+    level_id: RunLevelId = "easy"
     board: BoardGraphSchema
     custom_message: str | None = None
-    byod: ByodConfigSchema | None = None
+    # Required when level_id is "custom" (paid players only, spec 0022).
+    custom: CustomRunSchema | None = None
 
 
 class HopTraceSchema(BaseModel):
@@ -254,6 +387,18 @@ class HopTraceSchema(BaseModel):
     detail: str
 
 
+class AgentRunSchema(BaseModel):
+    reply: str
+    tool_calls: list[str]
+    refused: bool
+    verdict: AgentVerdict
+    input_tokens: int
+    output_tokens: int
+    estimated_tokens: bool
+    latency_ms: float
+    cost_usd: float
+
+
 class MessageTraceSchema(BaseModel):
     message_id: str
     text: str
@@ -262,21 +407,26 @@ class MessageTraceSchema(BaseModel):
     total_latency_ms: float
     total_cost_usd: float
     hops: list[HopTraceSchema]
+    agent: AgentRunSchema | None = None
 
 
 class WaveScoreSchema(BaseModel):
     total_score: int
     medal: MedalKind
     protection_points: int
-    accuracy_points: int
+    helpfulness_points: int
+    tool_points: int
+    token_points: int
     speed_points: int
     cost_points: int
-    attacks_blocked: int
+    leak_penalty: int
+    attacks_protected: int
     attacks_total: int
     attacks_leaked: int
-    benign_passed: int
+    benign_helped: int
     benign_total: int
     false_alarms: int
+    total_tokens: int
     avg_latency_ms: float
     total_cost_usd: float
 
@@ -285,6 +435,7 @@ class GameRunResponse(BaseModel):
     level_id: str
     traces: list[MessageTraceSchema]
     score: WaveScoreSchema
+    agent_mode: AgentMode
 
 
 class ScoreCreateRequest(BaseModel):
@@ -313,6 +464,8 @@ class ScoreRecord(BaseModel):
     avg_latency_ms: float
     total_cost_usd: float
     board: BoardGraphSchema
+    # Scoring scale the row was recorded under; the leaderboard lists only the current one.
+    score_version: int = 2
 
 
 class GameTrainRequest(BaseModel):

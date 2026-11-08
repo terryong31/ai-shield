@@ -18,6 +18,12 @@
 - [x] **ENG-GAME-007** Require intermediate tool nodes and add trainable `ml_classifier`, `length_limit`, and `secret_scan`
 - [x] **API-GAME-006** Add `POST /api/v1/game/train` for custom ML dataset training and Supabase Auth support on clearance
 - [x] **WEB-GAME-005** Redesign main menu, game top bars, quit modal, double-click node settings modal, `Safe`/`Assistant` node counters, and `UAuthForm` admin login
-- [ ] **ENG-GAME-007** Require intermediate tool nodes and add trainable `ml_classifier`, `length_limit`, and `secret_scan`
-- [ ] **API-GAME-006** Add `POST /api/v1/game/train` for custom ML dataset training and Supabase Auth support on clearance
-- [x] **WEB-GAME-005** Redesign main menu, game top bars, quit modal, double-click node settings modal, `Safe`/`Assistant` node counters, and `UAuthForm` admin login
+- [x] **API-GAME-007** Add player auth (`anonymous`, `register`, `login`, `upgrade`, `logout`, `session`), restrict AI agent nodes and score recording for anonymous users, enforce daily free quotas (`3` wave runs, `10` single-message tests), auto-record logged-in wave scores, and remove BYOK from `GameRunRequest`
+- [x] **WEB-GAME-006** Add client-level auth UI (`usePlayerAuth`, `UAuthForm`), remove BYOK from Settings modal, lock AI agent nodes (`safety_check`, `agent_review`) for anonymous users, show remaining daily runs for free logged-in users, and hide manual score saving/high-score recording for anonymous users
+- [x] **WEB-GAME-007** Move player sign-in and account creation to a `/login` page with `UAuthForm`, remove the auth modal from `/`, hide the anonymous tier badge, remove the `Sign in to record scores` button, and show numeric high scores on level cards
+- [x] **WEB-GAME-008** Turn the `/game` `Tools` panel into a two-column grid of portrait `UCard`s, widen the panel, and use a chevron collapse icon
+- [x] **WEB-GAME-009** Fix the `Tools` panel width, flip the collapse chevron by state, add a hover blur hint, drag-to-canvas placement, and a tool info modal
+- [x] **WEB-GAME-010** Remove the `Account tier` section from the Settings modal
+- [x] **WEB-GAME-011** Show only an explanation in the `Input` node modal, and trim the tool info modal to summary, latency and cost
+- [x] **WEB-GAME-012** Move settings to `/settings` and player auth to `/auth/login`, `/auth/register`, and `/auth/recover`
+- [x] **WEB-GAME-012** Move settings to `/settings` and player auth to `/auth/login`, `/auth/register`, and `/auth/recover`

@@ -18,11 +18,16 @@ from shield_api.schemas import (
     ScoreRecord,
     StatsResponse,
 )
+from shield_api.services.sqlite import connect_domains
 
 logger = logging.getLogger(__name__)
 
 Action = Literal["ALLOWED", "BLOCKED"]
 Backend = Literal["sqlite", "supabase", "memory"]
+
+
+# Leaderboard scoring scale; bump when scores stop being comparable (spec 0021).
+SCORE_VERSION = 2
 
 
 def _stats(total: int, blocked: int) -> StatsResponse:
@@ -100,11 +105,33 @@ class InMemoryAuditLog:
                 return
 
     async def record_score(self, payload: ScoreCreateRequest) -> ScoreRecord:
+        existing_idx = next(
+            (
+                idx
+                for idx, s in enumerate(self._scores)
+                if s.player_name == payload.player_name and s.level_id == payload.level_id
+            ),
+            None,
+        )
         entry = ScoreRecord(
-            id=str(uuid.uuid4()),
+            id=self._scores[existing_idx].id if existing_idx is not None else str(uuid.uuid4()),
             created_at=datetime.now(UTC),
             **payload.model_dump(),
         )
+        if existing_idx is not None:
+            prev = self._scores[existing_idx]
+            if (
+                entry.total_score,
+                -entry.avg_latency_ms,
+                -entry.total_cost_usd,
+            ) >= (
+                prev.total_score,
+                -prev.avg_latency_ms,
+                -prev.total_cost_usd,
+            ):
+                self._scores[existing_idx] = entry
+                return entry
+            return prev
         self._scores.append(entry)
         return entry
 
@@ -120,19 +147,27 @@ class InMemoryAuditLog:
 
 
 class SupabaseAuditLog:
-    """Stores records in the Supabase ``requests`` table.
+    """Stores audit records in ``audit.requests`` and leaderboard scores in ``game.scores``.
 
     The supabase-py client is synchronous, so calls run in a worker thread to
-    keep the event loop free. Write failures are logged, not raised: losing an
-    audit row must not break the user's request.
+    keep the event loop free. Audit write failures are logged, not raised: losing
+    an audit row must not break the user's request.
     """
 
     backend: ClassVar[Backend] = "supabase"
+    SCHEMA = "audit"
     TABLE = "requests"
+    SCORES_SCHEMA = "game"
+    SCORES_TABLE = "scores"
 
     def __init__(self, client: Any) -> None:
         self._client = client
-        self._scores: list[ScoreRecord] = []
+
+    def _requests(self) -> Any:
+        return self._client.schema(self.SCHEMA).table(self.TABLE)
+
+    def _scores(self) -> Any:
+        return self._client.schema(self.SCORES_SCHEMA).table(self.SCORES_TABLE)
 
     async def record(
         self, *, query: str, action: Action, reason: str, layer: str, metadata: dict[str, Any]
@@ -146,25 +181,21 @@ class SupabaseAuditLog:
             "reviewed": False,
         }
         try:
-            await asyncio.to_thread(lambda: self._client.table(self.TABLE).insert(row).execute())
+            await asyncio.to_thread(lambda: self._requests().insert(row).execute())
         except Exception:
             logger.exception("failed to write audit record")
 
     async def recent(self, limit: int) -> list[AuditRecord]:
         response = await asyncio.to_thread(
             lambda: (
-                self._client.table(self.TABLE)
-                .select("*")
-                .order("created_at", desc=True)
-                .limit(limit)
-                .execute()
+                self._requests().select("*").order("created_at", desc=True).limit(limit).execute()
             )
         )
         return [AuditRecord.model_validate(row) for row in response.data or []]
 
     async def stats(self) -> StatsResponse:
         def count(action: str | None) -> int:
-            query = self._client.table(self.TABLE).select("id", count="exact", head=True)
+            query = self._requests().select("id", count="exact", head=True)
             if action:
                 query = query.eq("action", action)
             return int(query.execute().count or 0)
@@ -182,35 +213,107 @@ class SupabaseAuditLog:
         }
         try:
             await asyncio.to_thread(
-                lambda: self._client.table(self.TABLE).update(update).eq("id", request_id).execute()
+                lambda: self._requests().update(update).eq("id", request_id).execute()
             )
         except Exception:
             logger.exception("failed to update audit review")
 
-    async def record_score(self, payload: ScoreCreateRequest) -> ScoreRecord:
-        entry = ScoreRecord(
-            id=str(uuid.uuid4()),
-            created_at=datetime.now(UTC),
-            **payload.model_dump(),
+    @staticmethod
+    def _score_from_row(row: dict[str, Any]) -> ScoreRecord:
+        board = row["board_json"]
+        return ScoreRecord(
+            id=str(row["id"]),
+            created_at=row["created_at"],
+            player_name=row["player_name"],
+            level_id=row["level_id"],
+            total_score=int(row["total_score"]),
+            medal=row["medal"],
+            attacks_blocked=int(row["attacks_blocked"]),
+            attacks_total=int(row["attacks_total"]),
+            false_alarms=int(row["false_alarms"]),
+            avg_latency_ms=float(row["avg_latency_ms"]),
+            total_cost_usd=float(row["total_cost_usd"]),
+            board=(
+                BoardGraphSchema.model_validate_json(board)
+                if isinstance(board, str)
+                else BoardGraphSchema.model_validate(board)
+            ),
+            score_version=int(row["score_version"]),
         )
-        self._scores.append(entry)
-        return entry
+
+    async def record_score(self, payload: ScoreCreateRequest) -> ScoreRecord:
+        """Keep each player's best current-version score per level."""
+
+        def write() -> ScoreRecord:
+            existing = (
+                self._scores()
+                .select("*")
+                .eq("player_name", payload.player_name)
+                .eq("level_id", payload.level_id)
+                .eq("score_version", SCORE_VERSION)
+                .order("total_score", desc=True)
+                .limit(1)
+                .execute()
+                .data
+            )
+            if existing:
+                prev = self._score_from_row(existing[0])
+                prev_rank = (prev.total_score, -prev.avg_latency_ms, -prev.total_cost_usd)
+                new_rank = (payload.total_score, -payload.avg_latency_ms, -payload.total_cost_usd)
+                if new_rank < prev_rank:
+                    return prev
+                self._scores().delete().eq("id", prev.id).execute()
+            row = {
+                "id": str(uuid.uuid4()),
+                "created_at": datetime.now(UTC).isoformat(),
+                "player_name": payload.player_name,
+                "level_id": payload.level_id,
+                "total_score": payload.total_score,
+                "medal": payload.medal,
+                "attacks_blocked": payload.attacks_blocked,
+                "attacks_total": payload.attacks_total,
+                "false_alarms": payload.false_alarms,
+                "avg_latency_ms": payload.avg_latency_ms,
+                "total_cost_usd": payload.total_cost_usd,
+                "board_json": payload.board.model_dump(mode="json"),
+                "score_version": SCORE_VERSION,
+            }
+            self._scores().insert(row).execute()
+            return self._score_from_row(row)
+
+        return await asyncio.to_thread(write)
 
     async def list_scores(
         self, *, level_id: str | None = None, limit: int = 50
     ) -> list[ScoreRecord]:
-        items = [s for s in self._scores if level_id is None or s.level_id == level_id]
-        items.sort(key=lambda s: (-s.total_score, s.avg_latency_ms, s.total_cost_usd, s.created_at))
-        return items[:limit]
+        def read() -> list[dict[str, Any]]:
+            query = self._scores().select("*").eq("score_version", SCORE_VERSION)
+            if level_id:
+                query = query.eq("level_id", level_id)
+            response = (
+                query.order("total_score", desc=True)
+                .order("avg_latency_ms")
+                .order("total_cost_usd")
+                .order("created_at")
+                .limit(limit)
+                .execute()
+            )
+            return list(response.data or [])
+
+        return [self._score_from_row(row) for row in await asyncio.to_thread(read)]
 
     async def clear_scores(self) -> None:
-        self._scores.clear()
+        # PostgREST refuses an unfiltered delete; every row has a total_score.
+        await asyncio.to_thread(
+            lambda: self._scores().delete().gte("total_score", -(2**31)).execute()
+        )
 
 
 class SqliteAuditLog:
     """Zero-setup durable store, used whenever Supabase is not configured.
 
-    Mirrors the columns of ``supabase/migrations`` (API-STORE-006). Each call
+    Mirrors the columns of ``audit.requests`` and ``game.scores`` in
+    ``supabase/migrations`` through attached domain databases (API-SCHEMA-006). Each call
     opens its own connection in a worker thread, so the event loop never
     blocks and no connection is shared across threads.
     """
@@ -222,11 +325,13 @@ class SqliteAuditLog:
         self._path = path
         path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as connection:
-            connection.execute("pragma journal_mode = wal")
-            if connection.execute("pragma user_version").fetchone()[0] < self._SCHEMA_VERSION:
+            connection.execute("pragma audit.journal_mode = wal")
+            connection.execute("pragma game.journal_mode = wal")
+            version = connection.execute("pragma audit.user_version").fetchone()[0]
+            if version < self._SCHEMA_VERSION:
                 connection.executescript(
                     """
-                    create table if not exists requests (
+                    create table if not exists audit.requests (
                       id          text    primary key,
                       created_at  text    not null,
                       query       text    not null,
@@ -237,15 +342,15 @@ class SqliteAuditLog:
                       reviewed    integer not null default 0,
                       human_label integer check (human_label in (0, 1))
                     );
-                    create index if not exists requests_created_at_idx
+                    create index if not exists audit.requests_created_at_idx
                       on requests (created_at desc);
-                    create index if not exists requests_action_idx on requests (action);
-                    pragma user_version = 1;
+                    create index if not exists audit.requests_action_idx on requests (action);
+                    pragma audit.user_version = 1;
                     """
                 )
             connection.executescript(
                 """
-                create table if not exists scores (
+                create table if not exists game.scores (
                   id              text    primary key,
                   created_at      text    not null,
                   player_name     text    not null,
@@ -257,15 +362,22 @@ class SqliteAuditLog:
                   false_alarms    integer not null,
                   avg_latency_ms  real    not null,
                   total_cost_usd  real    not null,
-                  board_json      text    not null
+                  board_json      text    not null,
+                  score_version   integer not null default 1
                 );
-                create index if not exists scores_rank_idx
+                create index if not exists game.scores_rank_idx
                   on scores (level_id, total_score desc, avg_latency_ms asc, total_cost_usd asc);
                 """
             )
+            # Databases created before spec 0021 lack the column; their rows are version 1.
+            columns = {row[1] for row in connection.execute("pragma game.table_info(scores)")}
+            if "score_version" not in columns:
+                connection.execute(
+                    "alter table game.scores add column score_version integer not null default 1"
+                )
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self._path, timeout=5)
+        connection = connect_domains(self._path)
         connection.row_factory = sqlite3.Row
         return connection
 
@@ -292,7 +404,8 @@ class SqliteAuditLog:
         try:
             await asyncio.to_thread(
                 self._run,
-                "insert into requests (id, created_at, query, action, reason, layer, metadata)"
+                "insert into audit.requests"
+                " (id, created_at, query, action, reason, layer, metadata)"
                 " values (?, ?, ?, ?, ?, ?, ?)",
                 row,
             )
@@ -302,7 +415,7 @@ class SqliteAuditLog:
     async def recent(self, limit: int) -> list[AuditRecord]:
         rows = await asyncio.to_thread(
             self._run,
-            "select * from requests order by created_at desc, rowid desc limit ?",
+            "select * from audit.requests order by created_at desc, rowid desc limit ?",
             (limit,),
         )
         return [
@@ -319,20 +432,60 @@ class SqliteAuditLog:
     async def stats(self) -> StatsResponse:
         (row,) = await asyncio.to_thread(
             self._run,
-            "select count(*), coalesce(sum(action = 'BLOCKED'), 0) from requests",
+            "select count(*), coalesce(sum(action = 'BLOCKED'), 0) from audit.requests",
         )
         return _stats(int(row[0]), int(row[1]))
 
     async def review(self, request_id: str, human_label: int) -> None:
         await asyncio.to_thread(
             self._run,
-            "update requests set reviewed = 1, human_label = ?, action = ? where id = ?",
+            "update audit.requests set reviewed = 1, human_label = ?, action = ? where id = ?",
             (human_label, "BLOCKED" if human_label == 1 else "ALLOWED", request_id),
         )
 
     async def record_score(self, payload: ScoreCreateRequest) -> ScoreRecord:
-        score_id = str(uuid.uuid4())
+        existing_rows = await asyncio.to_thread(
+            self._run,
+            "select * from game.scores where player_name = ? and level_id = ? and score_version = ?"
+            " order by total_score desc, avg_latency_ms asc, total_cost_usd asc limit 1",
+            (payload.player_name, payload.level_id, SCORE_VERSION),
+        )
         now = datetime.now(UTC)
+        if existing_rows:
+            prev = existing_rows[0]
+            prev_rank = (
+                int(prev["total_score"]),
+                -float(prev["avg_latency_ms"]),
+                -float(prev["total_cost_usd"]),
+            )
+            new_rank = (
+                payload.total_score,
+                -payload.avg_latency_ms,
+                -payload.total_cost_usd,
+            )
+            if new_rank < prev_rank:
+                return ScoreRecord(
+                    id=prev["id"],
+                    created_at=datetime.fromisoformat(prev["created_at"]),
+                    player_name=prev["player_name"],
+                    level_id=prev["level_id"],
+                    total_score=int(prev["total_score"]),
+                    medal=prev["medal"],
+                    attacks_blocked=int(prev["attacks_blocked"]),
+                    attacks_total=int(prev["attacks_total"]),
+                    false_alarms=int(prev["false_alarms"]),
+                    avg_latency_ms=float(prev["avg_latency_ms"]),
+                    total_cost_usd=float(prev["total_cost_usd"]),
+                    board=BoardGraphSchema.model_validate_json(prev["board_json"]),
+                    score_version=int(prev["score_version"]),
+                )
+            await asyncio.to_thread(
+                self._run,
+                "delete from game.scores"
+                " where player_name = ? and level_id = ? and score_version = ?",
+                (payload.player_name, payload.level_id, SCORE_VERSION),
+            )
+        score_id = str(uuid.uuid4())
         row = (
             score_id,
             now.isoformat(),
@@ -346,15 +499,19 @@ class SqliteAuditLog:
             payload.avg_latency_ms,
             payload.total_cost_usd,
             payload.board.model_dump_json(),
+            SCORE_VERSION,
         )
         await asyncio.to_thread(
             self._run,
-            "insert into scores (id, created_at, player_name, level_id, total_score, medal,"
+            "insert into game.scores (id, created_at, player_name, level_id, total_score, medal,"
             " attacks_blocked, attacks_total, false_alarms, avg_latency_ms,"
-            " total_cost_usd, board_json) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " total_cost_usd, board_json, score_version)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             row,
         )
-        return ScoreRecord(id=score_id, created_at=now, **payload.model_dump())
+        return ScoreRecord(
+            id=score_id, created_at=now, score_version=SCORE_VERSION, **payload.model_dump()
+        )
 
     async def list_scores(
         self, *, level_id: str | None = None, limit: int = 50
@@ -362,18 +519,18 @@ class SqliteAuditLog:
         if level_id:
             rows = await asyncio.to_thread(
                 self._run,
-                "select * from scores where level_id = ?"
+                "select * from game.scores where level_id = ? and score_version = ?"
                 " order by total_score desc, avg_latency_ms asc, total_cost_usd asc, created_at asc"
                 " limit ?",
-                (level_id, limit),
+                (level_id, SCORE_VERSION, limit),
             )
         else:
             rows = await asyncio.to_thread(
                 self._run,
-                "select * from scores"
+                "select * from game.scores where score_version = ?"
                 " order by total_score desc, avg_latency_ms asc, total_cost_usd asc, created_at asc"
                 " limit ?",
-                (limit,),
+                (SCORE_VERSION, limit),
             )
         return [
             ScoreRecord(
@@ -389,9 +546,10 @@ class SqliteAuditLog:
                 avg_latency_ms=float(row["avg_latency_ms"]),
                 total_cost_usd=float(row["total_cost_usd"]),
                 board=BoardGraphSchema.model_validate_json(row["board_json"]),
+                score_version=int(row["score_version"]),
             )
             for row in rows
         ]
 
     async def clear_scores(self) -> None:
-        await asyncio.to_thread(self._run, "delete from scores")
+        await asyncio.to_thread(self._run, "delete from game.scores")

@@ -21,17 +21,17 @@
   - Calculate a 0 to 10,000 score that rewards blocking prompt injections, fast latency, and low cost while penalising false alarms (normal messages blocked by mistake) and leaked attacks.
 - **Gateway API (`apps/api`):**
   - Add `GET /api/v1/game/levels`, `POST /api/v1/game/run`, `GET /api/v1/game/scores`, `POST /api/v1/game/scores`, and admin-only `DELETE /api/v1/game/scores`.
-  - Support optional in-memory BYOD model settings per run without storing user API keys.
+  - Add client player authentication (`/api/v1/auth/anonymous`, `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/upgrade`, `/api/v1/auth/logout`, `/api/v1/auth/session`) supporting anonymous users and logged-in (`free` / `paid`) users, using server-side master API keys instead of client BYOK keys.
   - Regenerate the OpenAPI contract and `apps/web/app/types/api.gen.ts`.
 - **Web Client (`apps/web`):**
-  - `/` (`pages/index.vue`): Landing page with plain-English rules, level select cards (`Easy`, `Medium`, `Hard`), and top scoreboard table.
-  - `/game` (`pages/game.vue`): Interactive Vue Flow defence board with check palette, wave runner, live counters, custom message test bar, BYOD model settings drawer, and score submission dialog.
+  - `/` (`pages/index.vue`): Landing page with plain-English rules, level select cards (`Easy`, `Medium`, `Hard`), player authentication modal (`UAuthForm`), settings modal (theme selection without BYOK secrets), and top scoreboard table.
+  - `/game` (`pages/game.vue`): Interactive Vue Flow defence board with check palette (locking AI agent nodes `safety_check` and `agent_review` for anonymous users), wave runner, daily quota display for logged-in free users, live counters, custom message test bar, and automatic leaderboard score recording for logged-in users.
   - `/_console` (`pages/console/index.vue`, `logs.vue`, `settings.vue`): Site-admin console gated behind `GET /api/v1/clearance` (`granted === true`), plus redirects from `/dashboard*` to `/_console*`.
   - Enforce monochrome Nuxt UI tokens, no native form/button/table tags, no emojis, and no em-dashes.
 
 ## Non-goals
 
-- Multi-user accounts or storing user BYOD API keys on disk.
+- Storing user BYOK API keys on the client or server; AI model calls use server-configured master API keys.
 
 ## Behaviour
 
@@ -83,6 +83,7 @@ Points:
 - **API-GAME-004**: `POST /api/v1/game/scores` persists a score record in SQLite, and `GET /api/v1/game/scores` returns records ordered by `total_score` descending (tie-broken by lower `avg_latency_ms` and lower `total_cost_usd`).
 - **API-GAME-005**: `DELETE /api/v1/game/scores` returns `401` without a valid admin clearance session cookie, and returns `204` while clearing the scoreboard when called with a valid admin session (`Clearance.GRANTED`).
 - **API-GAME-006**: `POST /api/v1/game/train` validates and trains an allowlisted `ml_classifier` algorithm (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) on uploaded CSV/JSONL or row datasets and returns sample counts and training accuracy, rejecting unknown algorithms with `422`.
+- **API-GAME-007**: Player auth endpoints (`/api/v1/auth/anonymous`, `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/upgrade`, `/api/v1/auth/logout`, `/api/v1/auth/session`) distinguish free anonymous users (`is_anonymous=True`, `tier="anonymous"`) from logged-in users (`is_anonymous=False`, `tier="free"` or `"paid"`): anonymous users are rejected with `403` when running boards with AI agent nodes (`safety_check`, `agent_review`) or posting scores (`POST /api/v1/game/scores`) and their wave runs are not recorded on the leaderboard; logged-in users automatically record wave scores to the leaderboard under their account name, can use AI agent nodes, and when on `tier="free"` are limited to `3` wave runs and `10` custom single-message tests per UTC day (`429` when exceeded) until upgraded to `tier="paid"`, with `GameRunRequest` accepting no client BYOK keys.
 
 ### Web Client (`WEB`)
 - **WEB-GAME-001**: `/` renders the landing page with plain-English instructions, links to start `easy`, `medium`, and `hard` levels on `/game`, and the high-score table fetched from `useShieldApi().getScores()`.
@@ -90,6 +91,13 @@ Points:
 - **WEB-GAME-003**: `/_console`, `/_console/logs`, and `/_console/settings` require an active admin clearance session (`granted === true`); when `granted === false`, normal users see the admin clearance login gate instead of console data, and `/dashboard*` routes redirect to `/_console*`.
 - **WEB-GAME-004**: Across `apps/web/app/**/*.{vue,ts}` (excluding `types/api.gen.ts`), no Tailwind palette utilities, no native `<button>`, `<input>`, `<select>`, `<textarea>`, `<table>`, or `<dialog>` elements, no `!` important overrides, no emojis, and no em-dashes (`\u2014`) appear.
 - **WEB-GAME-005**: The project is branded `ai-shield` with no client-side links to `/_console` on public pages, `/_console` is guarded by Nuxt UI `UAuthForm`, `/` serves as the game main menu with difficulty selection (showing solved status and high score) and leaderboard, and `/game` uses a two-row top nav with a quit confirmation modal (`Are you sure you want to quit? your progress will not be saved`), a `Tools` left panel, no right panel, `Safe` node label on `easy` and `Assistant` on `medium`/`hard`, live node arrival counters, and double-click node settings modals including custom ML dataset upload.
+- **WEB-GAME-006**: Client pages (`/` and `/game`) provide player authentication (`usePlayerAuth()` with `UAuthForm` sign-in/sign-up and anonymous session support), remove the BYOK `Configure secrets` section from Settings on `/`, lock AI agent nodes (`safety_check`, `agent_review`) in the `/game` Tools panel for anonymous users, display remaining daily wave/test quotas for logged-in free users, and record leaderboard high scores automatically for logged-in users while hiding score saving and high score recording for anonymous users.
+- **WEB-GAME-007**: Player sign-in and account creation live on a dedicated `/login` page (`pages/login.vue`) built with `UAuthForm`, with `/login?mode=register` selecting account creation. `/` contains no auth modal or `UAuthForm` and its sign-in entry points navigate to `/login`. Successful authentication returns to `/`, failed authentication stays on `/login`, and a player who is already signed in is sent to `/`. On `/`, anonymous players see no tier badge, the level selection has no `Sign in to record scores` button, and level cards show the numeric high score instead of `Not recorded (Anonymous)`.
+- **WEB-GAME-008**: The `/game` `Tools` panel lays out each placeable check as a portrait `3:4` Nuxt UI `UCard` in a two-column grid showing the check name, icon, subtitle, latency and cost (`Free` when the cost is zero), with locked AI agent cards dimmed and labelled `Sign in`. Cards are operable by pointer and keyboard.
+- **WEB-GAME-009**: The `/game` `Tools` panel has a fixed width with no resize handle, a hidden scrollbar (it still scrolls), and cards at least `min-w-40` wide, and its collapse control shows `i-lucide-chevron-right` when collapsed and `i-lucide-chevron-left` when expanded. Hovering or focusing a card blurs it and shows `Click or drag into canvas` (`Sign in to unlock` when locked). Unlocked cards can be dragged onto the canvas to place the node at the drop point, while locked cards cannot be dragged. Each card header has an info button that opens a modal with the tool's name, summary, latency, cost, outputs and access requirement, without placing a node.
+- **WEB-GAME-010**: Settings on `/` contains only the theme selector, with no `Account tier` section. Sign-in and upgrade remain available from the main menu.
+- **WEB-GAME-011**: On `/game`, the `Input` node's settings modal shows only the explanation `Connect the node with a tool and the prompt will flow into the next node.`, with no message list or connection controls. The tool info modal shows the tool name in its header, and its body shows the summary, latency and cost, with no outputs or access rows.
+- **WEB-GAME-012**: Player authentication and settings live on dedicated pages: `/auth/login` (`pages/auth/login.vue`), `/auth/register` (`pages/auth/register.vue`), `/auth/recover` (`pages/auth/recover.vue`) built with `UAuthForm`, and `/settings` (`pages/settings.vue`) with a return-to-menu header alongside the `Settings` title above a `min-w-80` card containing `Theme` on the left and a `UColorModeSelect` theme selector on the right, and no modal on `/`. `POST /api/v1/auth/recover` triggers Supabase `reset_password_for_email` when configured and returns `200` with `{"status": "ok"}`.
 
 ## Security & privacy considerations
 
@@ -125,5 +133,68 @@ None.
 
 - Criteria: WEB-GAME-005
 - Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-005] enforces ai-shield main menu, hidden console with UAuthForm, Safe/Assistant labels, quit modal, and double-click node settings with ML dataset upload`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-06 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: API-GAME-007, WEB-GAME-006
+- Red: 2 failing test(s) before implementation (`apps/api/tests/test_game_api.py::test_player_auth_tiers_ai_node_gate_leaderboard_recording_and_daily_quotas`, `admin console access and routing [WEB-GAME-006] enforces client player auth, removes BYOK in settings, locks AI agent nodes for anonymous users, and displays free daily quotas`)
+- Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-07 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-007
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-007] moves player sign-in to a /login page with UAuthForm and removes anonymous-only UI from the main menu`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-07 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-008
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-008] renders the Tools panel as a two-column grid of portrait cards with a chevron collapse control`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-07 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-009
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-009] fixes the Tools panel width and adds a state-aware chevron, hover hint, drag to canvas, and tool info modal`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-07 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-010
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-010] removes the account tier section from Settings while keeping sign-in and upgrade on the main menu`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-08 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-011
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-011] shows only an explanation in the Input node modal and trims the tool info modal`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-08 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-012
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-012] provides dedicated /settings, /auth/login, /auth/register, and /auth/recover pages`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-08 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-012
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-012] provides dedicated /settings, /auth/login, /auth/register, and /auth/recover pages`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-08 · commit ce5746e (+ uncommitted changes)
+
+- Criteria: WEB-GAME-012
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-012] provides dedicated /settings, /auth/login, /auth/register, and /auth/recover pages`)
 - Green: 1 passing test(s)
 - Gate: `mise run check` passed

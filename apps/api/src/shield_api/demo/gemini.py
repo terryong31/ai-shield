@@ -1,11 +1,11 @@
-"""Gemini adapter for the engine's :class:`ChatModel` port (used by the demo assistant)."""
+"""Gemini adapter for the engine's chat ports (demo assistant and the game's AI Agent)."""
 
 from collections.abc import Sequence
 
 from google import genai
 from google.genai import types
 
-from shield_engine import ChatMessage
+from shield_engine import ChatCompletion, ChatMessage
 
 
 class GeminiChatModel:
@@ -20,6 +20,18 @@ class GeminiChatModel:
         temperature: float = 0.0,
         max_tokens: int | None = None,
     ) -> str:
+        completion = await self.complete_with_usage(
+            messages, temperature=temperature, max_tokens=max_tokens
+        )
+        return completion.text
+
+    async def complete_with_usage(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ChatCompletion:
         system = "\n\n".join(m.content for m in messages if m.role == "system") or None
         contents = [
             types.Content(
@@ -38,4 +50,9 @@ class GeminiChatModel:
                 max_output_tokens=max_tokens,
             ),
         )
-        return response.text or ""
+        usage = response.usage_metadata
+        return ChatCompletion(
+            text=response.text or "",
+            input_tokens=usage.prompt_token_count if usage else None,
+            output_tokens=usage.candidates_token_count if usage else None,
+        )

@@ -170,11 +170,11 @@ run = "supabase migration new"
 
 [tasks."db:diff"]
 description = "Generate SQL for schema changes made in Studio: mise run db:diff -f <name>"
-run = "supabase db diff --schema public"
+run = "supabase db diff --schema audit,game,players"
 
 [tasks."db:lint"]
 description = "Lint the local database schema"
-run = "supabase db lint --schema public"
+run = "supabase db lint --schema audit,game,players"
 
 [tasks."db:link"]
 description = "Link this repo to a hosted project: mise run db:link --project-ref <ref>"

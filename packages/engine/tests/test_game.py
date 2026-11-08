@@ -25,12 +25,10 @@ def _simple_linear_board() -> BoardGraph:
             BoardNode(id="in", kind="incoming"),
             BoardNode(id="wf", kind="word_filter"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="wf"),
             BoardEdge(id="e2", source="wf", source_handle="safe", target="ast"),
-            BoardEdge(id="e3", source="wf", source_handle="block", target="blk"),
         ),
     )
 
@@ -43,11 +41,11 @@ def test_validate_board_accepts_valid_acyclic_graph_and_rejects_invalid_graphs()
     missing_anchor = BoardGraph(
         nodes=(
             BoardNode(id="in", kind="incoming"),
-            BoardNode(id="ast", kind="assistant"),
+            BoardNode(id="wf", kind="word_filter"),
         ),
-        edges=(BoardEdge(id="e1", source="in", source_handle="out", target="ast"),),
+        edges=(BoardEdge(id="e1", source="in", source_handle="out", target="wf"),),
     )
-    with pytest.raises(BoardValidationError, match="blocked"):
+    with pytest.raises(BoardValidationError, match="assistant"):
         validate_board(missing_anchor)
 
     unknown_edge = BoardGraph(
@@ -63,7 +61,6 @@ def test_validate_board_accepts_valid_acyclic_graph_and_rejects_invalid_graphs()
             BoardNode(id="c1", kind="text_cleanup"),
             BoardNode(id="c2", kind="text_cleanup"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="c1"),
@@ -98,13 +95,11 @@ async def test_evaluate_message_records_hops_latency_and_cost() -> None:
             BoardNode(id="clean", kind="text_cleanup"),
             BoardNode(id="wf", kind="word_filter"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="clean"),
             BoardEdge(id="e2", source="clean", source_handle="out", target="wf"),
             BoardEdge(id="e3", source="wf", source_handle="safe", target="ast"),
-            BoardEdge(id="e4", source="wf", source_handle="block", target="blk"),
         ),
     )
 
@@ -115,7 +110,7 @@ async def test_evaluate_message_records_hops_latency_and_cost() -> None:
         is_attack=True,
     )
     assert attack_trace.outcome == "blocked"
-    assert [hop.node_id for hop in attack_trace.hops] == ["in", "clean", "wf", "blk"]
+    assert [hop.node_id for hop in attack_trace.hops] == ["in", "clean", "wf"]
     assert attack_trace.total_latency_ms > 0.0
     assert attack_trace.total_cost_usd == 0.0
 
@@ -134,14 +129,11 @@ async def test_evaluate_message_records_hops_latency_and_cost() -> None:
             BoardNode(id="sc", kind="safety_check"),
             BoardNode(id="tf", kind="tool_filter"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="sc"),
             BoardEdge(id="e2", source="sc", source_handle="safe", target="tf"),
-            BoardEdge(id="e3", source="sc", source_handle="block", target="blk"),
             BoardEdge(id="e4", source="tf", source_handle="safe", target="ast"),
-            BoardEdge(id="e5", source="tf", source_handle="block", target="blk"),
         ),
     )
     tool_trace = await evaluate_message(
@@ -151,7 +143,7 @@ async def test_evaluate_message_records_hops_latency_and_cost() -> None:
         is_attack=True,
     )
     assert tool_trace.outcome == "blocked"
-    assert [hop.node_id for hop in tool_trace.hops] == ["in", "sc", "tf", "blk"]
+    assert [hop.node_id for hop in tool_trace.hops] == ["in", "sc", "tf"]
 
 
 @pytest.mark.spec("ENG-GAME-004")
@@ -169,45 +161,30 @@ def test_get_levels_returns_easy_medium_and_hard_with_mixed_messages() -> None:
 
 @pytest.mark.spec("ENG-GAME-005")
 def test_score_wave_penalises_false_alarms_and_leaked_attacks() -> None:
-    perfect = score_wave(
-        attacks_blocked=5,
-        attacks_total=5,
-        benign_passed=5,
-        benign_total=5,
-        avg_latency_ms=5.0,
-        max_latency_ms=200.0,
-        total_cost_usd=0.0,
-        max_cost_usd=0.02,
-    )
+    common = {
+        "attacks_total": 5,
+        "benign_total": 5,
+        "tool_hits": 0,
+        "tool_expected": 0,
+        "total_tokens": 0,
+        "token_budget": 8000,
+        "avg_latency_ms": 5.0,
+        "max_latency_ms": 200.0,
+        "total_cost_usd": 0.0,
+        "max_cost_usd": 0.02,
+    }
+    perfect = score_wave(attacks_protected=5, benign_helped=5, **common)
     assert perfect.medal == "gold"
     assert perfect.false_alarms == 0
     assert perfect.attacks_leaked == 0
     assert perfect.total_score >= 9500
 
-    with_false_alarms = score_wave(
-        attacks_blocked=5,
-        attacks_total=5,
-        benign_passed=3,
-        benign_total=5,
-        avg_latency_ms=5.0,
-        max_latency_ms=200.0,
-        total_cost_usd=0.0,
-        max_cost_usd=0.02,
-    )
+    with_false_alarms = score_wave(attacks_protected=5, benign_helped=3, **common)
     assert with_false_alarms.false_alarms == 2
-    assert with_false_alarms.accuracy_points < perfect.accuracy_points
+    assert with_false_alarms.helpfulness_points < perfect.helpfulness_points
     assert with_false_alarms.total_score < perfect.total_score
 
-    with_leak = score_wave(
-        attacks_blocked=4,
-        attacks_total=5,
-        benign_passed=5,
-        benign_total=5,
-        avg_latency_ms=5.0,
-        max_latency_ms=200.0,
-        total_cost_usd=0.0,
-        max_cost_usd=0.02,
-    )
+    with_leak = score_wave(attacks_protected=4, benign_helped=5, **common)
     assert with_leak.attacks_leaked == 1
     assert with_leak.total_score < perfect.total_score
 
@@ -221,16 +198,13 @@ async def test_cascading_branch_board_beats_all_agent_review_board_on_medium() -
             BoardNode(id="qs", kind="quick_screen"),
             BoardNode(id="ar", kind="agent_review"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="clean"),
             BoardEdge(id="e2", source="clean", source_handle="out", target="qs"),
             BoardEdge(id="e3", source="qs", source_handle="safe", target="ast"),
-            BoardEdge(id="e4", source="qs", source_handle="block", target="blk"),
             BoardEdge(id="e5", source="qs", source_handle="suspicious", target="ar"),
             BoardEdge(id="e6", source="ar", source_handle="safe", target="ast"),
-            BoardEdge(id="e7", source="ar", source_handle="block", target="blk"),
         ),
     )
 
@@ -239,12 +213,10 @@ async def test_cascading_branch_board_beats_all_agent_review_board_on_medium() -
             BoardNode(id="in", kind="incoming"),
             BoardNode(id="ar", kind="agent_review"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="ar"),
             BoardEdge(id="e2", source="ar", source_handle="safe", target="ast"),
-            BoardEdge(id="e3", source="ar", source_handle="block", target="blk"),
         ),
     )
 
@@ -266,7 +238,6 @@ async def test_direct_anchor_wire_rejected_and_trainable_ml_classifier_evaluates
         nodes=(
             BoardNode(id="in", kind="incoming"),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(BoardEdge(id="e1", source="in", source_handle="out", target="ast"),),
     )
@@ -318,18 +289,13 @@ async def test_direct_anchor_wire_rejected_and_trainable_ml_classifier_evaluates
                 },
             ),
             BoardNode(id="ast", kind="assistant"),
-            BoardNode(id="blk", kind="blocked"),
         ),
         edges=(
             BoardEdge(id="e1", source="in", source_handle="out", target="len"),
             BoardEdge(id="e2", source="len", source_handle="safe", target="sec"),
-            BoardEdge(id="e3", source="len", source_handle="block", target="blk"),
             BoardEdge(id="e4", source="sec", source_handle="safe", target="wf"),
-            BoardEdge(id="e5", source="sec", source_handle="block", target="blk"),
             BoardEdge(id="e6", source="wf", source_handle="safe", target="ml"),
-            BoardEdge(id="e7", source="wf", source_handle="block", target="blk"),
             BoardEdge(id="e8", source="ml", source_handle="safe", target="ast"),
-            BoardEdge(id="e9", source="ml", source_handle="block", target="blk"),
         ),
     )
 

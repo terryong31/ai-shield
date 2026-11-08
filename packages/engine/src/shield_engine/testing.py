@@ -10,7 +10,7 @@ import time
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 
-from shield_engine.ports import ChatMessage
+from shield_engine.ports import ChatCompletion, ChatMessage
 from shield_engine.types import (
     Adjudication,
     Agent,
@@ -96,4 +96,36 @@ class ScriptedChatModel:
         reply = self.replies.pop(0)
         if isinstance(reply, BaseException):
             raise reply
+        return reply
+
+
+@dataclass
+class ScriptedUsageChatModel:
+    """A :class:`UsageChatModel` double: queued replies first, then ``default``.
+
+    A queued ``str`` is returned without token usage; a queued exception is raised.
+    """
+
+    replies: list[ChatCompletion | str | BaseException]
+    default: ChatCompletion | None = None
+    calls: list[list[ChatMessage]] = field(default_factory=list)
+
+    async def complete_with_usage(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ChatCompletion:
+        self.calls.append(list(messages))
+        if self.replies:
+            reply = self.replies.pop(0)
+        elif self.default is not None:
+            reply = self.default
+        else:
+            raise AssertionError("ScriptedUsageChatModel ran out of replies")
+        if isinstance(reply, BaseException):
+            raise reply
+        if isinstance(reply, str):
+            return ChatCompletion(text=reply)
         return reply

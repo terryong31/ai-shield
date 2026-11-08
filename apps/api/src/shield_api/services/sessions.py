@@ -15,7 +15,9 @@ from collections import deque
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+from shield_api.services.sqlite import connect_domains
 
 
 def _hash(token: str) -> str:
@@ -58,11 +60,7 @@ class InMemorySessionStore:
 
 
 class SqliteSessionStore:
-    """Sessions in the gateway's SQLite file, so they survive a restart.
-
-    Lives beside the ``requests`` table but is not mirrored to Supabase:
-    sessions are gateway-local state (spec 0012, non-goals).
-    """
+    """Sessions in the gateway's SQLite ``audit.clearance_sessions``, so they survive a restart."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -70,7 +68,7 @@ class SqliteSessionStore:
         with self._connect() as connection:
             connection.execute(
                 """
-                create table if not exists sessions (
+                create table if not exists audit.clearance_sessions (
                   token_hash text primary key,
                   created_at text not null,
                   expires_at text not null
@@ -79,7 +77,7 @@ class SqliteSessionStore:
             )
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._path, timeout=5)
+        return connect_domains(self._path)
 
     def _write(self, sql: str, params: tuple[str, ...]) -> list[tuple[str, ...]]:
         connection = self._connect()
@@ -98,10 +96,11 @@ class SqliteSessionStore:
             try:
                 with connection:
                     connection.execute(
-                        "delete from sessions where expires_at <= ?", (now.isoformat(),)
+                        "delete from audit.clearance_sessions where expires_at <= ?",
+                        (now.isoformat(),),
                     )
                     connection.execute(
-                        "insert into sessions (token_hash, created_at, expires_at)"
+                        "insert into audit.clearance_sessions (token_hash, created_at, expires_at)"
                         " values (?, ?, ?)",
                         (_hash(token), now.isoformat(), expires_at.isoformat()),
                     )
@@ -113,7 +112,9 @@ class SqliteSessionStore:
 
     async def lookup(self, token: str) -> datetime | None:
         rows = await asyncio.to_thread(
-            self._write, "select expires_at from sessions where token_hash = ?", (_hash(token),)
+            self._write,
+            "select expires_at from audit.clearance_sessions where token_hash = ?",
+            (_hash(token),),
         )
         if not rows:
             return None
@@ -122,7 +123,56 @@ class SqliteSessionStore:
 
     async def revoke(self, token: str) -> None:
         await asyncio.to_thread(
-            self._write, "delete from sessions where token_hash = ?", (_hash(token),)
+            self._write,
+            "delete from audit.clearance_sessions where token_hash = ?",
+            (_hash(token),),
+        )
+
+
+class SupabaseSessionStore:
+    """Sessions in Supabase ``audit.clearance_sessions`` (spec 0024); token hashes only."""
+
+    SCHEMA = "audit"
+    TABLE = "clearance_sessions"
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    def _table(self) -> Any:
+        return self._client.schema(self.SCHEMA).table(self.TABLE)
+
+    async def create(self, ttl: timedelta) -> tuple[str, datetime]:
+        token, now = _new_token(), datetime.now(UTC)
+        expires_at = now + ttl
+
+        def insert() -> None:
+            self._table().delete().lte("expires_at", now.isoformat()).execute()
+            self._table().insert(
+                {
+                    "token_hash": _hash(token),
+                    "created_at": now.isoformat(),
+                    "expires_at": expires_at.isoformat(),
+                }
+            ).execute()
+
+        await asyncio.to_thread(insert)
+        return token, expires_at
+
+    async def lookup(self, token: str) -> datetime | None:
+        response = await asyncio.to_thread(
+            lambda: (
+                self._table().select("expires_at").eq("token_hash", _hash(token)).limit(1).execute()
+            )
+        )
+        rows = response.data or []
+        if not rows:
+            return None
+        expires_at = datetime.fromisoformat(str(rows[0]["expires_at"]))
+        return expires_at if expires_at > datetime.now(UTC) else None
+
+    async def revoke(self, token: str) -> None:
+        await asyncio.to_thread(
+            lambda: self._table().delete().eq("token_hash", _hash(token)).execute()
         )
 
 

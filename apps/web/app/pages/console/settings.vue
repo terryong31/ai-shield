@@ -7,7 +7,6 @@ definePageMeta({
 })
 
 const { status, granted, clearPassphrase } = usePassphrase()
-const { secrets } = useByodSecrets()
 const access = computed(() => resolveConsoleAccess(status.value))
 </script>
 
@@ -50,62 +49,6 @@ const access = computed(() => resolveConsoleAccess(status.value))
           >
             <UColorModeSwitch color="neutral" />
           </UFormField>
-        </UPageCard>
-
-        <UPageCard
-          title="Configure secrets"
-          description="Bring your own keys in memory for local evaluation."
-          variant="outline"
-        >
-          <div class="space-y-4">
-            <UFormField
-              name="openai_api_key"
-              label="OpenAI API key"
-              description="In-memory secret"
-              orientation="horizontal"
-              class="flex items-center justify-between gap-4"
-            >
-              <UInput
-                v-model="secrets.openai_api_key"
-                type="password"
-                placeholder="sk-..."
-                autocomplete="off"
-                class="w-64"
-              />
-            </UFormField>
-
-            <UFormField
-              name="groq_api_key"
-              label="Groq API key"
-              description="In-memory secret"
-              orientation="horizontal"
-              class="flex items-center justify-between gap-4"
-            >
-              <UInput
-                v-model="secrets.groq_api_key"
-                type="password"
-                placeholder="gsk_..."
-                autocomplete="off"
-                class="w-64"
-              />
-            </UFormField>
-
-            <UFormField
-              name="gemini_api_key"
-              label="Gemini API key"
-              description="In-memory secret"
-              orientation="horizontal"
-              class="flex items-center justify-between gap-4"
-            >
-              <UInput
-                v-model="secrets.gemini_api_key"
-                type="password"
-                placeholder="AIza..."
-                autocomplete="off"
-                class="w-64"
-              />
-            </UFormField>
-          </div>
         </UPageCard>
 
         <UPageCard
