@@ -5,14 +5,12 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from shield_api.dependencies import SESSION_COOKIE, ContainerDep, client_address
 from shield_api.schemas import ClearanceRequest, ClearanceStatus
-from shield_api.services.access import resolve_clearance
-from shield_engine import Clearance
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Clearance"])
 
-# Identical for a wrong passphrase and an unconfigured one (API-CLEAR-002).
+# Identical for every refusal, so it reveals nothing about the account (API-CLEAR-015).
 NOT_GRANTED = "Access was not granted."
 TOO_MANY = "Too many attempts. Try again later."
 
@@ -20,14 +18,17 @@ TOO_MANY = "Too many attempts. Try again later."
 @router.post(
     "/clearance",
     responses={
-        401: {"description": "The passphrase was not accepted."},
+        401: {"description": "The credentials do not belong to an admin."},
         429: {"description": "Too many failed attempts from this address."},
     },
 )
 async def grant_clearance(
     body: ClearanceRequest, request: Request, response: Response, container: ContainerDep
 ) -> ClearanceStatus:
-    """Exchange the passphrase for a session cookie. The passphrase is never stored."""
+    """Exchange an admin's email and password for a session cookie. Neither is stored.
+
+    An admin is a Supabase Auth user whose ``app_metadata.role`` is ``"admin"``.
+    """
     settings = container.settings
     client = client_address(request)
 
@@ -37,20 +38,8 @@ async def grant_clearance(
             status.HTTP_429_TOO_MANY_REQUESTS, TOO_MANY, headers={"Retry-After": str(retry_after)}
         )
 
-    granted = resolve_clearance(body.passphrase, settings.SECURE_PASSPHRASE) is Clearance.GRANTED
-    if not granted and body.email and settings.SUPABASE_URL and settings.SUPABASE_KEY:
-        try:
-            from supabase import create_client
-
-            sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY.get_secret_value())
-            auth_res = sb.auth.sign_in_with_password(
-                {"email": body.email, "password": body.passphrase}
-            )
-            granted = auth_res.user is not None
-        except Exception:
-            granted = False
-
-    if not granted:
+    admin = await container.admins.authenticate(body.email.strip().lower(), body.password)
+    if admin is None:
         container.attempts.record_failure(client)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, NOT_GRANTED)
 

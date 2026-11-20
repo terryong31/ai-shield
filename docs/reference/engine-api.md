@@ -1,207 +1,62 @@
 # Engine API reference
 
-Public Python API of `shield-engine` (import name `shield_engine`), version 0.1.0.
+Public Python API of `shield-engine` (import name `shield_engine`), version 0.1.0:
+the checks behind the prompt-injection defence game.
 Source: [`packages/engine/src/shield_engine`](../../packages/engine/src/shield_engine).
 
 All value types are frozen dataclasses with `slots=True`. All enums are `StrEnum`,
-so `str(Verdict.SAFE) == "SAFE"`.
+so `str(Verdict.SAFE) == "SAFE"`. Spec 0026 removed the original screening
+pipeline (`Shield`, moderation, debate, tool policy, events, feedback and the
+evaluation runner); the game was the only remaining user.
 
 - [Top-level exports](#top-level-exports-shield_engine__all__)
-- [Enums](#enums)
 - [Value types](#value-types)
-- [`Shield`](#shield)
-- [`ShieldConfig`](#shieldconfig)
 - [Ports](#ports)
-- [Detectors](#detectors)
-- [Adjudication](#adjudication)
-- [Policy](#policy)
-- [Feedback stores](#feedback-stores)
-- [`shield_engine.events`](#shield_engineevents)
+- [`ClassifierDetector`](#classifierdetector)
+- [`shield_engine.untrusted`](#shield_engineuntrusted)
 - [`shield_engine.models`](#shield_enginemodels)
 - [`shield_engine.training`](#shield_enginetraining)
-- [`shield_engine.evaluation`](#shield_engineevaluation)
+- [`shield_engine.dataset`](#shield_enginedataset)
 - [`shield_engine.testing`](#shield_enginetesting)
 - [`shield_engine.adapters.groq`](#shield_engineadaptersgroq)
 - [`shield_engine.game`](#shield_enginegame)
 
 ## Top-level exports (`shield_engine.__all__`)
 
-| Symbol | Kind | Defined in |
-| --- | --- | --- |
-| `Adjudication` | dataclass | `types.py` |
-| `Agent` | enum | `types.py` |
-| `ChatMessage` | dataclass | `ports.py` |
-| `ChatModel` | Protocol | `ports.py` |
-| `ClassifierDetector` | class | `detectors/classifier.py` |
-| `Clearance` | enum | `types.py` |
-| `CsvFeedbackStore` | class | `feedback.py` |
-| `DebateAdjudicator` | class | `adjudication/debate.py` |
-| `Decision` | dataclass | `types.py` |
-| `DecisionLayer` | enum | `types.py` |
-| `DialogueTurn` | dataclass | `types.py` |
-| `FeedbackStore` | Protocol | `ports.py` |
-| `InMemoryFeedbackStore` | class | `feedback.py` |
-| `LlamaGuardModerator` | class | `detectors/moderation.py` |
-| `ModerationResult` | dataclass | `types.py` |
-| `RiskLevel` | enum | `types.py` |
-| `ScreeningContext` | dataclass | `types.py` |
-| `Shield` | class | `pipeline.py` |
-| `ShieldConfig` | dataclass | `config.py` |
-| `Signal` | dataclass | `types.py` |
-| `Stage` | enum | `types.py` |
-| `ToolPolicy` | enum | `types.py` |
-| `ToolSpec` | dataclass | `policy.py` |
-| `Verdict` | enum | `types.py` |
-| `__version__` | `str` | installed distribution version, or `"0.0.0+unknown"` |
-| `allowed_tools` | function | `policy.py` |
-
-`Classifier`, `Moderator` and `Adjudicator` are ports that are not re-exported;
-import them from `shield_engine.ports`.
-
-## Enums
-
-Full semantics and routing are in [Verdicts and policies](verdicts-and-policies.md).
-
-| Enum | Members (name = value) |
-| --- | --- |
-| `Verdict` | `SAFE`, `UNCERTAIN`, `MALICIOUS` |
-| `ToolPolicy` | `ALLOW_ALL`, `RESTRICTED`, `SHUTDOWN` |
-| `RiskLevel` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `Clearance` | `NONE`, `DENIED`, `GRANTED` |
-| `DecisionLayer` | `CLASSIFIER = "LAYER_1_ML"`, `ADJUDICATION = "LAYER_2_DUAL_AGENT"`, `PASSTHROUGH = "SYSTEM"` |
-| `Stage` | `CLASSIFIER = "classifier"`, `ADJUDICATION = "adjudication"` |
-| `Agent` | `ANALYST`, `WARDEN` |
+`ChatCompletion`, `ChatMessage`, `ChatModel`, `ClassifierDetector`, `Signal`,
+`UsageChatModel`, `Verdict`, `__version__`, `wrap_untrusted`. Game types and
+functions live in `shield_engine.game`.
 
 ## Value types
 
-### `Signal`
+`Verdict`: `SAFE`, `UNCERTAIN`, `MALICIOUS`.
 
-One detector's opinion.
+`Signal`: one detector's opinion about a prompt.
 
-| Field | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `detector` | `str` | required | Detector name (`"classifier"` for Layer 1) |
-| `verdict` | `Verdict` | required | |
-| `score` | `float` | required | P(malicious) in [0, 1] |
-| `override` | `bool` | `False` | `True` when a feedback label decided the verdict |
-| `details` | `Mapping[str, Any]` | `{}` | Detector-specific. `ClassifierDetector` sets `sensitive_floor_applied: bool`; a skipped classifier sets `skipped: True` |
-
-### `ModerationResult`
-
-| Field | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `flagged` | `bool` | required | |
-| `categories` | `tuple[str, ...]` | `()` | e.g. `("S1", "S13")`, or `("ERROR",)` when failing closed |
-| `raw` | `str` | `""` | Stripped model reply |
-| `error` | `str \| None` | `None` | Exception message when the model call failed |
-
-### `DialogueTurn`
-
-| Field | Type |
-| --- | --- |
-| `agent` | `Agent` |
-| `message` | `str` |
-| `timestamp` | `float` (Unix time from `time.time()`) |
-
-### `Adjudication`
-
-| Field | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `verdict` | `Verdict` | required | |
-| `policy` | `ToolPolicy` | required | Proposed policy (overridden to `SHUTDOWN` by `Shield` when `verdict` is `MALICIOUS`) |
-| `confidence` | `float` | required | Clamped to [0, 1] by the debate parser |
-| `summary` | `str` | required | Becomes `Decision.reason` |
-| `analysis` | `str` | `""` | The first Analyst turn |
-| `dialogue` | `tuple[DialogueTurn, ...]` | `()` | |
-| `fallback` | `bool` | `False` | `True` when the conservative fallback produced this result |
-
-### `ScreeningContext`
-
-| Field | Type | Default |
+| Field | Type | Meaning |
 | --- | --- | --- |
-| `clearance` | `Clearance` | `Clearance.NONE` |
-
-### `Decision`
-
-| Field | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `verdict` | `Verdict` | required | Final verdict |
-| `policy` | `ToolPolicy` | required | Tool policy the host must enforce |
-| `blocked` | `bool` | required | `True` only when `verdict` is `MALICIOUS` |
-| `layer` | `DecisionLayer` | required | Layer that produced the decision |
-| `reason` | `str` | required | Human-readable reason |
-| `classifier` | `Signal` | required | Layer 1 signal (always present) |
-| `moderation` | `ModerationResult \| None` | `None` | Present when a moderator is configured |
-| `adjudication` | `Adjudication \| None` | `None` | Present when Layer 2 ran (including fallback) |
-
-## `Shield`
-
-```python
-Shield(
-    classifier: Classifier,
-    *,
-    moderator: Moderator | None = None,
-    adjudicator: Adjudicator | None = None,
-    config: ShieldConfig | None = None,   # None -> ShieldConfig()
-)
-```
-
-Attributes `classifier`, `moderator`, `adjudicator`, `config` hold the constructor values.
-
-| Method | Signature | Returns |
-| --- | --- | --- |
-| `screen` | `async screen(prompt: str, context: ScreeningContext \| None = None, *, config: ShieldConfig \| None = None)` | `Decision` |
-| `screen_stream` | `screen_stream(prompt: str, context: ScreeningContext \| None = None, *, config: ShieldConfig \| None = None)` | `AsyncIterator[ShieldEvent]` |
-
-- `context=None` means `ScreeningContext()` (clearance `NONE`).
-- `config` overrides the instance config for this call only.
-- `screen()` consumes `screen_stream()` and returns the `Decision` of its `DecisionMade` event.
-- Exceptions raised by the classifier or a custom adjudicator propagate.
-  `LlamaGuardModerator` and `DebateAdjudicator` catch provider errors themselves.
-
-Event order and routing rules: [Verdicts and policies](verdicts-and-policies.md#routing-table).
-
-## `ShieldConfig`
-
-```python
-ShieldConfig(always_adjudicate=False, skip_classifier=False, default_policy=ToolPolicy.ALLOW_ALL)
-```
-
-| Field | Type | Default | Effect |
-| --- | --- | --- | --- |
-| `always_adjudicate` | `bool` | `False` | Send every non-blocked prompt to Layer 2 |
-| `skip_classifier` | `bool` | `False` | Do not call the classifier; use `Signal("classifier", SAFE, 0.0, details={"skipped": True})` |
-| `default_policy` | `ToolPolicy` | `ALLOW_ALL` | Policy for prompts that were never adjudicated |
+| `detector` | `str` | Detector name (`"classifier"`) |
+| `verdict` | `Verdict` | |
+| `score` | `float` | P(malicious) |
+| `override` | `bool` = `False` | Reserved; always `False` since the feedback store was removed |
+| `details` | `Mapping[str, Any]` = `{}` | For example `sensitive_floor_applied` |
 
 ## Ports
 
 Structural `typing.Protocol`s in `shield_engine.ports`. Any object with matching
 methods satisfies them.
 
-### `ChatMessage`
-
-| Field | Type |
+| Name | Shape |
 | --- | --- |
-| `role` | `Literal["system", "user", "assistant"]` |
-| `content` | `str` |
-
-### Protocols
-
-| Protocol | Method |
-| --- | --- |
-| `ChatModel` | `async complete(messages: Sequence[ChatMessage], *, temperature: float = 0.0, max_tokens: int \| None = None) -> str` |
-| `UsageChatModel` | `async complete_with_usage(messages: Sequence[ChatMessage], *, temperature: float = 0.0, max_tokens: int \| None = None) -> ChatCompletion`, where `ChatCompletion(text, input_tokens=None, output_tokens=None)` carries the token usage the provider reported. Used by the game's AI Agent (spec 0020). |
-| `FeedbackStore` | `lookup(text: str) -> int \| None`; `record(text: str, label: int) -> None` (label 1 = malicious) |
+| `ChatMessage` | dataclass `(role: Literal["system", "user", "assistant"], content: str)` |
+| `ChatCompletion` | dataclass `(text: str, input_tokens: int \| None = None, output_tokens: int \| None = None)` |
+| `ChatModel` | `async complete(messages, *, temperature=0.0, max_tokens=None) -> str` |
+| `UsageChatModel` | `async complete_with_usage(messages, *, temperature=0.0, max_tokens=None) -> ChatCompletion`; runs the game's AI Agent (spec 0020) |
 | `Classifier` | `score(text: str) -> Signal` (synchronous) |
-| `Moderator` | `async moderate(text: str) -> ModerationResult` |
-| `Adjudicator` | `adjudicate(prompt: str, clearance: Clearance) -> AsyncIterator[DialogueTurn \| Adjudication]`: yield zero or more turns, then exactly one `Adjudication` |
 
-## Detectors
+## `ClassifierDetector`
 
-`shield_engine.detectors` exports `ClassifierDetector`, `LlamaGuardModerator` and
-`SENSITIVE_KEYWORDS`.
-
-### `ClassifierDetector`
+The baseline behind the game's `ML filter` (`ml_classifier`) node when `algorithm="tfidf"` is used without a custom dataset.
 
 ```python
 ClassifierDetector(
@@ -213,118 +68,26 @@ ClassifierDetector(
     sensitive_keywords: Sequence[str] = SENSITIVE_KEYWORDS,
     sensitive_ceiling: float = 0.35,
     sensitive_floor: float = 0.40,
-    feedback: FeedbackStore | None = None,
 )
 ```
 
 Raises `ValueError` unless `0 <= safe_threshold < malicious_threshold <= 1`.
-Keywords are lower-cased. Class attribute `name = "classifier"`.
-
-| Method | Behaviour |
-| --- | --- |
-| `score(text) -> Signal` | 1. If `feedback` has a label for the exact text: verdict from the label, score 1.0 or 0.0, `override=True`, model not called. 2. Otherwise `p = predict_proba(transform([text]))[0][1]`. 3. If `p < sensitive_ceiling` and the lower-cased text contains any keyword as a substring, `p = sensitive_floor`. 4. Verdict: `p >= malicious_threshold` MALICIOUS, `p <= safe_threshold` SAFE, else UNCERTAIN. |
-| `learn(text, label) -> None` | Records the label in `feedback` (if set) and calls `model.partial_fit(transform([text]), [label])` if the model has `partial_fit` |
-| `save_model(path: Path) -> None` | `joblib.dump(model, path)`, creating parent directories |
+`score(text) -> Signal`: `p = predict_proba(transform([text]))[0][1]`; if
+`p < sensitive_ceiling` and the lower-cased text contains a sensitive keyword,
+`p = sensitive_floor`; then `p >= malicious_threshold` is MALICIOUS,
+`p <= safe_threshold` SAFE, otherwise UNCERTAIN.
 
 `SENSITIVE_KEYWORDS`: `sales`, `revenue`, `employee`, `salary`, `database`, `sql`,
 `delete`, `personal`, `customer`, `member`, `boss`, `org`, `chart`, `hierarchy`,
 `email`, `private`, `confidential`, `internal`, `table`, `drop`.
 
-### `LlamaGuardModerator`
+## `shield_engine.untrusted`
 
-```python
-LlamaGuardModerator(model: ChatModel, *, fail_closed: bool = False)
-```
-
-`async moderate(text) -> ModerationResult` sends one user message with
-`temperature=0.0, max_tokens=64`.
-
-| Model reply / outcome | Result |
-| --- | --- |
-| First line is `safe` (case-insensitive) | `flagged=False`, `raw` set |
-| Anything else | `flagged=True`, `categories` = remaining lines split on commas and newlines |
-| Exception, `fail_closed=False` | `flagged=False`, `categories=()`, `error=str(exc)` |
-| Exception, `fail_closed=True` | `flagged=True`, `categories=("ERROR",)`, `error=str(exc)` |
-
-## Adjudication
-
-`shield_engine.adjudication` exports `DebateAdjudicator`, `fallback_adjudication`
-and `parse_warden_verdict`.
-
-### `DebateAdjudicator`
-
-```python
-DebateAdjudicator(model: ChatModel, *, temperature: float = 0.3)
-```
-
-`adjudicate(prompt, clearance)` makes four `model.complete` calls (system + user
-message each): Analyst, Warden, Analyst (each yielded as a `DialogueTurn`), then a
-final Warden call that must answer with JSON
-`{"verdict", "policy", "confidence", "summary"}`. It yields one `Adjudication`
-with `analysis` set to the first Analyst message and `dialogue` set to the three turns.
-
-- The prompt is wrapped in `<untrusted_prompt>…</untrusted_prompt>`; any
-  opening or closing look-alike tag inside the prompt or earlier turns is replaced
-  with `[delimiter removed]`.
-- Clearance is sent as the words `GRANTED` or `DENIED` only. `Clearance.NONE`
-  is described to the model as `DENIED`.
-- Any exception during the four calls yields
-  `fallback_adjudication(clearance, "Adjudicator unavailable; conservative policy applied.", turns_so_far)`.
-
-### `wrap_untrusted(prompt: str) -> str`
-
-Importable from `shield_engine.adjudication`. Returns
-`"<untrusted_prompt>\n{prompt}\n</untrusted_prompt>"` with look-alike tags in
-`prompt` neutralised. Any engine code that sends user text to an LLM must use it.
-
-### `parse_warden_verdict(raw: str, clearance: Clearance) -> Adjudication`
-
-Extracts the outermost `{…}` from `raw`. Missing or invalid JSON, a non-object, or
-a `verdict`/`policy` outside the enums yields
-`fallback_adjudication(clearance, "Warden output was unusable; fallback applied.")`.
-`confidence` defaults to 0.5, is clamped to [0, 1], and non-numeric values become 0.5.
-Missing `summary` becomes `"Dual agent review completed."`.
-
-### `fallback_adjudication(clearance, summary, dialogue=()) -> Adjudication`
-
-| Clearance | verdict | policy |
-| --- | --- | --- |
-| `GRANTED` | `SAFE` | `ALLOW_ALL` |
-| `NONE` or `DENIED` | `UNCERTAIN` | `RESTRICTED` |
-
-Always `confidence=0.5`, `fallback=True`. Never blocks.
-
-## Policy
-
-| Symbol | Signature |
-| --- | --- |
-| `ToolSpec` | dataclass `ToolSpec(name: str, risk: RiskLevel)` |
-| `allowed_tools` | `allowed_tools(policy: ToolPolicy, tools: Iterable[ToolSpec]) -> list[str]` |
-
-`ALLOW_ALL` returns every name, `RESTRICTED` only `LOW`-risk names, `SHUTDOWN`
-an empty list. Input order is preserved.
-
-## Feedback stores
-
-| Class | Constructor | Behaviour |
-| --- | --- | --- |
-| `InMemoryFeedbackStore` | `(labels: dict[str, int] \| None = None)` | Dict lookup; copies `labels` |
-| `CsvFeedbackStore` | `(path: Path)` | Reads the CSV once at construction (latest label per text wins). `record()` appends a row `text,label,timestamp` (UTC ISO 8601), writing the header and parent directories if needed, and updates the cache |
-
-## `shield_engine.events`
-
-Events yielded by `Shield.screen_stream`. All are frozen dataclasses.
-
-| Event | Field | Emitted |
-| --- | --- | --- |
-| `StageStarted` | `stage: Stage` | Before Layer 1 (`CLASSIFIER`) and before Layer 2 (`ADJUDICATION`) |
-| `ClassifierScored` | `signal: Signal` | After Layer 1, always |
-| `ModerationFlagged` | `result: ModerationResult` | Only when the moderator flags the prompt |
-| `DebateTurn` | `turn: DialogueTurn` | For each turn the adjudicator yields |
-| `DecisionMade` | `decision: Decision` | Exactly once, last |
-
-`ShieldEvent` is the type alias
-`StageStarted | ClassifierScored | ModerationFlagged | DebateTurn | DecisionMade`.
+`wrap_untrusted(prompt: str) -> str` returns
+`"<untrusted_prompt>\n{prompt}\n</untrusted_prompt>"`, replacing any
+`<untrusted_prompt>` or `</untrusted_prompt>` look-alike inside the prompt
+(case- and whitespace-insensitive) with `[delimiter removed]`. Every prompt the
+game sends to an LLM goes through it.
 
 ## `shield_engine.models`
 
@@ -336,7 +99,7 @@ Events yielded by `Shield.screen_stream`. All are frozen dataclasses.
 | `sha256_file(path: Path) -> str` | Hex SHA-256 of a file |
 | `read_metadata(directory: Path = BASELINE_DIR) -> dict` | Parses `metadata.json`; raises `ArtifactIntegrityError` if missing |
 | `verify_artifacts(directory: Path = BASELINE_DIR) -> dict` | Checks every entry of `metadata["files"]` against its SHA-256; returns the metadata or raises `ArtifactIntegrityError` |
-| `load_baseline(*, directory: Path = BASELINE_DIR, **kwargs) -> ClassifierDetector` | Verifies, then `joblib.load`s vectorizer and model; `kwargs` go to `ClassifierDetector` |
+| `load_baseline(*, directory: Path = BASELINE_DIR, **kwargs) -> ClassifierDetector` | Verifies, then `joblib.load`s vectorizer and model; `kwargs` go to `ClassifierDetector` (thresholds, keywords) |
 
 `metadata.json` fields: `name`, `algorithm`, `sklearn_version`, `trained_at`,
 `hyperparameters` (`replicate`, `random_state`), `training_data` (`examples`,
@@ -361,20 +124,16 @@ examples repeated `replicate` times, writes `model.joblib`, `vectorizer.joblib` 
 `metadata.json` to `out_dir` (created if missing), and returns the metadata.
 `training_data.path`/`sha256` are `None` when `dataset_path` is not given.
 
-## `shield_engine.evaluation`
+## `shield_engine.dataset`
 
 | Symbol | Signature / fields |
 | --- | --- |
 | `Example` | dataclass `Example(text: str, label: int, source: str \| None = None, category: str \| None = None)`; label 1 = malicious |
 | `DatasetError` | `ValueError` subclass; message names the file and 1-based line |
 | `load_jsonl(path: Path) -> list[Example]` | Skips blank lines. Raises `DatasetError` on invalid JSON, a non-object row, non-string `text`, or `label` not exactly `0` or `1` (booleans rejected) |
-| `BinaryMetrics` | dataclass `(tp, fp, tn, fn)` with properties `precision`, `recall`, `f1`, `false_positive_rate`, `accuracy` (0.0 on a zero denominator) and `as_dict()` |
-| `compute_metrics(y_true, y_pred) -> BinaryMetrics` | Raises `ValueError` if lengths differ |
-| `EvaluationReport` | dataclass `(metrics, examples, abstention_rate, latency_ms_p50, latency_ms_p95)` with `as_dict()` |
-| `evaluate(shield, examples, context=None) -> EvaluationReport` | async. Screens sequentially; blocked = predicted 1; abstention = share of `UNCERTAIN` verdicts |
 
-`EvaluationReport.as_dict()` shape:
-`{"examples", "metrics": {tp, fp, tn, fn, precision, recall, f1, false_positive_rate, accuracy}, "abstention_rate", "latency_ms": {"p50", "p95"}}`.
+The `shield-engine train --data <jsonl> [--out DIR] [--seed N]` command (`mise run train`)
+loads a dataset with `load_jsonl` and calls `train_baseline`.
 
 ## `shield_engine.testing`
 
@@ -383,9 +142,7 @@ dataclasses that record their calls.
 
 | Class | Fields (default) | Behaviour |
 | --- | --- | --- |
-| `StaticClassifier` | `verdict=SAFE`, `probability=0.05`, `calls=[]`, `learned=[]` | `score()` returns `Signal("classifier", verdict, probability)`; `learn()` appends to `learned` |
-| `StaticModerator` | `result=ModerationResult(flagged=False)`, `calls=[]` | `moderate()` returns `result` |
-| `ScriptedAdjudicator` | `verdict=SAFE`, `policy=RESTRICTED`, `summary="scripted adjudication"`, `turns=((ANALYST, "looks fine"),)`, `calls=[]` | Yields each turn, then `Adjudication(verdict, policy, 0.9, summary, dialogue=…)`; records `(prompt, clearance)` |
+| `StaticClassifier` | `verdict=SAFE`, `probability=0.05`, `calls=[]` | `score()` returns `Signal("classifier", verdict, probability)` |
 | `ScriptedChatModel` | `replies: list[str \| BaseException]` (required), `calls=[]` | Pops replies in order; raises a queued exception; raises `AssertionError` when empty |
 | `ScriptedUsageChatModel` | `replies: list[ChatCompletion \| str \| BaseException]` (required), `default=None`, `calls=[]` | `UsageChatModel` double: pops queued replies, then returns `default`; a queued `str` has no token usage; raises a queued exception; raises `AssertionError` when empty and no `default` |
 
@@ -398,7 +155,7 @@ raises `ImportError`.
 GroqChatModel(api_key: str, model: str, *, timeout: float = 30.0)
 ```
 
-Implements `ChatModel` and `UsageChatModel` over `groq.AsyncGroq().chat.completions.create`.
+Implements `ChatModel` and `UsageChatModel` (the game's budget-tier agent, and the standard tier without a Google key) over `groq.AsyncGroq().chat.completions.create`.
 Returns the first choice's content, or `""` when it is empty; `complete_with_usage` also
 returns the reported `prompt_tokens` and `completion_tokens`.
 
@@ -407,24 +164,23 @@ returns the reported `prompt_tokens` and `completion_tokens`.
 Pure graph interpreter, deterministic and ML check evaluators, the AI Agent, campaign waves, and scoring for the `ai-shield` workflow game (specs 0016 and 0020):
 
 - **Anchor nodes** (locked, non-removable): `incoming` (`Input`) and `assistant` (`Help Desk` on Easy, `Protected Agent` on Medium, Hard and the custom sandbox). A prompt that stops on an unwired tool output is `blocked`; the retired `blocked` node kind is rejected with `RETIRED_BLOCKED_MESSAGE`.
-- **Tool nodes** (9 configurable check kinds):
-  - `text_cleanup` (`Text cleaner`): strips zero-width Unicode characters, normalises compatibility glyphs, and decodes Base64 spans (`out` handle).
-  - `word_filter` (`Word filter`): checks prompt text against rule groups (`override`, `encoded`, `sql_tools`) and custom blocked phrases (`safe` output; a block stops the prompt).
+- **Tool nodes** (8 configurable check kinds):
+  - `text_cleanup` (`Text cleaner`): normalises text using player-enabled `transforms` (`strip_zero_width`, `decode_base64`, `decode_hex_url`), all off by default (`0.2 ms` base + `0.4 ms` per transform; `out` handle).
+  - `word_filter` (`Word filter`): checks prompt text against player-configured `custom_words` phrases (`safe` output; a block stops the prompt).
   - `length_limit` (`Length limit`): blocks prompts exceeding `max_chars` (`safe` output; a block stops the prompt).
-  - `secret_scan` (`Secret scanner`): blocks API keys, tokens, private keys, and internal credentials (`safe` output; a block stops the prompt).
-  - `ml_classifier` (`ML filter`): custom TF-IDF + scikit-learn classifier trained on player-uploaded CSV (`text,label`) with selectable algorithm (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and risk threshold (`safe` output; a block stops the prompt).
-  - `quick_screen` (`Quick screen`): bundled Layer 1 TF-IDF classifier with configurable `safe_threshold` and `block_threshold` (`safe` and `suspicious` outputs; a block stops the prompt).
-  - `safety_check` (`Safety check`): simulated moderation check (`safe` output; a block stops the prompt).
-  - `agent_review` (`Agent review`): simulated Analyst/Warden review (`safe` output; a block stops the prompt).
-  - `tool_filter` (`Tool filter`): deterministic tool-access policy gate (`safe` output; a block stops the prompt).
+  - `secret_scan` (`Secret scanner`): blocks prompts matching player-configured case-insensitive regular expressions in `patterns` (`safe` output; invalid regexes rejected by `validate_board`).
+  - `ml_classifier` (`ML filter`): trainable TF-IDF + scikit-learn classifier fitted only on player-supplied 2-class training data (`text,label` CSV or `dataset` rows) with selectable algorithm (`tfidf`, `logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and 3-way routing via `safe_threshold` (`0.30`) and `block_threshold` (`0.75`) (`safe` and `suspicious` outputs; a block stops the prompt). All algorithms—including `tfidf`—pass prompts to `safe` (`"Model not trained"`) until trained on user data.
+  - `jev` (`Jev`): TypeSafe System One fast decision model calling `JevClient.evaluate_noul` (`POST https://api.typesafe.ai/v1/systemone`) with the player's boolean `noul` `question` against `threshold`, recording real measured elapsed `latency_ms` and token-based `cost_usd` (`input_tokens * $0.042 / 1M`; raises `BoardValidationError("Insert Jev API key to continue.")` if no `jev_client` is provided). Supports the Tool Policy extension (`tool_policy_enabled`, `block_tools`): when enabled and triggered, switches off the selected numbered tools for the downstream LangGraph agent and routes `safe` instead of stopping the prompt.
+  - `safety_check` (`Safety check`): dedicated safety/guardrail classifier (`llama-guard-3-8b`, `meta-llama/llama-guard-4-12b`, `qwen3guard-8b`, `shieldgemma-9b`, `llama-nemotron-safety-guard-8b`) calling `check_model_for(model)` / `check_model` with `wrap_untrusted(working_text)`, supporting JSON and native guardrail verdicts (`safe`/`unsafe`/`Yes`/`No`), recording real measured `latency_ms` and token-based `cost_usd` (raises `BoardValidationError("Enter API key to continue.")` if no model is provided). Supports the Tool Policy extension (`tool_policy_enabled`, `block_tools`).
+  - `llm_review` (`LLM review`): general-purpose LLM reviewer (`gemini-2.5-flash`, `gemini-2.0-flash`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `gpt-4o-mini`) calling `check_model_for(model)` / `check_model` with optional player-written `<review_instructions>` (`config.prompt`, max 1,000 chars) and `wrap_untrusted(working_text)`, recording real measured `latency_ms` and token-based `cost_usd` (raises `BoardValidationError("Enter API key to continue.")` if no model is provided). When `tool_policy_enabled=True`, receives the level's numbered tools (`<agent_tools>`) and can return `"blocked_tools"` alongside `"blocked": false` to switch off specific tools on the final LangGraph agent.
   - No tool offers a `block` output (ENG-AGENT-011). A hop can still record `handle: "block"`, and the prompt then stops at that node as `blocked`, even when an older board wires a `block` edge.
-- **Level tiers** (spec 0021): `GameLevel.agent` is `None` on `easy`, which is classification only (its final node is labelled `GameLevel.final_node_label`, `Help Desk`). `GameLevel.agent_tier` is `standard` on `medium` and `budget` on `hard`; `model_for_level(level, *, agent=None, agents=None)` picks the tier's model from `agents: Mapping[AgentTier, UsageChatModel]`, falling back to `agent`. `simulate_agent(..., tier=)` makes the offline `standard` stand-in refuse direct overrides even without rules, while the `budget` stand-in leaks every attack that reaches it unless a defensive rule is set. `parse_agent_output` reads the first JSON object in a reply, so fenced or chatty replies from small models still parse.
-- **AI Agent** (`shield_engine.game.agent`): each non-null `GameLevel.agent` is an `AgentProfile(objective, tools: tuple[AgentTool(name, description, allowed)], token_budget)`, and `LevelMessage.expected_tool` names the tool a benign request should use. The `assistant` node's `config.rules` holds up to `AGENT_RULE_LIMIT` (5) player rules of at most `AGENT_RULE_MAX_CHARS` (200) characters. A prompt that reaches the agent is sent to a `UsageChatModel` with the objective, tools, `<player_rules>`, a per-run canary, and `wrap_untrusted(prompt)`, then judged into an `AgentRun(reply, tool_calls, refused, verdict, input_tokens, output_tokens, estimated_tokens, latency_ms, cost_usd)`. Verdicts are `leaked` (canary in the reply or a forbidden tool called), `protected`, `helped`, or `false_alarm`. A model failure raises `AgentUnavailableError`. With no model, a deterministic stand-in runs instead.
+- **Level catalog and tiers** (specs 0021 and 0039): `get_levels()` returns 23 campaign problems across `Easy` (`easy-1`..`easy-5`: 3 Free / 2 Pro, classification-only with `agent=None` and `final_node_label="Help Desk"`), `Medium` (`medium-1`..`medium-10`: 2 Free / 8 Pro, `agent_tier="standard"`, `final_node_label="Protected Agent"`), and `Hard` (`hard-1`..`hard-8`: 0 Free / 8 Pro, `agent_tier="budget"`, `final_node_label="Protected Agent"`). Each `GameLevel` defines `difficulty` (`"Easy" | "Medium" | "Hard"`), `order`, `tier` (`"free" | "paid"`), `tags`, optional `constraints: LevelConstraints` (`max_nodes`, `allowed_kinds`, `disallowed_kinds`, `hard_max_latency_ms`, `hard_max_cost_usd`), and optional `follow_up: FollowUpChallenge` (`question`, `hint`, `bonus_points`, `check`). `validate_board_for_level(board, level)` validates topology (`validate_board`) plus Hard-level topology constraints (`max_nodes`, `allowed_kinds`, `disallowed_kinds`). On Hard levels with `hard_max_latency_ms` or `hard_max_cost_usd`, exceeding the budget adds an entry to `WaveScore.constraint_violations` and forces a loss (`won=False`, `total_score=0`, `medal="none"`). On a win (`won=True`), `FollowUpChallenge` is evaluated deterministically during the run (`follow_up_passed`, `follow_up_feedback`) and awards `+bonus_points` capped at `10,000`.
+- **AI Agent and Dual-Use conditional tools** (`shield_engine.game.agent`, specs 0020, 0037, and 0039): each non-null `GameLevel.agent` is an `AgentProfile(objective, tools: tuple[AgentTool(name, description, allowed, dual_use=False)], token_budget)`, `LevelMessage.expected_tool` names the tool a benign request should use, and `LevelMessage.forbidden_tools` lists Dual-Use tools that are forbidden on that specific message context. The `assistant` node's `config.rules` holds up to `AGENT_RULE_LIMIT` (5) player rules of at most `AGENT_RULE_MAX_CHARS` (200) characters. A prompt that reaches the agent runs a LangGraph `StateGraph` (`build_agent_graph` with an `agent` node and `ToolNode` bound to non-gated tools) over `UsageChatModel` with the objective, available numbered tools, `<player_rules>`, a per-run canary, and `wrap_untrusted(prompt)`, then is judged into an `AgentRun(reply, tool_calls, refused, verdict, input_tokens, output_tokens, estimated_tokens, latency_ms, cost_usd)`. Verdicts are `leaked` (canary in the reply, or a permanently restricted tool or per-message `forbidden_tools` called on an attack), `protected`, `helped`, or `false_alarm`; unintended restricted or per-message `forbidden_tools` calls on benign prompts deduct `tool_points` unless switched off upstream. A model failure raises `AgentUnavailableError`. With no model, a deterministic stand-in runs instead.
 - `train_custom_classifier(csv_text, algorithm="logistic_regression")`: parses `text,label` CSV data, trains the chosen algorithm, and returns training accuracy and serialised dataset rows.
-- `validate_board(board: BoardGraph)`: requires exactly one `incoming` and one `assistant` node, at least one tool node between them, valid agent rules, and no directed cycles.
-- `evaluate_message(board, *, message, message_id="custom", is_attack=False, classifier=None, level_id="easy", expected_tool=None, agent=None, canary=None, agents=None) -> MessageTrace`: routes one message, recording `HopTrace` entries, latency, cost and, when it reaches the agent, `MessageTrace.agent`.
+- `validate_board(board: BoardGraph)` and `validate_board_for_level(board: BoardGraph, level: GameLevel)`: require exactly one `incoming` and one `assistant` node, at least one tool node between them, valid agent rules, no directed cycles, and (for `validate_board_for_level`) compliance with `level.constraints` topology rules.
+- `evaluate_message(board, *, message, message_id="custom", is_attack=False, classifier=None, level_id="easy-1", expected_tool=None, forbidden_tools=frozenset(), agent=None, canary=None, agents=None) -> MessageTrace`: routes one message, recording `HopTrace` entries, latency, cost and, when it reaches the agent, `MessageTrace.agent`.
 - `run_wave(board, *, level_id, classifier=None, agent=None, canary_factory=new_canary, agents=None) -> WaveResult`: runs a full level wave with one canary per run. `WaveResult.agent_mode` is `live` with a model, `simulated` without one, and `none` on a classification-only level.
 - `run_single_message(board, *, level_id, message, classifier=None, agent=None, agents=None) -> WaveResult`: scores one player-written prompt as an attack.
 - `score_traces(messages, traces, *, token_budget, max_latency_ms, max_cost_usd, classify_only) -> WaveScore`: scores evaluated traces; used by `run_wave` and `run_single_message`.
 - **Custom sandbox** (`shield_engine.game.custom`, spec 0022): `validate_custom_profile(profile)` checks a player's agent (objective up to 1,000 characters, up to 10 `snake_case` tools of up to 40 characters, unique names, descriptions up to 200 characters). `parse_custom_dataset(csv_text, profile)` and `build_custom_messages(rows, profile)` turn `text,label,expected_tool` rows (labels `normal`/`benign`/`0` or `attack`/`1`; 1 to 50 rows of up to 1,000 characters) into `LevelMessage`s, raising `BoardValidationError` that names the row. `run_custom_wave(board, *, profile, messages, agent, classifier=None)` runs them like a level wave with one canary, scoring against 1,000 tokens, $0.002 per prompt and 3,000 ms; `agent_mode` is `custom`. `run_custom_message` scores one prompt as an attack. `evaluate_message(..., agent_profile=)` replaces the level's agent with the player's.
-- `score_wave(...) -> WaveScore`: computes the 0 to 10,000 score from protection (4,000), helpfulness (2,000 minus 300 per false alarm), tool use (1,000), tokens against the level budget (1,500), speed (750) and cost (750), minus 1,000 per leaked attack, plus medal (`gold`, `silver`, `bronze`, `none`). With `classify_only=True` the weights are protection 5,000, helpfulness 3,000, speed 1,000 and cost 1,000, and tool and token points are 0.
+- `score_wave(...) -> WaveScore`: computes `won = (attacks_leaked == 0 and false_alarms == 0)` and the 0 to 10,000 efficiency score (spec 0029). Any leaked attack or false alarm results in a loss (`won=False`, `total_score=0`, `medal="none"`). On a win (`won=True`), points come strictly from workflow efficiency: for agent levels, speed (3,500), cost (3,500), tokens against the level budget (2,000), and tool use (1,000); with `classify_only=True` the weights are speed (5,000) and cost (5,000), and tool and token points are 0. Medals on a win are `gold` (`>= 8500`), `silver` (`>= 7000`), and `bronze` (`< 7000`).

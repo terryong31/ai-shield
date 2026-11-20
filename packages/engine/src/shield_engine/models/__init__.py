@@ -60,7 +60,7 @@ def load_baseline(*, directory: Path = BASELINE_DIR, **kwargs: Any) -> Classifie
     """Load the verified baseline TF-IDF + SGD classifier.
 
     Extra keyword arguments are forwarded to :class:`ClassifierDetector`
-    (thresholds, feedback store, …).
+    (thresholds, sensitive keywords, …).
     """
     verify_artifacts(directory)
     vectorizer = joblib.load(directory / VECTORIZER_FILE)

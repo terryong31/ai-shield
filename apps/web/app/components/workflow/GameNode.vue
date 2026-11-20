@@ -43,6 +43,7 @@ const handleLabel = (handle: string): string => {
 <template>
   <div
     class="w-56 rounded-md border-2 bg-default text-default transition-colors duration-150 select-none"
+    :data-tour="`node-${data.kind}`"
     :class="selected
       ? 'border-solid border-inverted'
       : data.isAnchor ? 'border-dashed border-accented' : 'border-solid border-default'"

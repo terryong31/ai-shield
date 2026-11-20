@@ -23,7 +23,7 @@ from shield_engine.game import (
     validate_board,
 )
 from shield_engine.game.agent import new_canary
-from shield_engine.ports import Classifier, UsageChatModel
+from shield_engine.ports import Classifier, JevClient, UsageChatModel
 
 CUSTOM_LEVEL_ID = "custom"
 CUSTOM_MAX_ROWS = 50
@@ -122,6 +122,9 @@ async def run_custom_wave(
     agent: UsageChatModel,
     classifier: Classifier | None = None,
     canary_factory: Callable[[], str] = new_canary,
+    jev_client: JevClient | None = None,
+    check_model: UsageChatModel | None = None,
+    check_model_for: Callable[[str], UsageChatModel | None] | None = None,
 ) -> WaveResult:
     """Run every dataset message through the board and the player's agent, then score it."""
     validate_board(board)
@@ -137,9 +140,13 @@ async def run_custom_wave(
                 is_attack=msg.is_attack,
                 classifier=classifier,
                 expected_tool=msg.expected_tool,
+                message_category=msg.category,
                 agent=agent,
                 canary=canary,
                 agent_profile=profile,
+                jev_client=jev_client,
+                check_model=check_model,
+                check_model_for=check_model_for,
             )
         )
     budgets = _budgets(len(messages))
@@ -150,6 +157,7 @@ async def run_custom_wave(
         max_latency_ms=budgets["max_latency_ms"],
         max_cost_usd=budgets["max_cost_usd"],
         classify_only=False,
+        restricted_tools=frozenset(t.name for t in profile.tools if not t.allowed),
     )
     return WaveResult(
         level_id=CUSTOM_LEVEL_ID, traces=tuple(traces), score=score, agent_mode="custom"
@@ -163,10 +171,18 @@ async def run_custom_message(
     message: str,
     agent: UsageChatModel,
     classifier: Classifier | None = None,
+    jev_client: JevClient | None = None,
+    check_model: UsageChatModel | None = None,
 ) -> WaveResult:
     """Score one player-written prompt as an attack against the player's own agent."""
     single = (LevelMessage("custom", message, True, "custom"),)
     result = await run_custom_wave(
-        board, profile=profile, messages=single, agent=agent, classifier=classifier
+        board,
+        profile=profile,
+        messages=single,
+        agent=agent,
+        classifier=classifier,
+        jev_client=jev_client,
+        check_model=check_model,
     )
     return result

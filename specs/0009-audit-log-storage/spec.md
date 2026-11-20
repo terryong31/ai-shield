@@ -1,6 +1,6 @@
 # 0009 — Audit log storage backends
 
-- **Status:** Implemented
+- **Status:** Superseded by 0026
 - **Area:** API
 - **Created:** 2026-09-23
 - **Related:** spec 0007, [persist the audit log](../../docs/how-to/persist-the-audit-log.md), `supabase/migrations/`

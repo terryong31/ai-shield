@@ -12,7 +12,7 @@ import sklearn
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
 
-from shield_engine.evaluation.dataset import Example
+from shield_engine.dataset import Example
 from shield_engine.models import METADATA_FILE, MODEL_FILE, VECTORIZER_FILE, sha256_file
 
 

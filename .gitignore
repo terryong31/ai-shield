@@ -51,3 +51,5 @@ company_document/
 .claude/settings.local.json
 
 .mypy_cache/
+
+.agents/skills/

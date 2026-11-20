@@ -13,7 +13,7 @@ RUN useradd --create-home --uid 10001 shield
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 \
-    FEEDBACK_PATH=/app/var/feedback.csv SQLITE_PATH=/app/var/shield.db
+    SQLITE_PATH=/app/var/shield.db
 RUN mkdir -p /app/var && chown shield /app/var
 USER shield
 EXPOSE 8000

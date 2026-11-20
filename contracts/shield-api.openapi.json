@@ -1,6 +1,110 @@
 {
   "components": {
     "schemas": {
+      "AccountDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "const": "DELETE",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "current_password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "confirm"
+        ],
+        "title": "AccountDeleteRequest",
+        "type": "object"
+      },
+      "AccountEmailRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "New Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_email",
+          "current_password"
+        ],
+        "title": "AccountEmailRequest",
+        "type": "object"
+      },
+      "AccountPasswordRequest": {
+        "additionalProperties": false,
+        "description": "Change password (spec 0025). The current password is checked first.",
+        "properties": {
+          "current_password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 512,
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "AccountPasswordRequest",
+        "type": "object"
+      },
+      "AccountResetRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "current_password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password"
+        ],
+        "title": "AccountResetRequest",
+        "type": "object"
+      },
+      "AccountResetResponse": {
+        "properties": {
+          "boards_removed": {
+            "title": "Boards Removed",
+            "type": "integer"
+          },
+          "scores_removed": {
+            "title": "Scores Removed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scores_removed",
+          "boards_removed"
+        ],
+        "title": "AccountResetResponse",
+        "type": "object"
+      },
       "AgentProfileSchema": {
         "properties": {
           "objective": {
@@ -99,6 +203,11 @@
             "title": "Description",
             "type": "string"
           },
+          "dual_use": {
+            "default": false,
+            "title": "Dual Use",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -110,93 +219,6 @@
           "allowed"
         ],
         "title": "AgentToolSchema",
-        "type": "object"
-      },
-      "AuditRecord": {
-        "properties": {
-          "action": {
-            "enum": [
-              "ALLOWED",
-              "BLOCKED"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "human_label": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Human Label"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "layer": {
-            "title": "Layer",
-            "type": "string"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "title": "Metadata",
-            "type": "object"
-          },
-          "query": {
-            "title": "Query",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "reviewed": {
-            "default": false,
-            "title": "Reviewed",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "created_at",
-          "query",
-          "action",
-          "reason",
-          "layer"
-        ],
-        "title": "AuditRecord",
-        "type": "object"
-      },
-      "BlockEvent": {
-        "properties": {
-          "layer": {
-            "$ref": "#/components/schemas/DecisionLayer"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "type": {
-            "const": "BLOCK",
-            "default": "BLOCK",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "reason",
-          "layer"
-        ],
-        "title": "BlockEvent",
         "type": "object"
       },
       "BoardEdgeSchema": {
@@ -279,9 +301,9 @@
                   "length_limit",
                   "secret_scan",
                   "ml_classifier",
-                  "quick_screen",
+                  "jev",
                   "safety_check",
-                  "agent_review",
+                  "llm_review",
                   "tool_filter",
                   "assistant"
                 ],
@@ -341,84 +363,6 @@
         "title": "ByokModelSchema",
         "type": "object"
       },
-      "ChatEvent": {
-        "discriminator": {
-          "mapping": {
-            "BLOCK": "#/components/schemas/BlockEvent",
-            "DEBATE_TURN": "#/components/schemas/DebateTurnEvent",
-            "ERROR": "#/components/schemas/ErrorEvent",
-            "FINAL_RESPONSE": "#/components/schemas/FinalResponseEvent",
-            "LLAMAGUARD_RESULT": "#/components/schemas/ModerationEvent",
-            "ML_RESULT": "#/components/schemas/MlResultEvent",
-            "POLICY_UPDATE": "#/components/schemas/PolicyUpdateEvent",
-            "STAGE_CHANGE": "#/components/schemas/StageChangeEvent",
-            "START": "#/components/schemas/StartEvent",
-            "TOOL_END": "#/components/schemas/ToolEndEvent",
-            "TOOL_START": "#/components/schemas/ToolStartEvent"
-          },
-          "propertyName": "type"
-        },
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/StartEvent"
-          },
-          {
-            "$ref": "#/components/schemas/StageChangeEvent"
-          },
-          {
-            "$ref": "#/components/schemas/MlResultEvent"
-          },
-          {
-            "$ref": "#/components/schemas/ModerationEvent"
-          },
-          {
-            "$ref": "#/components/schemas/DebateTurnEvent"
-          },
-          {
-            "$ref": "#/components/schemas/BlockEvent"
-          },
-          {
-            "$ref": "#/components/schemas/PolicyUpdateEvent"
-          },
-          {
-            "$ref": "#/components/schemas/ToolStartEvent"
-          },
-          {
-            "$ref": "#/components/schemas/ToolEndEvent"
-          },
-          {
-            "$ref": "#/components/schemas/FinalResponseEvent"
-          },
-          {
-            "$ref": "#/components/schemas/ErrorEvent"
-          }
-        ]
-      },
-      "ChatRequest": {
-        "properties": {
-          "message": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
-          },
-          "mode": {
-            "default": "shield",
-            "enum": [
-              "shield",
-              "guardrail",
-              "chaos"
-            ],
-            "title": "Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "ChatRequest",
-        "type": "object"
-      },
       "CheckDefinitionSchema": {
         "properties": {
           "cost_usd": {
@@ -447,9 +391,9 @@
               "length_limit",
               "secret_scan",
               "ml_classifier",
-              "quick_screen",
+              "jev",
               "safety_check",
-              "agent_review",
+              "llm_review",
               "tool_filter",
               "assistant"
             ],
@@ -481,27 +425,24 @@
         "type": "object"
       },
       "ClearanceRequest": {
+        "description": "An admin's Supabase Auth credentials, checked once and never stored.",
         "properties": {
           "email": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Email"
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
           },
-          "passphrase": {
+          "password": {
             "maxLength": 512,
             "minLength": 1,
-            "title": "Passphrase",
+            "title": "Password",
             "type": "string"
           }
         },
         "required": [
-          "passphrase"
+          "email",
+          "password"
         ],
         "title": "ClearanceRequest",
         "type": "object"
@@ -660,139 +601,210 @@
         "title": "CustomSetupSchema",
         "type": "object"
       },
-      "DebateTurnEvent": {
+      "DifficultyLeaderboardEntry": {
         "properties": {
-          "agent": {
-            "enum": [
-              "ANALYST",
-              "WARDEN"
-            ],
-            "title": "Agent",
-            "type": "string"
+          "avg_latency_ms": {
+            "title": "Avg Latency Ms",
+            "type": "number"
           },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "const": "DEBATE_TURN",
-            "default": "DEBATE_TURN",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent",
-          "message"
-        ],
-        "title": "DebateTurnEvent",
-        "type": "object"
-      },
-      "DecisionLayer": {
-        "description": "Which layer produced the final decision.\n\nValues match the identifiers already stored in existing audit logs.",
-        "enum": [
-          "LAYER_1_ML",
-          "LAYER_2_DUAL_AGENT",
-          "SYSTEM"
-        ],
-        "title": "DecisionLayer",
-        "type": "string"
-      },
-      "ErrorEvent": {
-        "properties": {
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "type": {
-            "const": "ERROR",
-            "default": "ERROR",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "ErrorEvent",
-        "type": "object"
-      },
-      "FeedbackRequest": {
-        "properties": {
-          "human_label": {
-            "enum": [
-              0,
-              1
-            ],
-            "title": "Human Label",
-            "type": "integer"
-          },
-          "prompt": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Prompt",
-            "type": "string"
-          },
-          "request_id": {
+          "difficulty": {
             "anyOf": [
               {
+                "enum": [
+                  "Easy",
+                  "Medium",
+                  "Hard"
+                ],
                 "type": "string"
+              },
+              {
+                "const": "All",
+                "type": "string"
+              }
+            ],
+            "title": "Difficulty"
+          },
+          "levels_mastered": {
+            "title": "Levels Mastered",
+            "type": "integer"
+          },
+          "levels_solved": {
+            "title": "Levels Solved",
+            "type": "integer"
+          },
+          "levels_total": {
+            "title": "Levels Total",
+            "type": "integer"
+          },
+          "max_possible_score": {
+            "title": "Max Possible Score",
+            "type": "integer"
+          },
+          "player_name": {
+            "title": "Player Name",
+            "type": "string"
+          },
+          "total_cost_usd": {
+            "title": "Total Cost Usd",
+            "type": "number"
+          },
+          "total_score": {
+            "title": "Total Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "player_name",
+          "difficulty",
+          "total_score",
+          "max_possible_score",
+          "levels_solved",
+          "levels_mastered",
+          "levels_total",
+          "avg_latency_ms",
+          "total_cost_usd"
+        ],
+        "title": "DifficultyLeaderboardEntry",
+        "type": "object"
+      },
+      "DifficultyProgressSummary": {
+        "properties": {
+          "difficulty": {
+            "enum": [
+              "Easy",
+              "Medium",
+              "Hard"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "levels_mastered": {
+            "title": "Levels Mastered",
+            "type": "integer"
+          },
+          "levels_solved": {
+            "title": "Levels Solved",
+            "type": "integer"
+          },
+          "levels_total": {
+            "title": "Levels Total",
+            "type": "integer"
+          },
+          "max_possible_score": {
+            "title": "Max Possible Score",
+            "type": "integer"
+          },
+          "total_score": {
+            "title": "Total Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "difficulty",
+          "total_score",
+          "max_possible_score",
+          "levels_solved",
+          "levels_mastered",
+          "levels_total"
+        ],
+        "title": "DifficultyProgressSummary",
+        "type": "object"
+      },
+      "FollowUpChallengeSchema": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "forbidden_checks": {
+            "items": {
+              "enum": [
+                "incoming",
+                "word_filter",
+                "text_cleanup",
+                "length_limit",
+                "secret_scan",
+                "ml_classifier",
+                "jev",
+                "safety_check",
+                "llm_review",
+                "tool_filter",
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "title": "Forbidden Checks",
+            "type": "array"
+          },
+          "max_avg_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Request Id"
-          }
-        },
-        "required": [
-          "prompt",
-          "human_label"
-        ],
-        "title": "FeedbackRequest",
-        "type": "object"
-      },
-      "FeedbackResponse": {
-        "properties": {
-          "status": {
-            "const": "success",
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "FeedbackResponse",
-        "type": "object"
-      },
-      "FinalResponseEvent": {
-        "properties": {
-          "text": {
-            "title": "Text",
-            "type": "string"
+            "title": "Max Avg Latency Ms"
           },
-          "type": {
-            "const": "FINAL_RESPONSE",
-            "default": "FINAL_RESPONSE",
-            "title": "Type",
-            "type": "string"
+          "max_check_nodes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Check Nodes"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "max_total_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Total Cost Usd"
           }
         },
         "required": [
-          "text"
+          "description"
         ],
-        "title": "FinalResponseEvent",
+        "title": "FollowUpChallengeSchema",
         "type": "object"
       },
       "GameCatalogResponse": {
         "properties": {
+          "ai_key_configured": {
+            "default": false,
+            "title": "Ai Key Configured",
+            "type": "boolean"
+          },
           "checks": {
             "items": {
               "$ref": "#/components/schemas/CheckDefinitionSchema"
             },
             "title": "Checks",
             "type": "array"
+          },
+          "jev_key_configured": {
+            "default": false,
+            "title": "Jev Key Configured",
+            "type": "boolean"
           },
           "levels": {
             "items": {
@@ -836,6 +848,9 @@
             ],
             "title": "Agent Tier"
           },
+          "constraints": {
+            "$ref": "#/components/schemas/LevelConstraintsSchema"
+          },
           "difficulty": {
             "enum": [
               "Easy",
@@ -849,11 +864,41 @@
             "title": "Final Node Label",
             "type": "string"
           },
+          "follow_up": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FollowUpChallengeSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "enum": [
-              "easy",
-              "medium",
-              "hard"
+              "easy-1",
+              "easy-2",
+              "easy-3",
+              "easy-4",
+              "easy-5",
+              "medium-1",
+              "medium-2",
+              "medium-3",
+              "medium-4",
+              "medium-5",
+              "medium-6",
+              "medium-7",
+              "medium-8",
+              "medium-9",
+              "medium-10",
+              "hard-1",
+              "hard-2",
+              "hard-3",
+              "hard-4",
+              "hard-5",
+              "hard-6",
+              "hard-7",
+              "hard-8"
             ],
             "title": "Id",
             "type": "string"
@@ -873,12 +918,31 @@
             "title": "Messages",
             "type": "array"
           },
+          "order": {
+            "title": "Order",
+            "type": "integer"
+          },
           "protected_asset": {
             "title": "Protected Asset",
             "type": "string"
           },
           "summary": {
             "title": "Summary",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "tier": {
+            "enum": [
+              "free",
+              "pro"
+            ],
+            "title": "Tier",
             "type": "string"
           },
           "title": {
@@ -888,6 +952,8 @@
         },
         "required": [
           "id",
+          "order",
+          "tier",
           "title",
           "difficulty",
           "summary",
@@ -932,9 +998,29 @@
             "anyOf": [
               {
                 "enum": [
-                  "easy",
-                  "medium",
-                  "hard"
+                  "easy-1",
+                  "easy-2",
+                  "easy-3",
+                  "easy-4",
+                  "easy-5",
+                  "medium-1",
+                  "medium-2",
+                  "medium-3",
+                  "medium-4",
+                  "medium-5",
+                  "medium-6",
+                  "medium-7",
+                  "medium-8",
+                  "medium-9",
+                  "medium-10",
+                  "hard-1",
+                  "hard-2",
+                  "hard-3",
+                  "hard-4",
+                  "hard-5",
+                  "hard-6",
+                  "hard-7",
+                  "hard-8"
                 ],
                 "type": "string"
               },
@@ -943,7 +1029,7 @@
                 "type": "string"
               }
             ],
-            "default": "easy",
+            "default": "easy-1",
             "title": "Level Id"
           }
         },
@@ -1073,25 +1159,19 @@
       },
       "HealthResponse": {
         "properties": {
-          "adjudication_enabled": {
-            "title": "Adjudication Enabled",
-            "type": "boolean"
-          },
-          "audit_backend": {
-            "enum": [
-              "sqlite",
-              "supabase",
-              "memory"
-            ],
-            "title": "Audit Backend",
-            "type": "string"
+          "agent_tiers": {
+            "items": {
+              "enum": [
+                "standard",
+                "budget"
+              ],
+              "type": "string"
+            },
+            "title": "Agent Tiers",
+            "type": "array"
           },
           "model_loaded": {
             "title": "Model Loaded",
-            "type": "boolean"
-          },
-          "moderation_enabled": {
-            "title": "Moderation Enabled",
             "type": "boolean"
           },
           "service": {
@@ -1101,6 +1181,15 @@
           "status": {
             "const": "healthy",
             "title": "Status",
+            "type": "string"
+          },
+          "storage_backend": {
+            "enum": [
+              "sqlite",
+              "supabase",
+              "memory"
+            ],
+            "title": "Storage Backend",
             "type": "string"
           },
           "version": {
@@ -1113,9 +1202,8 @@
           "service",
           "version",
           "model_loaded",
-          "moderation_enabled",
-          "adjudication_enabled",
-          "audit_backend"
+          "agent_tiers",
+          "storage_backend"
         ],
         "title": "HealthResponse",
         "type": "object"
@@ -1160,6 +1248,76 @@
         "title": "HopTraceSchema",
         "type": "object"
       },
+      "LevelConstraintsSchema": {
+        "properties": {
+          "disabled_checks": {
+            "items": {
+              "enum": [
+                "incoming",
+                "word_filter",
+                "text_cleanup",
+                "length_limit",
+                "secret_scan",
+                "ml_classifier",
+                "jev",
+                "safety_check",
+                "llm_review",
+                "tool_filter",
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "title": "Disabled Checks",
+            "type": "array"
+          },
+          "max_avg_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Avg Latency Ms"
+          },
+          "max_check_nodes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Check Nodes"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "max_total_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Total Cost Usd"
+          }
+        },
+        "title": "LevelConstraintsSchema",
+        "type": "object"
+      },
       "LevelMessageSchema": {
         "properties": {
           "category": {
@@ -1176,6 +1334,13 @@
               }
             ],
             "title": "Expected Tool"
+          },
+          "forbidden_tools": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forbidden Tools",
+            "type": "array"
           },
           "id": {
             "title": "Id",
@@ -1197,6 +1362,80 @@
           "category"
         ],
         "title": "LevelMessageSchema",
+        "type": "object"
+      },
+      "LevelProgressItem": {
+        "properties": {
+          "best_score": {
+            "title": "Best Score",
+            "type": "integer"
+          },
+          "difficulty": {
+            "enum": [
+              "Easy",
+              "Medium",
+              "Hard"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "level_id": {
+            "enum": [
+              "easy-1",
+              "easy-2",
+              "easy-3",
+              "easy-4",
+              "easy-5",
+              "medium-1",
+              "medium-2",
+              "medium-3",
+              "medium-4",
+              "medium-5",
+              "medium-6",
+              "medium-7",
+              "medium-8",
+              "medium-9",
+              "medium-10",
+              "hard-1",
+              "hard-2",
+              "hard-3",
+              "hard-4",
+              "hard-5",
+              "hard-6",
+              "hard-7",
+              "hard-8"
+            ],
+            "title": "Level Id",
+            "type": "string"
+          },
+          "mastered": {
+            "title": "Mastered",
+            "type": "boolean"
+          },
+          "medal": {
+            "enum": [
+              "none",
+              "bronze",
+              "silver",
+              "gold"
+            ],
+            "title": "Medal",
+            "type": "string"
+          },
+          "won": {
+            "title": "Won",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "level_id",
+          "difficulty",
+          "best_score",
+          "medal",
+          "won",
+          "mastered"
+        ],
+        "title": "LevelProgressItem",
         "type": "object"
       },
       "MessageTraceSchema": {
@@ -1259,56 +1498,6 @@
         "title": "MessageTraceSchema",
         "type": "object"
       },
-      "MlResultEvent": {
-        "properties": {
-          "confidence": {
-            "title": "Confidence",
-            "type": "number"
-          },
-          "type": {
-            "const": "ML_RESULT",
-            "default": "ML_RESULT",
-            "title": "Type",
-            "type": "string"
-          },
-          "verdict": {
-            "$ref": "#/components/schemas/Verdict"
-          }
-        },
-        "required": [
-          "confidence",
-          "verdict"
-        ],
-        "title": "MlResultEvent",
-        "type": "object"
-      },
-      "ModerationEvent": {
-        "properties": {
-          "categories": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Categories",
-            "type": "array"
-          },
-          "safe": {
-            "title": "Safe",
-            "type": "boolean"
-          },
-          "type": {
-            "const": "LLAMAGUARD_RESULT",
-            "default": "LLAMAGUARD_RESULT",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "safe",
-          "categories"
-        ],
-        "title": "ModerationEvent",
-        "type": "object"
-      },
       "NodePositionSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1328,17 +1517,31 @@
         "title": "NodePositionSchema",
         "type": "object"
       },
+      "PlayerConfirmationResponse": {
+        "description": "Sent for every register or resend that needs email confirmation, whatever the email.",
+        "properties": {
+          "status": {
+            "const": "confirmation_sent",
+            "default": "confirmation_sent",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "PlayerConfirmationResponse",
+        "type": "object"
+      },
       "PlayerLoginRequest": {
         "properties": {
           "email": {
             "maxLength": 254,
             "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
             "title": "Email",
             "type": "string"
           },
           "password": {
             "maxLength": 512,
-            "minLength": 1,
+            "minLength": 8,
             "title": "Password",
             "type": "string"
           }
@@ -1348,6 +1551,30 @@
           "password"
         ],
         "title": "PlayerLoginRequest",
+        "type": "object"
+      },
+      "PlayerProgressResponse": {
+        "properties": {
+          "difficulties": {
+            "items": {
+              "$ref": "#/components/schemas/DifficultyProgressSummary"
+            },
+            "title": "Difficulties",
+            "type": "array"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/LevelProgressItem"
+            },
+            "title": "Levels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "levels",
+          "difficulties"
+        ],
+        "title": "PlayerProgressResponse",
         "type": "object"
       },
       "PlayerRecoverRequest": {
@@ -1382,12 +1609,13 @@
           "email": {
             "maxLength": 254,
             "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
             "title": "Email",
             "type": "string"
           },
           "password": {
             "maxLength": 512,
-            "minLength": 6,
+            "minLength": 8,
             "title": "Password",
             "type": "string"
           },
@@ -1410,6 +1638,22 @@
           "password"
         ],
         "title": "PlayerRegisterRequest",
+        "type": "object"
+      },
+      "PlayerResendRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PlayerResendRequest",
         "type": "object"
       },
       "PlayerSessionStatus": {
@@ -1498,74 +1742,6 @@
         "title": "PlayerSessionStatus",
         "type": "object"
       },
-      "PolicyUpdateEvent": {
-        "properties": {
-          "allowed_tools": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Allowed Tools",
-            "type": "array"
-          },
-          "policy": {
-            "$ref": "#/components/schemas/ToolPolicy"
-          },
-          "type": {
-            "const": "POLICY_UPDATE",
-            "default": "POLICY_UPDATE",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "policy",
-          "allowed_tools"
-        ],
-        "title": "PolicyUpdateEvent",
-        "type": "object"
-      },
-      "PredictRequest": {
-        "properties": {
-          "message": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "PredictRequest",
-        "type": "object"
-      },
-      "PredictResponse": {
-        "properties": {
-          "confidence_score": {
-            "title": "Confidence Score",
-            "type": "number"
-          },
-          "is_malicious": {
-            "title": "Is Malicious",
-            "type": "boolean"
-          },
-          "override": {
-            "title": "Override",
-            "type": "boolean"
-          },
-          "verdict": {
-            "$ref": "#/components/schemas/Verdict"
-          }
-        },
-        "required": [
-          "verdict",
-          "confidence_score",
-          "is_malicious",
-          "override"
-        ],
-        "title": "PredictResponse",
-        "type": "object"
-      },
       "SavedBoardRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1616,9 +1792,29 @@
             "anyOf": [
               {
                 "enum": [
-                  "easy",
-                  "medium",
-                  "hard"
+                  "easy-1",
+                  "easy-2",
+                  "easy-3",
+                  "easy-4",
+                  "easy-5",
+                  "medium-1",
+                  "medium-2",
+                  "medium-3",
+                  "medium-4",
+                  "medium-5",
+                  "medium-6",
+                  "medium-7",
+                  "medium-8",
+                  "medium-9",
+                  "medium-10",
+                  "hard-1",
+                  "hard-2",
+                  "hard-3",
+                  "hard-4",
+                  "hard-5",
+                  "hard-6",
+                  "hard-7",
+                  "hard-8"
                 ],
                 "type": "string"
               },
@@ -1673,12 +1869,37 @@
           },
           "level_id": {
             "enum": [
-              "easy",
-              "medium",
-              "hard"
+              "easy-1",
+              "easy-2",
+              "easy-3",
+              "easy-4",
+              "easy-5",
+              "medium-1",
+              "medium-2",
+              "medium-3",
+              "medium-4",
+              "medium-5",
+              "medium-6",
+              "medium-7",
+              "medium-8",
+              "medium-9",
+              "medium-10",
+              "hard-1",
+              "hard-2",
+              "hard-3",
+              "hard-4",
+              "hard-5",
+              "hard-6",
+              "hard-7",
+              "hard-8"
             ],
             "title": "Level Id",
             "type": "string"
+          },
+          "mastered": {
+            "default": false,
+            "title": "Mastered",
+            "type": "boolean"
           },
           "medal": {
             "enum": [
@@ -1703,6 +1924,11 @@
           "total_score": {
             "title": "Total Score",
             "type": "integer"
+          },
+          "won": {
+            "default": false,
+            "title": "Won",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1752,12 +1978,37 @@
           },
           "level_id": {
             "enum": [
-              "easy",
-              "medium",
-              "hard"
+              "easy-1",
+              "easy-2",
+              "easy-3",
+              "easy-4",
+              "easy-5",
+              "medium-1",
+              "medium-2",
+              "medium-3",
+              "medium-4",
+              "medium-5",
+              "medium-6",
+              "medium-7",
+              "medium-8",
+              "medium-9",
+              "medium-10",
+              "hard-1",
+              "hard-2",
+              "hard-3",
+              "hard-4",
+              "hard-5",
+              "hard-6",
+              "hard-7",
+              "hard-8"
             ],
             "title": "Level Id",
             "type": "string"
+          },
+          "mastered": {
+            "default": false,
+            "title": "Mastered",
+            "type": "boolean"
           },
           "medal": {
             "enum": [
@@ -1774,7 +2025,7 @@
             "type": "string"
           },
           "score_version": {
-            "default": 2,
+            "default": 3,
             "title": "Score Version",
             "type": "integer"
           },
@@ -1785,6 +2036,11 @@
           "total_score": {
             "title": "Total Score",
             "type": "integer"
+          },
+          "won": {
+            "default": false,
+            "title": "Won",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1802,199 +2058,6 @@
           "board"
         ],
         "title": "ScoreRecord",
-        "type": "object"
-      },
-      "ScreenRequest": {
-        "properties": {
-          "message": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Message",
-            "type": "string"
-          },
-          "mode": {
-            "default": "shield",
-            "enum": [
-              "shield",
-              "guardrail",
-              "chaos"
-            ],
-            "title": "Mode",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "title": "ScreenRequest",
-        "type": "object"
-      },
-      "ScreenResponse": {
-        "properties": {
-          "adjudicated": {
-            "title": "Adjudicated",
-            "type": "boolean"
-          },
-          "blocked": {
-            "title": "Blocked",
-            "type": "boolean"
-          },
-          "layer": {
-            "$ref": "#/components/schemas/DecisionLayer"
-          },
-          "ml_confidence": {
-            "title": "Ml Confidence",
-            "type": "number"
-          },
-          "policy": {
-            "$ref": "#/components/schemas/ToolPolicy"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "verdict": {
-            "$ref": "#/components/schemas/Verdict"
-          }
-        },
-        "required": [
-          "verdict",
-          "policy",
-          "blocked",
-          "layer",
-          "reason",
-          "ml_confidence",
-          "adjudicated"
-        ],
-        "title": "ScreenResponse",
-        "type": "object"
-      },
-      "StageChangeEvent": {
-        "properties": {
-          "stage": {
-            "enum": [
-              "ml_processing",
-              "debate",
-              "final"
-            ],
-            "title": "Stage",
-            "type": "string"
-          },
-          "type": {
-            "const": "STAGE_CHANGE",
-            "default": "STAGE_CHANGE",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "stage"
-        ],
-        "title": "StageChangeEvent",
-        "type": "object"
-      },
-      "StartEvent": {
-        "properties": {
-          "query": {
-            "title": "Query",
-            "type": "string"
-          },
-          "type": {
-            "const": "START",
-            "default": "START",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "title": "StartEvent",
-        "type": "object"
-      },
-      "StatsResponse": {
-        "properties": {
-          "allowed": {
-            "title": "Allowed",
-            "type": "integer"
-          },
-          "block_rate": {
-            "title": "Block Rate",
-            "type": "number"
-          },
-          "blocked": {
-            "title": "Blocked",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "total",
-          "blocked",
-          "allowed",
-          "block_rate"
-        ],
-        "title": "StatsResponse",
-        "type": "object"
-      },
-      "ToolEndEvent": {
-        "properties": {
-          "result": {
-            "title": "Result"
-          },
-          "tool": {
-            "title": "Tool",
-            "type": "string"
-          },
-          "type": {
-            "const": "TOOL_END",
-            "default": "TOOL_END",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tool",
-          "result"
-        ],
-        "title": "ToolEndEvent",
-        "type": "object"
-      },
-      "ToolPolicy": {
-        "enum": [
-          "ALLOW_ALL",
-          "RESTRICTED",
-          "SHUTDOWN"
-        ],
-        "title": "ToolPolicy",
-        "type": "string"
-      },
-      "ToolStartEvent": {
-        "properties": {
-          "args": {
-            "additionalProperties": true,
-            "title": "Args",
-            "type": "object"
-          },
-          "tool": {
-            "title": "Tool",
-            "type": "string"
-          },
-          "type": {
-            "const": "TOOL_START",
-            "default": "TOOL_START",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tool",
-          "args"
-        ],
-        "title": "ToolStartEvent",
         "type": "object"
       },
       "ValidationError": {
@@ -2037,15 +2100,6 @@
         "title": "ValidationError",
         "type": "object"
       },
-      "Verdict": {
-        "enum": [
-          "SAFE",
-          "UNCERTAIN",
-          "MALICIOUS"
-        ],
-        "title": "Verdict",
-        "type": "string"
-      },
       "WaveScoreSchema": {
         "properties": {
           "attacks_leaked": {
@@ -2072,6 +2126,13 @@
             "title": "Benign Total",
             "type": "integer"
           },
+          "constraint_violations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Constraint Violations",
+            "type": "array"
+          },
           "cost_points": {
             "title": "Cost Points",
             "type": "integer"
@@ -2079,6 +2140,16 @@
           "false_alarms": {
             "title": "False Alarms",
             "type": "integer"
+          },
+          "follow_up_feedback": {
+            "default": "",
+            "title": "Follow Up Feedback",
+            "type": "string"
+          },
+          "follow_up_passed": {
+            "default": false,
+            "title": "Follow Up Passed",
+            "type": "boolean"
           },
           "helpfulness_points": {
             "title": "Helpfulness Points",
@@ -2125,6 +2196,11 @@
           "total_tokens": {
             "title": "Total Tokens",
             "type": "integer"
+          },
+          "won": {
+            "default": false,
+            "title": "Won",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2159,6 +2235,218 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/auth/account": {
+      "delete": {
+        "description": "Delete the account and everything it owns, except today's run counts.",
+        "operationId": "delete_account_api_v1_auth_account_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "The current password is not correct."
+          },
+          "403": {
+            "description": "Sign in to manage your account."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many wrong passwords for this account."
+          },
+          "503": {
+            "description": "The change could not be completed."
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "Account"
+        ]
+      }
+    },
+    "/api/v1/auth/account/email": {
+      "post": {
+        "description": "Move the account, its scores, saved boards, usage and sessions to a new email.",
+        "operationId": "change_email_api_v1_auth_account_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "The current password is not correct."
+          },
+          "403": {
+            "description": "Sign in to manage your account."
+          },
+          "409": {
+            "description": "An account with this email already exists."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many wrong passwords for this account."
+          },
+          "503": {
+            "description": "The change could not be completed."
+          }
+        },
+        "summary": "Change Email",
+        "tags": [
+          "Account"
+        ]
+      }
+    },
+    "/api/v1/auth/account/password": {
+      "post": {
+        "description": "Change the password and sign out every other session.",
+        "operationId": "change_password_api_v1_auth_account_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "The current password is not correct."
+          },
+          "403": {
+            "description": "Sign in to manage your account."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many wrong passwords for this account."
+          },
+          "503": {
+            "description": "The change could not be completed."
+          }
+        },
+        "summary": "Change Password",
+        "tags": [
+          "Account"
+        ]
+      }
+    },
+    "/api/v1/auth/account/reset-progress": {
+      "post": {
+        "description": "Delete this account's leaderboard scores and saved boards. The account stays.",
+        "operationId": "reset_progress_api_v1_auth_account_reset_progress_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "The current password is not correct."
+          },
+          "403": {
+            "description": "Sign in to manage your account."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many wrong passwords for this account."
+          },
+          "503": {
+            "description": "The change could not be completed."
+          }
+        },
+        "summary": "Reset Progress",
+        "tags": [
+          "Account"
+        ]
+      }
+    },
     "/api/v1/auth/anonymous": {
       "post": {
         "description": "Create a free anonymous player session.",
@@ -2209,6 +2497,9 @@
           "401": {
             "description": "Invalid email or password."
           },
+          "403": {
+            "description": "The email has not been confirmed yet."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2218,6 +2509,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "description": "Sign-in is unavailable."
           }
         },
         "summary": "Login Player",
@@ -2285,7 +2579,7 @@
     },
     "/api/v1/auth/register": {
       "post": {
-        "description": "Register a logged-in player account on the free tier.",
+        "description": "Register a player on the free tier.\n\nWith Supabase, the player must confirm their email before signing in.",
         "operationId": "register_player_api_v1_auth_register_post",
         "requestBody": {
           "content": {
@@ -2308,8 +2602,18 @@
             },
             "description": "Successful Response"
           },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerConfirmationResponse"
+                }
+              }
+            },
+            "description": "Check your email: sent for every address when confirmation is on."
+          },
           "409": {
-            "description": "An account with this email already exists."
+            "description": "An account with this email already exists (local mode only)."
           },
           "422": {
             "content": {
@@ -2323,6 +2627,48 @@
           }
         },
         "summary": "Register Player",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/resend-confirmation": {
+      "post": {
+        "description": "Send the confirmation email again. The answer is the same for every address.",
+        "operationId": "resend_confirmation_api_v1_auth_resend_confirmation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerResendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerConfirmationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Confirmation",
         "tags": [
           "Auth"
         ]
@@ -2375,48 +2721,6 @@
         ]
       }
     },
-    "/api/v1/chat": {
-      "post": {
-        "description": "Screen the prompt, then run the demo assistant under the resulting tool policy.",
-        "operationId": "chat_api_v1_chat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/x-ndjson": {
-                "schema": {
-                  "$ref": "#/components/schemas/ChatEvent"
-                }
-              }
-            },
-            "description": "A stream of `ChatEvent` objects, one JSON document per line."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Chat",
-        "tags": [
-          "Chat"
-        ]
-      }
-    },
     "/api/v1/clearance": {
       "delete": {
         "description": "End the session. Safe to call without one.",
@@ -2452,7 +2756,7 @@
         ]
       },
       "post": {
-        "description": "Exchange the passphrase for a session cookie. The passphrase is never stored.",
+        "description": "Exchange an admin's email and password for a session cookie. Neither is stored.\n\nAn admin is a Supabase Auth user whose ``app_metadata.role`` is ``\"admin\"``.",
         "operationId": "grant_clearance_api_v1_clearance_post",
         "requestBody": {
           "content": {
@@ -2476,7 +2780,7 @@
             "description": "Successful Response"
           },
           "401": {
-            "description": "The passphrase was not accepted."
+            "description": "The credentials do not belong to an admin."
           },
           "422": {
             "content": {
@@ -2498,26 +2802,55 @@
         ]
       }
     },
-    "/api/v1/feedback": {
-      "post": {
-        "description": "Record a reviewer's label: it overrides the classifier and nudges the model.",
-        "operationId": "feedback_api_v1_feedback_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FeedbackRequest"
-              }
+    "/api/v1/game/leaderboard": {
+      "get": {
+        "description": "Aggregate each player's best scores across all levels in a difficulty category.",
+        "operationId": "get_difficulty_leaderboard_api_v1_game_leaderboard_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "difficulty",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "Easy",
+                    "Medium",
+                    "Hard"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Difficulty"
             }
           },
-          "required": true
-        },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeedbackResponse"
+                  "items": {
+                    "$ref": "#/components/schemas/DifficultyLeaderboardEntry"
+                  },
+                  "title": "Response Get Difficulty Leaderboard Api V1 Game Leaderboard Get",
+                  "type": "array"
                 }
               }
             },
@@ -2534,9 +2867,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Feedback",
+        "summary": "Get Difficulty Leaderboard",
         "tags": [
-          "Feedback"
+          "Game"
         ]
       }
     },
@@ -2557,6 +2890,28 @@
           }
         },
         "summary": "List Game Levels",
+        "tags": [
+          "Game"
+        ]
+      }
+    },
+    "/api/v1/game/progress": {
+      "get": {
+        "description": "Return the authenticated player's per-level status and difficulty summaries.",
+        "operationId": "get_player_progress_api_v1_game_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerProgressResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Player Progress",
         "tags": [
           "Game"
         ]
@@ -2622,9 +2977,29 @@
               "anyOf": [
                 {
                   "enum": [
-                    "easy",
-                    "medium",
-                    "hard"
+                    "easy-1",
+                    "easy-2",
+                    "easy-3",
+                    "easy-4",
+                    "easy-5",
+                    "medium-1",
+                    "medium-2",
+                    "medium-3",
+                    "medium-4",
+                    "medium-5",
+                    "medium-6",
+                    "medium-7",
+                    "medium-8",
+                    "medium-9",
+                    "medium-10",
+                    "hard-1",
+                    "hard-2",
+                    "hard-3",
+                    "hard-4",
+                    "hard-5",
+                    "hard-6",
+                    "hard-7",
+                    "hard-8"
                   ],
                   "type": "string"
                 },
@@ -2682,9 +3057,29 @@
               "anyOf": [
                 {
                   "enum": [
-                    "easy",
-                    "medium",
-                    "hard"
+                    "easy-1",
+                    "easy-2",
+                    "easy-3",
+                    "easy-4",
+                    "easy-5",
+                    "medium-1",
+                    "medium-2",
+                    "medium-3",
+                    "medium-4",
+                    "medium-5",
+                    "medium-6",
+                    "medium-7",
+                    "medium-8",
+                    "medium-9",
+                    "medium-10",
+                    "hard-1",
+                    "hard-2",
+                    "hard-3",
+                    "hard-4",
+                    "hard-5",
+                    "hard-6",
+                    "hard-7",
+                    "hard-8"
                   ],
                   "type": "string"
                 },
@@ -2763,9 +3158,29 @@
               "anyOf": [
                 {
                   "enum": [
-                    "easy",
-                    "medium",
-                    "hard"
+                    "easy-1",
+                    "easy-2",
+                    "easy-3",
+                    "easy-4",
+                    "easy-5",
+                    "medium-1",
+                    "medium-2",
+                    "medium-3",
+                    "medium-4",
+                    "medium-5",
+                    "medium-6",
+                    "medium-7",
+                    "medium-8",
+                    "medium-9",
+                    "medium-10",
+                    "hard-1",
+                    "hard-2",
+                    "hard-3",
+                    "hard-4",
+                    "hard-5",
+                    "hard-6",
+                    "hard-7",
+                    "hard-8"
                   ],
                   "type": "string"
                 },
@@ -2864,6 +3279,26 @@
         ]
       }
     },
+    "/api/v1/game/scores/stream": {
+      "get": {
+        "description": "Stream real-time leaderboard update notifications via Server-Sent Events.",
+        "operationId": "stream_game_scores_api_v1_game_scores_stream_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stream Game Scores",
+        "tags": [
+          "Game"
+        ]
+      }
+    },
     "/api/v1/game/train": {
       "post": {
         "description": "Validate and train an allowlisted ML classifier on uploaded CSV or dataset rows.",
@@ -2917,161 +3352,6 @@
         "summary": "Health",
         "tags": [
           "Health"
-        ]
-      }
-    },
-    "/api/v1/predict": {
-      "post": {
-        "description": "Layer 1 only: the classifier's verdict, no LLM calls.",
-        "operationId": "predict_api_v1_predict_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PredictRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PredictResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Predict",
-        "tags": [
-          "Screening"
-        ]
-      }
-    },
-    "/api/v1/requests": {
-      "get": {
-        "description": "Recent screened requests, newest first.",
-        "operationId": "list_requests_api_v1_requests_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "maximum": 200,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AuditRecord"
-                  },
-                  "title": "Response List Requests Api V1 Requests Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Requests",
-        "tags": [
-          "Audit"
-        ]
-      }
-    },
-    "/api/v1/screen": {
-      "post": {
-        "description": "The full engine decision, without running the demo assistant.",
-        "operationId": "screen_api_v1_screen_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScreenRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScreenResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Screen",
-        "tags": [
-          "Screening"
-        ]
-      }
-    },
-    "/api/v1/stats": {
-      "get": {
-        "operationId": "stats_api_v1_stats_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stats",
-        "tags": [
-          "Audit"
         ]
       }
     }

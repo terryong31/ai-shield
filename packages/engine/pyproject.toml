@@ -1,7 +1,7 @@
 [project]
 name = "shield-engine"
 version = "0.1.0"
-description = "Layered prompt-injection deflector: classifier, moderation and adjudication behind one pipeline."
+description = "Checks, levels, AI agent and scoring for the ai-shield prompt-injection defence game."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "AI S.H.I.E.L.D. contributors" }]
@@ -17,12 +17,14 @@ classifiers = [
 # The core stays free of web frameworks, databases and provider SDKs so it can
 # be embedded anywhere. Providers are opt-in extras.
 dependencies = [
-    "scikit-learn>=1.9,<1.10",
-    "joblib>=1.4",
+    "scikit-learn>=1.9.1,<1.10",
+    "joblib>=1.6.0",
+    "langgraph>=1.1.0",
+    "langchain-core>=1.2.0",
 ]
 
 [project.optional-dependencies]
-groq = ["groq>=0.37"]
+groq = ["groq>=1.7.0"]
 
 [project.scripts]
 shield-engine = "shield_engine.cli:main"

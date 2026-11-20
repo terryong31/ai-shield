@@ -32,7 +32,7 @@ Add a row to the index table in `specs/README.md`.
 ## 2. Fill in `spec.md`
 
 - [ ] Header: `Status: Draft`, `Area` (`ENG`, `API` or `WEB`), `Owner`, `Related` links.
-- [ ] **Problem** with evidence: a failing prompt, an eval number, a bug report.
+- [ ] **Problem** with evidence: a failing prompt, a game score, a bug report.
 - [ ] **Goals** as outcomes, **Non-goals** explicit.
 - [ ] **Behaviour** from the outside, as tables and examples. No implementation detail.
 - [ ] **Acceptance criteria**, one behaviour each, in this exact form (the
@@ -45,8 +45,8 @@ Add a row to the index table in `specs/README.md`.
 - [ ] Cover the error paths, empty inputs and the failure mode (fail-open,
       fail-closed or fail-restricted, and why).
 - [ ] **Security & privacy**: new inputs, trust boundaries, data stored, secrets.
-- [ ] **Evaluation impact** (engine changes): which metric should move, measured
-      with `mise run eval`.
+- [ ] **Evaluation impact** (scoring or classifier changes): which game score
+      should move, measured with before/after game scores.
 - [ ] **Open questions**: must be empty before acceptance.
 
 ## 3. Choose IDs
@@ -84,7 +84,7 @@ Add a row to the index table in `specs/README.md`.
 Once `Accepted`, `mise run spec:check` requires every criterion ID to appear in a test:
 
 - Python: `@pytest.mark.spec("ENG-CLS-008")`
-- Vitest: the ID in brackets in the test name, `it('[WEB-STREAM-006] …', …)`
+- Vitest: the ID in brackets in the test name, `it('[WEB-GAME-006] …', …)`
 
 Implement through the enforced cycle (see [work with AI agents](work-with-ai-agents.md#the-loop)):
 
@@ -101,7 +101,7 @@ mise run sdd:done            # sets Implemented and appends ## Verification
 Before `sdd:done`:
 
 - [ ] Reference docs in `docs/reference/` updated.
-- [ ] Engine changes: before/after `mise run eval` numbers in "Evaluation impact".
+- [ ] Scoring or classifier changes: before/after game scores in "Evaluation impact".
 - [ ] The index row in `specs/README.md` says `Implemented`.
 
 Don't set `Implemented` by hand. `spec:check` rejects `Implemented` specs

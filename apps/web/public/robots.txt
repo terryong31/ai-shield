@@ -1,0 +1,38 @@
+User-agent: *
+Allow: /
+Allow: /game
+Allow: /plans
+Allow: /auth/login
+Allow: /auth/register
+Allow: /llms.txt
+Disallow: /_console
+Disallow: /settings
+Disallow: /auth/recover
+Disallow: /auth/confirmed
+Disallow: /api/
+
+User-agent: GPTBot
+Allow: /
+Allow: /llms.txt
+Disallow: /_console
+Disallow: /settings
+
+User-agent: ClaudeBot
+Allow: /
+Allow: /llms.txt
+Disallow: /_console
+Disallow: /settings
+
+User-agent: PerplexityBot
+Allow: /
+Allow: /llms.txt
+Disallow: /_console
+Disallow: /settings
+
+User-agent: Google-Extended
+Allow: /
+Allow: /llms.txt
+Disallow: /_console
+Disallow: /settings
+
+Sitemap: http://localhost:3000/sitemap.xml

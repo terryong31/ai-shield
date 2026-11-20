@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import { resolveConsoleAccess } from '~/utils/gameBoard'
+import { buildPageSeo } from '~/utils/seo'
 
 definePageMeta({
   path: '/_console/settings',
   layout: 'dashboard'
 })
 
-const { status, granted, clearPassphrase } = usePassphrase()
+const runtimeConfig = useRuntimeConfig()
+useSeoMeta(buildPageSeo({
+  title: 'Console Settings',
+  description: 'Appearance and admin session settings for the ai-shield console.',
+  path: '/_console/settings',
+  siteUrl: runtimeConfig.public.siteUrl,
+  noindex: true
+}))
+
+const { status, granted, signOut } = useAdminAccess()
 const access = computed(() => resolveConsoleAccess(status.value))
 </script>
 
@@ -65,7 +75,7 @@ const access = computed(() => resolveConsoleAccess(status.value))
               color="error"
               variant="outline"
               size="sm"
-              @click="clearPassphrase"
+              @click="signOut"
             />
           </div>
         </UPageCard>

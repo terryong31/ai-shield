@@ -13,9 +13,9 @@ cp apps/api/.env.example apps/api/.env   # optional; loaded if present
 mise run up                              # docker compose up --build
 ```
 
-- web: http://localhost:3000; api: http://localhost:8000/api/v1/docs
+- web: http://localhost:3000; api: http://localhost:8000/api/v1/health (Compose runs `APP_ENV=production`, so `/api/v1/docs` is off; start with `APP_ENV=development mise run up` to enable it)
 - `web` starts once `api` passes its health check.
-- The audit log is SQLite in the named volume `shield-data` (mounted at
+- Game data is SQLite in the named volume `shield-data` (mounted at
   `/app/var`), so it survives `mise run down` and rebuilds. `docker compose down -v` deletes it.
 - To use the local Supabase stack from the container, set
   `SUPABASE_URL=http://host.docker.internal:54321` in `apps/api/.env`.
@@ -48,25 +48,20 @@ Pass configuration as environment variables. The image contains no `.env`
 | Variable | Needed for |
 | --- | --- |
 | `CORS_ORIGINS` | **Required in practice.** The web client's public origin(s), comma-separated, e.g. `https://shield.example.com`. The default only allows `http://localhost:3000` |
-| `SECURE_PASSPHRASE` | Set it, or no caller can get `GRANTED` clearance. Treat it as a secret |
-| `GROQ_API_KEY` (+ `GROQ_*_MODEL`) | Moderation and Layer 2. Without it, Layer 2 falls back to `RESTRICTED` |
-| `GOOGLE_API_KEY`, `GEMINI_MODEL` | Assistant answers |
-| `SUPABASE_URL`, `SUPABASE_KEY` | Persistent audit log ([how-to](persist-the-audit-log.md)) |
-| `FEEDBACK_PATH` | Preset to `/app/var/feedback.csv` in the image |
+| `GOOGLE_API_KEY`, `GEMINI_MODEL` | The standard-tier agent (Medium) |
+| `GROQ_API_KEY`, `GAME_MODEL_BUDGET` | The budget-tier agent (Hard), and Medium without Gemini ([how-to](configure-llm-providers.md)) |
+| `SUPABASE_URL`, `SUPABASE_KEY` | Persistent game data ([how-to](persist-game-data.md)) and admin accounts; without them nobody can open the admin console |
+| `WEB_BASE_URL` | The web client's public origin, for the email confirmation link (add `<WEB_BASE_URL>/auth/confirmed` to Supabase **Redirect URLs**) |
+| `APP_ENV` | Leave unset (`production`) so Swagger UI and `/openapi.json` stay off |
 | `LOG_LEVEL` | Optional |
 
-### Persist reviewer feedback
-
-Reviewer labels are appended to `FEEDBACK_PATH` and reloaded at startup. Mount
-a volume on `/app/var` so they survive restarts, and run only one gateway
-replica per feedback file (the CSV is cached in each process and appended to
-without locking):
+Without Supabase, mount a volume on `/app/var` so the SQLite files survive
+restarts, and run a single replica (SQLite is a single-writer file):
 
 ```bash
 docker run -d --name shield-api -p 8000:8000 \
-  -v shield-feedback:/app/var \
+  -v shield-data:/app/var \
   -e CORS_ORIGINS=https://shield.example.com \
-  -e SECURE_PASSPHRASE="$SECURE_PASSPHRASE" \
   -e GROQ_API_KEY="$GROQ_API_KEY" \
   -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_KEY="$SUPABASE_KEY" \
   ai-shield-api
@@ -96,48 +91,38 @@ GET /api/v1/health
 
 Returns 200 with `"status": "healthy"` once the app has started and loaded the
 model. Use it for container and load-balancer health checks. Check
-`moderation_enabled` and `adjudication_enabled` to confirm the Groq key was
-picked up. The images define no Docker `HEALTHCHECK`; configure it in your
+`agent_tiers` to confirm the provider keys were picked up and `storage_backend`
+for the store in use. The images define no Docker `HEALTHCHECK`; configure it in your
 orchestrator.
 
 ## 5. Verify
 
 ```bash
 curl -s https://api.shield.example.com/api/v1/health
-curl -s -X POST https://api.shield.example.com/api/v1/screen \
-  -H 'Content-Type: application/json' -d '{"message":"drop table employees"}'
+curl -s https://api.shield.example.com/api/v1/game/levels | head -c 200
 ```
 
-The second call should return `"blocked": true` and `"layer": "LAYER_1_ML"`.
-Then open the web client and send a prompt; a CORS error in the browser console
-means `CORS_ORIGINS` or `NUXT_PUBLIC_API_BASE_URL` is wrong.
+Then open the web client and run a wave on Easy; a CORS error in the browser
+console means `CORS_ORIGINS` or `NUXT_PUBLIC_API_BASE_URL` is wrong.
 
 ## Production hardening checklist
 
-The gateway is a demo. Before exposing it beyond a trusted network:
+Before exposing the game beyond a trusted network:
 
-- [ ] **Set `SECURE_PASSPHRASE`** to a long random value from your secret
-      store, or remove passphrase-based clearance from your deployment. It is a
-      stand-in for RBAC: one shared secret, sent in request bodies, and stored
-      in the browser's `localStorage` by the web client.
-- [ ] **Put real authentication in front of the gateway** (an identity-aware
-      proxy, API gateway or OAuth2 middleware). The API has no authentication:
-      anyone who can reach it can use `/chat`, read `/requests` and submit
-      `/feedback`, which overrides classifier verdicts.
+- [ ] **Create the admin accounts** with `mise run admin:create <email>` (it
+      prompts for the password and sets `app_metadata.role = "admin"`), using a
+      long unique password. Remove access with `mise run admin:revoke <email>`.
+- [ ] **Set up custom SMTP in Supabase** (Authentication → Emails → SMTP), or
+      confirmation emails reach only your project team.
+- [ ] **Leave `APP_ENV` unset** (production), so the API docs and schema are not served.
 - [ ] **Terminate TLS** at a reverse proxy or load balancer. `--proxy-headers`
       is enabled, so run the gateway only behind a proxy you control.
-- [ ] **Rate-limit** `/chat`, `/screen` and `/feedback` per client at the proxy.
-      Each Layer 2 request can make five LLM calls; without limits, cost is
-      unbounded (denial of wallet).
-- [ ] **Pick the audit backend deliberately.** SQLite is a single-writer file:
+- [ ] **Rate-limit `POST /api/v1/auth/*` and `POST /api/v1/game/run`** per client
+      at the proxy. Daily quotas cap runs per session, but anonymous sessions are
+      cheap to create, and login is not throttled by the gateway.
+- [ ] **Pick the storage backend deliberately.** SQLite is a single-writer file:
       fine for one replica with a persistent volume at `/app/var`. For several
-      replicas or managed backups, use Supabase ([persist the audit log](persist-the-audit-log.md)).
-- [ ] **Restrict `/feedback` and `/requests`** to reviewers. A feedback label
-      is an exact-text override of the classifier.
-- [ ] **Decide `default_policy`.** Prompts Layer 1 finds `SAFE` get `ALLOW_ALL`
-      by default. For deny-by-default tool access, construct the `Shield` with
-      `ShieldConfig(default_policy=ToolPolicy.RESTRICTED)` in `container.py`.
-- [ ] **Consider `fail_closed=True`** for moderation if you rely on it.
+      replicas or managed backups, use Supabase ([persist game data](persist-game-data.md)).
 - [ ] Store secrets in your platform's secret manager, not in image layers or
       committed files.
 - [ ] Review [Threat model](../explanation/threat-model.md) known gaps.

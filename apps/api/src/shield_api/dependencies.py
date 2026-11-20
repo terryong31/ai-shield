@@ -3,8 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request
 
 from shield_api.container import Container
-from shield_api.services.access import clearance_for
-from shield_engine import Clearance
+from shield_api.services.clearance import Clearance, clearance_for
 
 SESSION_COOKIE = "shield_session"
 PLAYER_SESSION_COOKIE = "shield_player_session"

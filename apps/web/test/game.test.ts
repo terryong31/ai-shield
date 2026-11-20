@@ -2,14 +2,18 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  NODE_CATALOG,
   addCheckNode,
   applyMessageTrace,
   canUseNodeKind,
   connectBoardEdge,
   createStarterBoard,
   formatCheckCost,
-  formatQuotaSummary,
+  attemptsLeftLabel,
+  makeGameNode,
+  planCards,
   isAiAgentNode,
+  nodeKeyRequirement,
   removeBoardNode,
   resolveConsoleAccess,
   toApiBoard
@@ -38,13 +42,15 @@ describe('game landing and levels', () => {
     expect(indexSource).toContain('easy')
     expect(indexSource).toContain('medium')
     expect(indexSource).toContain('hard')
-    expect(indexSource).toContain('getScores')
+    expect(indexSource).toContain('useLeaderboard')
+    const leaderboardSource = readFileSync(join(APP_DIR, 'composables', 'useLeaderboard.ts'), 'utf-8')
+    expect(leaderboardSource).toContain('getScores')
   })
 })
 
 describe('game board operations', () => {
   it('[WEB-GAME-002] builds a starter board, adds and removes check nodes, connects edges, and applies hop traces', () => {
-    const starter = createStarterBoard('easy')
+    const starter = createStarterBoard('easy-1')
     expect(starter.nodes.map(n => n.data?.kind)).toEqual(['incoming', 'assistant'])
 
     const withFilter = addCheckNode(starter, 'word_filter', { x: 240, y: 120 })
@@ -94,7 +100,7 @@ describe('game board operations', () => {
 })
 
 describe('admin console access and routing', () => {
-  it('[WEB-GAME-003] restricts /_console to granted admin sessions and redirects /dashboard routes', () => {
+  it('[WEB-CLEAN-002] restricts /_console to granted admin sessions', () => {
     expect(resolveConsoleAccess({ granted: false, expires_at: null })).toEqual({
       allowed: false,
       reason: 'Admin access required'
@@ -130,7 +136,7 @@ describe('admin console access and routing', () => {
     expect(indexSource).toContain('High score')
 
     // Game page: quit confirmation modal, Tools left panel, double-click node modal, ML dataset upload
-    expect(gameSource).toContain('Are you sure you want to quit? your progress will not be saved')
+    expect(gameSource).toMatch(/Are you sure you want to quit\? your progress will not be saved/i)
     expect(gameSource).toContain('Tools')
     expect(gameSource).not.toContain('Available checks')
     expect(gameSource).toContain('@node-double-click')
@@ -139,7 +145,7 @@ describe('admin console access and routing', () => {
     expect(gameSource).toContain('ml_classifier')
 
     // Starter board has no pre-placed tool nodes (anchor labels moved to WEB-AGENT-001, spec 0020)
-    const easyBoard = createStarterBoard('easy')
+    const easyBoard = createStarterBoard('easy-1')
     expect(easyBoard.nodes.every(n => n.data?.isAnchor)).toBe(true)
   })
 
@@ -161,11 +167,11 @@ describe('admin console access and routing', () => {
     expect(gameSource).toContain('usePlayerAuth')
     expect(gameSource).toContain('isSidebarCollapsed')
 
-    // AI agent node gating (safety_check and agent_review)
+    // AI agent node gating (safety_check and llm_review)
     expect(isAiAgentNode('safety_check')).toBe(true)
-    expect(isAiAgentNode('agent_review')).toBe(true)
+    expect(isAiAgentNode('llm_review')).toBe(true)
     expect(isAiAgentNode('word_filter')).toBe(false)
-    expect(isAiAgentNode('quick_screen')).toBe(false)
+    expect(isAiAgentNode('ml_classifier')).toBe(false)
 
     const anonSession = {
       authenticated: true,
@@ -182,8 +188,8 @@ describe('admin console access and routing', () => {
     }
     expect(canUseNodeKind('word_filter', anonSession)).toBe(true)
     expect(canUseNodeKind('safety_check', anonSession)).toBe(false)
-    expect(canUseNodeKind('agent_review', anonSession)).toBe(false)
-    expect(formatQuotaSummary(anonSession)).toBe('')
+    expect(canUseNodeKind('llm_review', anonSession)).toBe(false)
+    expect(attemptsLeftLabel(anonSession)).toBe('')
 
     const freeSession = {
       authenticated: true,
@@ -199,9 +205,8 @@ describe('admin console access and routing', () => {
       test_runs_used: 3
     }
     expect(canUseNodeKind('safety_check', freeSession)).toBe(true)
-    expect(canUseNodeKind('agent_review', freeSession)).toBe(true)
-    expect(formatQuotaSummary(freeSession)).toContain('2/3')
-    expect(formatQuotaSummary(freeSession)).toContain('7/10')
+    expect(canUseNodeKind('llm_review', freeSession)).toBe(true)
+    expect(attemptsLeftLabel(freeSession)).toBe('2/3 attempts left today')
 
     const paidSession = {
       ...freeSession,
@@ -209,7 +214,64 @@ describe('admin console access and routing', () => {
       daily_wave_limit: null,
       daily_test_limit: null
     }
-    expect(formatQuotaSummary(paidSession)).toBe('')
+    expect(attemptsLeftLabel(paidSession)).toBe('')
+  })
+
+  it('[WEB-GAME-013] shows no quota line on the main menu', () => {
+    const indexSource = readFileSync(join(APP_DIR, 'pages', 'index.vue'), 'utf-8')
+    const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
+    expect(indexSource).not.toContain('formatQuotaSummary')
+    expect(indexSource).not.toContain('left today')
+    expect(boardSource).not.toContain('formatQuotaSummary')
+    expect(indexSource).not.toContain('session.tier.toUpperCase()')
+    expect(indexSource).not.toContain('label="Paid"')
+  })
+
+  it('[WEB-GAME-014] sends every upgrade button to /plans, which shows Free and Paid with UPricingPlans', () => {
+    const base = {
+      authenticated: true,
+      email: 'a@example.com',
+      player_name: 'Ada',
+      ai_nodes_allowed: true,
+      can_record_scores: true,
+      daily_wave_limit: 5,
+      wave_runs_used: 0,
+      daily_test_limit: 20,
+      test_runs_used: 0
+    }
+    const anon = planCards({ ...base, is_anonymous: true, tier: 'anonymous' as const })
+    const free = planCards({ ...base, is_anonymous: false, tier: 'free' as const })
+    const paid = planCards({ ...base, is_anonymous: false, tier: 'paid' as const })
+
+    expect(free.map(p => p.title)).toEqual(['Free', 'Paid'])
+    expect(free[1]!.highlight).toBe(true)
+    expect(free.map(p => p.price)).toEqual(['$0', '$0'])
+    expect(free[0]!.features.join(' ')).toContain('5 wave runs a day')
+    expect(free[1]!.features.join(' ')).toContain('300 wave runs a day')
+    expect(free[1]!.features.join(' ')).toContain('1,000 tests a day')
+    expect(free[1]!.features.join(' ').toLowerCase()).toContain('sandbox')
+
+    expect(anon.map(p => [p.button?.label, p.button?.to])).toEqual([['Sign in', '/auth/login'], ['Sign in', '/auth/login']])
+    expect(free.map(p => [p.button?.label, p.button?.disabled ?? false, p.action])).toEqual([
+      ['Current plan', true, undefined],
+      ['Upgrade to Paid', false, 'upgrade']
+    ])
+    expect(paid[0]!.button).toBeUndefined()
+    expect(paid[1]!.button).toMatchObject({ label: 'Current plan', disabled: true })
+
+    const plansPath = join(APP_DIR, 'pages', 'plans.vue')
+    expect(existsSync(plansPath)).toBe(true)
+    const plansSource = readFileSync(plansPath, 'utf-8')
+    expect(plansSource).toContain('<UPricingPlans')
+    expect(plansSource).toContain('planCards(session.value)')
+    expect(plansSource).toContain('upgradeToPaid')
+    expect(plansSource).toMatch(/if \(session\.value\.tier === 'paid'\) await goBack\('\/'\)/)
+
+    for (const page of ['index.vue', 'game.vue']) {
+      const source = readFileSync(join(APP_DIR, 'pages', page), 'utf-8')
+      expect(source).not.toContain('@click="upgradeToPaid"')
+      expect(source).toContain('to="/plans"')
+    }
   })
 
   it('[WEB-GAME-007] moves player sign-in to a dedicated auth page with UAuthForm and removes anonymous-only UI from the main menu', () => {
@@ -223,8 +285,8 @@ describe('admin console access and routing', () => {
     expect(authSource).not.toContain('isAuthModalOpen')
     expect(indexSource).toContain('to="/auth/login"')
 
-    // Anonymous players see no tier badge, record-scores button or anonymous score label
-    expect(indexSource).toMatch(/<UBadge\s+v-if="!isAnonymous"\s+:label="session\.tier\.toUpperCase\(\)"/)
+    // Anonymous players see no record-scores button or anonymous score label
+    // (the tier badge itself was removed for everyone; see WEB-GAME-013)
     expect(indexSource).not.toContain('Sign in to record scores')
     expect(indexSource).not.toContain('Not recorded (Anonymous)')
     expect(indexSource).toContain('{{ bestScoreFor(lvl.id).toLocaleString() }}')
@@ -235,7 +297,7 @@ describe('admin console access and routing', () => {
     expect(loginSource).toContain('<UAuthForm')
     expect(loginSource).toContain('usePlayerAuth')
     expect(loginSource).toContain('to="/auth/register"')
-    expect(loginSource).toMatch(/if \(succeeded\)\s*{\s*await navigateTo\('\/'\)/)
+    expect(loginSource).toMatch(/if \(succeeded\)\s*{\s*await goBack\('\/'\)/)
     expect(loginSource).toMatch(/if \(isLoggedIn\.value\)\s*{\s*await navigateTo\('\/'/)
   })
 
@@ -270,7 +332,7 @@ describe('admin console access and routing', () => {
     expect(existsSync(settingsPath)).toBe(true)
     const settingsSource = readFileSync(settingsPath, 'utf-8')
     expect(settingsSource).toContain('UColorModeSelect')
-    expect(settingsSource).toContain('to="/"')
+    expect(settingsSource).toContain('goBack(\'/\')')
     expect(settingsSource).toContain('justify-between')
     expect(settingsSource).not.toContain('<template #header>')
     expect(settingsSource).not.toContain('<template #footer>')
@@ -326,6 +388,9 @@ describe('admin console access and routing', () => {
     // Cost label
     expect(formatCheckCost(0)).toBe('Free')
     expect(formatCheckCost(0.0002)).toBe('$0.0002')
+
+    // Initial tool order matches backend CHECK_CATALOG so cards do not swap on hydration
+    expect(gameSource).toMatch(/toolKinds:\s*NodeKind\[\]\s*=\s*\[\s*'word_filter',\s*'text_cleanup'/)
   })
 
   it('[WEB-GAME-009] fixes the Tools panel width and adds a state-aware chevron, hover hint, drag to canvas, and tool info modal', () => {
@@ -352,7 +417,8 @@ describe('admin console access and routing', () => {
     expect(gameSource).toContain('Sign in to unlock')
 
     // Drag onto the canvas, locked cards excluded
-    expect(gameSource).toContain(':draggable="canUseNodeKind(chk.kind, session)"')
+    expect(gameSource).toMatch(/const isToolLocked = \(kind: NodeKind\)[\s\S]*?!canUseNodeKind\(kind, session\.value, nodeKeyState\.value\)/)
+    expect(gameSource).toContain(':draggable="!isToolLocked(chk.kind)"')
     expect(gameSource).toContain('@dragstart="onToolDragStart($event, chk.kind)"')
     expect(gameSource).toContain('@dragover="onCanvasDragOver"')
     expect(gameSource).toContain('@drop="onCanvasDrop"')
@@ -452,5 +518,181 @@ describe('design hygiene and anti-slop copy standard', () => {
       }
     }
     expect(violations).toEqual([])
+  })
+
+  it('[WEB-GAME-001] word_filter modal removes Rule sets presets and shows only Custom blocked words', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    expect(gameSource).not.toContain('Rule sets')
+    expect(gameSource).not.toContain('toggleRuleGroup')
+    expect(gameSource).not.toContain('hasRuleGroup')
+    expect(gameSource).not.toContain('SQL and tools')
+    expect(gameSource).toContain('Custom blocked words')
+    expect(gameSource).toContain('secret_scan')
+  })
+
+  it('[WEB-GAME-002] Run results modal displays Won vs Lost state and failure reason on loss', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const start = gameSource.indexOf('v-model:open="isResultsOpen"')
+    const results = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
+    expect(results).toContain('waveScore.won')
+    expect(results).toContain('waveOutcomeSummary(waveScore)')
+  })
+
+  it('[WEB-TOOL-001] configures text_cleanup transforms, regex secret_scan, Tool policy extensions, and Jev noul question', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
+    expect(boardSource).toContain('jev:')
+    expect(gameSource).toContain('\'jev\'')
+    expect(gameSource).toContain('strip_zero_width')
+    expect(gameSource).toContain('decode_base64')
+    expect(gameSource).toContain('decode_hex_url')
+    expect(gameSource).toContain('toggleTextTransform')
+    expect(gameSource).toContain('Noul question')
+  })
+
+  it('[WEB-LIVE-001] disables Jev and AI nodes when API keys are missing and prevents placing them in the workflow', () => {
+    const signedIn = {
+      authenticated: true,
+      is_anonymous: false,
+      tier: 'free' as const,
+      email: 'user@example.com',
+      player_name: 'UserOne',
+      ai_nodes_allowed: true,
+      can_record_scores: true,
+      daily_wave_limit: 5,
+      wave_runs_used: 0,
+      daily_test_limit: 20,
+      test_runs_used: 0
+    }
+    expect(canUseNodeKind('jev', signedIn, { jevKeyAvailable: false, aiKeyAvailable: false })).toBe(false)
+    expect(canUseNodeKind('jev', signedIn, { jevKeyAvailable: true, aiKeyAvailable: false })).toBe(true)
+    expect(canUseNodeKind('safety_check', signedIn, { jevKeyAvailable: false, aiKeyAvailable: false })).toBe(false)
+    expect(canUseNodeKind('llm_review', signedIn, { jevKeyAvailable: false, aiKeyAvailable: false })).toBe(false)
+    expect(canUseNodeKind('safety_check', signedIn, { jevKeyAvailable: false, aiKeyAvailable: true })).toBe(true)
+
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
+    expect(boardSource).toContain('nodeKeyRequirement')
+    expect(boardSource).toContain('Insert Jev API key to continue')
+    expect(boardSource).toContain('Enter API key to continue')
+    expect(gameSource).toMatch(/const isToolLocked = \(kind: NodeKind\)[\s\S]*?!canUseNodeKind\(kind, session\.value, nodeKeyState\.value\)/)
+    expect(gameSource).toContain(':aria-disabled="isToolLocked(chk.kind)"')
+    expect(gameSource).toContain(':draggable="!isToolLocked(chk.kind)"')
+    expect(gameSource).toContain('v-if="!isToolLocked(chk.kind)"')
+    // Must block placement before addCheckNode when API key is missing
+    const placeBlock = gameSource.slice(gameSource.indexOf('const placeCheck ='), gameSource.indexOf('const handlePlaceCheck ='))
+    expect(placeBlock.indexOf('nodeKeyRequirement(')).toBeGreaterThan(-1)
+    expect(placeBlock.indexOf('nodeKeyRequirement(')).toBeLessThan(placeBlock.indexOf('addCheckNode('))
+  })
+
+  it('[WEB-LIVE-002] forbids user-entered Jev or AI API keys and shows a .env toast when missing', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    expect(gameSource).not.toContain('isApiKeyModalOpen')
+    expect(gameSource).not.toContain('jevApiKey')
+    expect(gameSource).not.toContain('aiApiKey')
+    expect(gameSource).not.toContain('aiKeyProvider')
+
+    const msgJev = nodeKeyRequirement('jev', { jevKeyAvailable: false, aiKeyAvailable: false })
+    const msgAi = nodeKeyRequirement('safety_check', { jevKeyAvailable: false, aiKeyAvailable: false })
+    expect(msgJev).toContain('.env')
+    expect(msgAi).toContain('.env')
+  })
+
+  it('[WEB-CHECK-001] distinguishes safety_check (guardrail USelectMenu) from llm_review (LLM USelectMenu + prompt)', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
+
+    expect(boardSource).toContain('SAFETY_CHECK_MODELS')
+    expect(boardSource).toContain('llama-guard-3-8b')
+    expect(boardSource).toContain('qwen3guard-8b')
+    expect(boardSource).toContain('shieldgemma-9b')
+    expect(boardSource).toContain('nemotron')
+
+    expect(boardSource).toContain('LLM_REVIEW_MODELS')
+    expect(boardSource).toContain('gemini-2.5-flash')
+    expect(boardSource).toContain('llama-3.3-70b-versatile')
+
+    expect(gameSource).toContain('safetyCheckModelItems')
+    expect(gameSource).toContain('llmReviewModelItems')
+    expect(gameSource).toContain('Review instructions')
+    expect(gameSource).toContain('updateNodeConfig(\'prompt\'')
+  })
+
+  it('[WEB-ML-001] removes quick_screen and gives ml_classifier TF-IDF and safe/suspicious thresholds and handles', () => {
+    expect('quick_screen' in NODE_CATALOG).toBe(false)
+    expect(NODE_CATALOG.ml_classifier.handles).toEqual(['safe', 'suspicious'])
+
+    const mlNode = makeGameNode('ml-1', 'ml_classifier', { x: 0, y: 0 })
+    expect(mlNode.data?.config.algorithm).toBe('tfidf')
+    expect(mlNode.data?.config.safe_threshold).toBe(0.3)
+    expect(mlNode.data?.config.block_threshold).toBe(0.75)
+
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    expect(gameSource).not.toContain('quick_screen')
+    expect(gameSource).toContain('{ id: \'tfidf\', label: \'TF-IDF\' }')
+    expect(gameSource).toContain('config.safe_threshold')
+    expect(gameSource).toContain('config.block_threshold')
+  })
+
+  it('[WEB-GAME-010] removes tool_filter from palette and renders Tool policy toggles on jev, safety_check, and llm_review', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const toolKindsBlock = gameSource.slice(
+      gameSource.indexOf('const toolKinds: NodeKind[] = ['),
+      gameSource.indexOf('const checks = ref<')
+    )
+    expect(toolKindsBlock).not.toContain('tool_filter')
+
+    for (const kind of ['jev', 'safety_check', 'llm_review'] as const) {
+      const node = makeGameNode(`${kind}-1`, kind, { x: 0, y: 0 })
+      expect(node.data?.config.tool_policy_enabled).toBe(false)
+      if (kind !== 'llm_review') {
+        expect(node.data?.config.block_tools).toEqual([])
+      }
+    }
+
+    expect(gameSource).toContain('<USwitch')
+    expect(gameSource).toContain('tool_policy_enabled')
+    expect(gameSource).toContain('numberedAgentTools')
+    expect(gameSource).toContain('toggleBlockedToolIndex')
+    expect(gameSource).toContain('Tool ${')
+    expect(gameSource).toContain('switch off')
+
+    expect(isAiAgentNode('jev')).toBe(true)
+    const anonSession = {
+      authenticated: true,
+      is_anonymous: true,
+      tier: 'anonymous' as const,
+      email: null,
+      player_name: 'Anonymous',
+      ai_nodes_allowed: false,
+      can_record_scores: false,
+      daily_wave_limit: 1,
+      wave_runs_used: 0,
+      daily_test_limit: 3,
+      test_runs_used: 0
+    }
+    const signedInSession = {
+      ...anonSession,
+      is_anonymous: false,
+      tier: 'free' as const,
+      email: 'user@example.com',
+      player_name: 'UserOne',
+      ai_nodes_allowed: true,
+      can_record_scores: true,
+      daily_wave_limit: 5,
+      daily_test_limit: 20
+    }
+    expect(canUseNodeKind('jev', anonSession)).toBe(false)
+    expect(canUseNodeKind('jev', anonSession, { jevKeyAvailable: true, aiKeyAvailable: true })).toBe(false)
+    expect(canUseNodeKind('jev', signedInSession, { jevKeyAvailable: true, aiKeyAvailable: false })).toBe(true)
+  })
+
+  it('[WEB-ML-002] removes pre-trained TF-IDF baseline wording and starts mlCsvDraft empty with a placeholder', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    expect(gameSource).not.toContain('pre-trained')
+    expect(gameSource).not.toContain('TF-IDF baseline')
+    expect(gameSource).toContain('Not trained yet')
+    expect(gameSource).toContain('const mlCsvDraft = ref(\'\')')
+    expect(gameSource).toMatch(/v-model="mlCsvDraft"[\s\S]*?:?placeholder=/)
   })
 })

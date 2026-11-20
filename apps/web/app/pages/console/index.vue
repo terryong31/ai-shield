@@ -1,20 +1,37 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
 import type { ScoreRecord } from '~/types/api'
-import { resolveConsoleAccess } from '~/utils/gameBoard'
+import { consoleScoreStats, resolveConsoleAccess } from '~/utils/gameBoard'
+import { buildPageSeo } from '~/utils/seo'
 
 definePageMeta({
   path: '/_console',
   layout: 'dashboard'
 })
 
-const { status, openModal } = usePassphrase()
+const runtimeConfig = useRuntimeConfig()
+useSeoMeta(buildPageSeo({
+  title: 'Admin Console',
+  description: 'Admin console for monitoring player scores, medal statistics, and managing the ai-shield leaderboard.',
+  path: '/_console',
+  siteUrl: runtimeConfig.public.siteUrl,
+  noindex: true
+}))
+
+const { status } = useAdminAccess()
 const { getScores, clearScores } = useShieldApi()
 const toast = useToast()
 
 const access = computed(() => resolveConsoleAccess(status.value))
-const stats = useTemplateRef('stats')
 const scores = ref<ScoreRecord[]>([])
+// Tiles cover the 100 best current-version scores, the most the scores endpoint returns.
+const stats = computed(() => consoleScoreStats(scores.value))
+const statTiles = computed(() => [
+  { label: 'Scores recorded', icon: 'i-lucide-trophy', value: stats.value.scores },
+  { label: 'Players on the board', icon: 'i-lucide-users', value: stats.value.players },
+  { label: 'Easy / Medium / Hard', icon: 'i-lucide-layers', value: `${stats.value.byLevel.easy} / ${stats.value.byLevel.medium} / ${stats.value.byLevel.hard}` },
+  { label: 'Gold / Silver / Bronze', icon: 'i-lucide-medal', value: `${stats.value.medals.gold} / ${stats.value.medals.silver} / ${stats.value.medals.bronze}` }
+])
 const clearing = ref(false)
 
 const scoreColumns: TableColumn<ScoreRecord>[] = [
@@ -28,7 +45,7 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
 
 const loadScores = async () => {
   try {
-    scores.value = await getScores(undefined, 50)
+    scores.value = await getScores(undefined, 100)
   } catch (err) {
     console.warn('Could not load scores:', err)
   }
@@ -75,8 +92,8 @@ onMounted(loadScores)
             color="neutral"
             variant="ghost"
             square
-            aria-label="Refresh stats"
-            @click="stats?.refresh(); loadScores()"
+            aria-label="Refresh scores"
+            @click="loadScores()"
           />
         </template>
       </UDashboardNavbar>
@@ -90,16 +107,9 @@ onMounted(loadScores)
         <UEmpty
           icon="i-lucide-lock"
           title="Site admin access required"
-          description="Normal players cannot open /_console. Enter the admin passphrase to manage scores, logs, and settings."
+          description="Normal players cannot open /_console. Sign in with an admin account to monitor and manage the game's scores."
         >
           <template #actions>
-            <UButton
-              label="Enter admin passphrase"
-              icon="i-lucide-key-round"
-              color="neutral"
-              variant="solid"
-              @click="openModal"
-            />
             <UButton
               to="/game"
               label="Return to game"
@@ -114,8 +124,16 @@ onMounted(loadScores)
         v-else
         class="space-y-8"
       >
-        <DashboardStats ref="stats" />
-        <DashboardPipeline />
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <UPageCard
+            v-for="tile in statTiles"
+            :key="tile.label"
+            :icon="tile.icon"
+            :title="String(tile.value)"
+            :description="tile.label"
+            variant="subtle"
+          />
+        </div>
 
         <div class="space-y-3">
           <div class="flex items-center justify-between">

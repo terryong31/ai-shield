@@ -1,4 +1,3 @@
-import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -6,32 +5,221 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 
 from shield_api.container import Container
-from shield_api.demo.assistant import AssistantReply, DemoAssistant
 from shield_api.main import create_app
-from shield_api.services.audit import InMemoryAuditLog
+from shield_api.services.admins import NoAdminAuthenticator, SupabaseAdminAuthenticator
+from shield_api.services.players import InMemoryPlayerStore
+from shield_api.services.scores import InMemoryScoreStore
 from shield_api.settings import Settings
-from shield_engine import Shield, ToolPolicy, Verdict
-from shield_engine.testing import ScriptedAdjudicator, StaticClassifier
+from shield_engine import Verdict
+from shield_engine.testing import StaticClassifier
 
 if TYPE_CHECKING:
+    from shield_api.services.players import PlayerStore
+    from shield_api.services.scores import ScoreStore
     from shield_api.services.sessions import SessionStore
 
-PASSPHRASE = "correct horse battery staple"
+ADMIN_EMAIL = "admin@example.com"
+ADMIN_PASSWORD = "correct horse battery staple"
+
+
+# --- in-process fake of supabase-py's auth client ----------------------------
 
 
 @dataclass
-class RecordingAssistant:
-    """Wraps the real demo assistant (offline) and records what it was allowed."""
+class FakeAuthUser:
+    id: str
+    email: str
+    app_metadata: dict[str, Any] = field(default_factory=dict)
+    user_metadata: dict[str, Any] = field(default_factory=dict)
 
-    calls: list[tuple[str, list[str]]] = field(default_factory=list)
-    inner: DemoAssistant = field(default_factory=DemoAssistant)
 
-    async def respond(self, prompt: str, allowed_tools: list[str]) -> AssistantReply:
-        self.calls.append((prompt, allowed_tools))
-        return await self.inner.respond(prompt, allowed_tools)
+@dataclass
+class FakeAuthSession:
+    access_token: str = "fake-access-token"
+
+
+@dataclass
+class FakeUserResponse:
+    user: FakeAuthUser | None
+    session: FakeAuthSession | None = None
+
+
+class FakeAuthError(Exception):
+    """Mirrors supabase_auth's AuthApiError: a message plus a machine-readable ``code``."""
+
+    def __init__(self, message: str, code: str | None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass
+class FakeAuthDirectory:
+    """The Supabase Auth users of one project, shared by every throwaway client."""
+
+    users: dict[str, FakeAuthUser] = field(default_factory=dict)
+    passwords: dict[str, str] = field(default_factory=dict)
+    email_confirmed: dict[str, bool] = field(default_factory=dict)
+    sign_ins: list[str] = field(default_factory=list)
+    sign_ups: list[dict[str, Any]] = field(default_factory=list)
+    resends: list[dict[str, Any]] = field(default_factory=list)
+    open_sessions: int = 0
+    fail: bool = False
+    writes: int = 0
+    # Mirrors the project's "Confirm email" setting.
+    confirm_email: bool = True
+    # Admin API (update/delete user) failures, separate from sign-in failures.
+    fail_admin: bool = False
+    # Every Supabase Auth call, in order, by method name.
+    calls: list[str] = field(default_factory=list)
+
+    def confirm(self, email: str) -> None:
+        user = self.by_email(email)
+        assert user is not None
+        self.email_confirmed[user.id] = True
+
+    def add(
+        self,
+        email: str,
+        password: str,
+        app_metadata: dict[str, Any] | None = None,
+        user_metadata: dict[str, Any] | None = None,
+    ) -> FakeAuthUser:
+        user = FakeAuthUser(
+            id=f"user-{len(self.users) + 1}",
+            email=email,
+            app_metadata=dict(app_metadata or {}),
+            user_metadata=dict(user_metadata or {}),
+        )
+        self.users[user.id] = user
+        self.passwords[user.id] = password
+        return user
+
+    def by_email(self, email: str) -> FakeAuthUser | None:
+        return next((u for u in self.users.values() if u.email.lower() == email.lower()), None)
+
+    def client(self) -> "FakeAuthClient":
+        return FakeAuthClient(FakeAuth(self))
+
+
+@dataclass
+class FakeAuthAdmin:
+    directory: FakeAuthDirectory
+
+    def list_users(
+        self, page: int | None = None, per_page: int | None = None
+    ) -> list[FakeAuthUser]:
+        users = list(self.directory.users.values())
+        size = per_page or 50
+        start = ((page or 1) - 1) * size
+        return users[start : start + size]
+
+    def create_user(self, attributes: dict[str, Any]) -> FakeUserResponse:
+        self.directory.writes += 1
+        user = self.directory.add(
+            attributes["email"], attributes["password"], attributes.get("app_metadata")
+        )
+        self.directory.email_confirmed[user.id] = bool(attributes.get("email_confirm"))
+        return FakeUserResponse(user)
+
+    def update_user_by_id(self, uid: str, attributes: dict[str, Any]) -> FakeUserResponse:
+        self.directory.calls.append("admin.update_user_by_id")
+        if self.directory.fail_admin:
+            raise RuntimeError("auth admin down")
+        self.directory.writes += 1
+        user = self.directory.users[uid]
+        if "email" in attributes:
+            taken = self.directory.by_email(attributes["email"])
+            if taken is not None and taken.id != uid:
+                raise FakeAuthError("Email address already registered", "email_exists")
+            user.email = attributes["email"]
+        if "password" in attributes:
+            self.directory.passwords[uid] = attributes["password"]
+        if "app_metadata" in attributes:
+            user.app_metadata = dict(attributes["app_metadata"])
+        if "email_confirm" in attributes:
+            self.directory.email_confirmed[uid] = bool(attributes["email_confirm"])
+        return FakeUserResponse(user)
+
+    def delete_user(self, uid: str, should_soft_delete: bool = False) -> None:
+        self.directory.calls.append("admin.delete_user")
+        if self.directory.fail_admin:
+            raise RuntimeError("auth admin down")
+        self.directory.writes += 1
+        self.directory.users.pop(uid)
+        self.directory.passwords.pop(uid, None)
+
+
+@dataclass
+class FakeAuth:
+    directory: FakeAuthDirectory
+    signed_in: bool = False
+
+    @property
+    def admin(self) -> FakeAuthAdmin:
+        return FakeAuthAdmin(self.directory)
+
+    def _open_session(self) -> FakeAuthSession:
+        self.signed_in = True
+        self.directory.open_sessions += 1
+        return FakeAuthSession()
+
+    def sign_in_with_password(self, credentials: dict[str, str]) -> FakeUserResponse:
+        directory = self.directory
+        directory.calls.append("sign_in_with_password")
+        directory.sign_ins.append(credentials["email"])
+        if directory.fail:
+            raise RuntimeError("auth service down")
+        user = directory.by_email(credentials["email"])
+        if user is None or directory.passwords[user.id] != credentials["password"]:
+            raise FakeAuthError("Invalid login credentials", "invalid_credentials")
+        if directory.email_confirmed.get(user.id, True) is False:
+            raise FakeAuthError("Email not confirmed", "email_not_confirmed")
+        return FakeUserResponse(user, self._open_session())
+
+    def sign_up(self, credentials: dict[str, Any]) -> FakeUserResponse:
+        directory = self.directory
+        directory.calls.append("sign_up")
+        directory.sign_ups.append(credentials)
+        if directory.fail:
+            raise RuntimeError("auth service down")
+        options = credentials.get("options") or {}
+        if directory.by_email(credentials["email"]) is not None:
+            if directory.confirm_email:
+                # Supabase answers an existing email with an obfuscated user, no error.
+                return FakeUserResponse(FakeAuthUser(id="obfuscated", email=credentials["email"]))
+            raise FakeAuthError("User already registered", "user_already_exists")
+        user = directory.add(
+            credentials["email"], credentials["password"], user_metadata=options.get("data")
+        )
+        directory.email_confirmed[user.id] = not directory.confirm_email
+        if directory.confirm_email:
+            return FakeUserResponse(user)
+        return FakeUserResponse(user, self._open_session())
+
+    def resend(self, credentials: dict[str, Any]) -> object:
+        directory = self.directory
+        directory.calls.append("resend")
+        directory.resends.append(credentials)
+        if directory.fail:
+            raise RuntimeError("auth service down")
+        return object()
+
+    def sign_in_anonymously(self, *_: Any) -> object:
+        self.directory.calls.append("sign_in_anonymously")
+        return object()
+
+    def sign_out(self) -> None:
+        self.directory.calls.append("sign_out")
+        if self.signed_in:
+            self.signed_in = False
+            self.directory.open_sessions -= 1
+
+
+@dataclass
+class FakeAuthClient:
+    auth: FakeAuth
 
 
 @dataclass
@@ -52,20 +240,13 @@ class Harness:
     client: TestClient
     container: Container
     classifier: StaticClassifier
-    adjudicator: ScriptedAdjudicator
-    assistant: RecordingAssistant
-    audit_log: InMemoryAuditLog
+    scores: "ScoreStore"
     sessions: "SessionStore"
     clock: FakeClock
+    auth: FakeAuthDirectory
 
-    def chat(self, **body) -> list[dict]:
-        with self.client.stream("POST", "/api/v1/chat", json=body) as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("application/x-ndjson")
-            return [json.loads(line) for line in response.iter_lines() if line]
-
-    def grant(self, passphrase: str):  # -> httpx.Response
-        return self.client.post("/api/v1/clearance", json={"passphrase": passphrase})
+    def grant(self, password: str, email: str = ADMIN_EMAIL):  # -> httpx.Response
+        return self.client.post("/api/v1/clearance", json={"email": email, "password": password})
 
 
 @pytest.fixture
@@ -75,45 +256,50 @@ def make_harness() -> Iterator[Callable[..., Harness]]:
     def build(
         verdict: Verdict = Verdict.SAFE,
         probability: float = 0.05,
-        adjudicator: ScriptedAdjudicator | None = None,
         sessions: "SessionStore | None" = None,
-        secret: str | None = PASSPHRASE,
+        supabase_auth: bool = True,
+        supabase_players: bool = False,
+        players: "PlayerStore | None" = None,
+        scores: "ScoreStore | None" = None,
     ) -> Harness:
         from shield_api.services.sessions import AttemptLimiter, InMemorySessionStore
 
         classifier = StaticClassifier(verdict, probability)
-        adjudicator = adjudicator or ScriptedAdjudicator(
-            verdict=Verdict.SAFE, policy=ToolPolicy.RESTRICTED
-        )
-        assistant = RecordingAssistant()
-        audit_log = InMemoryAuditLog()
+        scores = scores or InMemoryScoreStore()
         sessions = sessions or InMemorySessionStore()
         clock = FakeClock()
+        auth = FakeAuthDirectory()
+        auth.add(ADMIN_EMAIL, ADMIN_PASSWORD, app_metadata={"provider": "email", "role": "admin"})
         settings = Settings(
             _env_file=None,
-            SECURE_PASSPHRASE=SecretStr(secret) if secret else None,
             # TestClient speaks plain http://testserver, which drops Secure cookies.
             SESSION_COOKIE_SECURE=False,
         )
         container = Container(
             settings=settings,
             classifier=classifier,
-            shield=Shield(classifier, adjudicator=adjudicator),
-            audit_log=audit_log,
-            assistant=assistant,
+            scores=scores,
             sessions=sessions,
             attempts=AttemptLimiter(
                 max_attempts=settings.CLEARANCE_MAX_ATTEMPTS,
                 window=timedelta(minutes=settings.CLEARANCE_WINDOW_MINUTES),
                 clock=clock,
             ),
+            admins=(
+                SupabaseAdminAuthenticator(auth.client) if supabase_auth else NoAdminAuthenticator()
+            ),
+            players=players or InMemoryPlayerStore(),
         )
+        if supabase_players:
+            from shield_api.services.identity import SupabasePlayerIdentity
+
+            container.identity = SupabasePlayerIdentity(
+                auth.client, redirect_to=f"{settings.WEB_BASE_URL}/auth/confirmed"
+            )
         client = TestClient(create_app(container))
         client.__enter__()
         clients.append(client)
-        return Harness(
-            client, container, classifier, adjudicator, assistant, audit_log, sessions, clock
-        )
+        return Harness(client, container, classifier, scores, sessions, clock, auth)
 
     yield build
     for client in clients:
@@ -121,8 +307,8 @@ def make_harness() -> Iterator[Callable[..., Harness]]:
 
 
 @pytest.fixture
-def valid_passphrase() -> str:
-    return PASSPHRASE
+def admin_password() -> str:
+    return ADMIN_PASSWORD
 
 
 @pytest.fixture

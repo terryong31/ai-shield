@@ -22,7 +22,9 @@ run = ["uv sync --all-packages", "bun install"]
 [tasks."api:dev"]
 description = "Run the gateway API with reload on :8000"
 dir = "apps/api"
-run = "uv run uvicorn shield_api.main:app --reload --port 8000"
+env = { APP_ENV = "development" }
+depends = ["redis:start"]
+run = "uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
 
 [tasks."web:dev"]
 description = "Run the Nuxt web client on :3000"
@@ -144,6 +146,32 @@ run = "uv run python scripts/new_spec.py"
 # --- database (Supabase CLI; needs Docker) ----------------------------------------
 # Without Supabase the API uses SQLite at apps/api/var/shield.db; nothing to run.
 
+[tasks."local:db:reset"]
+description = "Delete the local SQLite databases (accounts, scores, saves, audit log); stop the API first"
+dir = "apps/api"
+confirm = "Delete every local SQLite database in apps/api/var? This cannot be undone."
+# Fixed file names only (the default SQLITE_PATH and its per-domain files), never a glob.
+run = """
+for f in var/shield.db var/shield.audit.db var/shield.game.db var/shield.players.db; do
+  for g in "$f" "$f-wal" "$f-shm" "$f-journal"; do
+    if [ -f "$g" ]; then rm -- "$g" && echo "removed $g"; fi
+  done
+done
+echo "Local SQLite reset. Restart the API to recreate empty databases."
+"""
+
+[tasks."admin:create"]
+description = "Create or promote a Supabase user to admin (app_metadata.role = admin); prompts for the password"
+dir = "apps/api"
+usage = 'arg "<email>" help="The admin account email"'
+run = 'uv run python -m shield_api.admin_cli create "${usage_email}"'
+
+[tasks."admin:revoke"]
+description = "Remove the admin role from a Supabase user"
+dir = "apps/api"
+usage = 'arg "<email>" help="The admin account email"'
+run = 'uv run python -m shield_api.admin_cli revoke "${usage_email}"'
+
 [tasks."db:start"]
 description = "Start the local Supabase stack (applies migrations + seed on first run)"
 run = "supabase start"
@@ -151,6 +179,14 @@ run = "supabase start"
 [tasks."db:stop"]
 description = "Stop the local Supabase stack (data is kept)"
 run = "supabase stop"
+
+[tasks."redis:start"]
+description = "Start the local Redis container on :6379 for leaderboard caching"
+run = "docker compose up -d redis --wait"
+
+[tasks."redis:stop"]
+description = "Stop the local Redis container"
+run = "docker compose stop redis"
 
 [tasks."db:status"]
 description = "Show local URLs and keys (API URL + service_role key go in apps/api/.env)"
@@ -194,11 +230,7 @@ run = "docker compose up --build"
 description = "Stop the Compose stack (the audit-log volume is kept)"
 run = "docker compose down"
 
-# --- research --------------------------------------------------------------------
-
-[tasks.eval]
-description = "Evaluate the baseline pipeline on the held-out seed set"
-run = "uv run shield-engine eval --data packages/engine/data/seed/eval.jsonl --report reports/eval-classifier.json"
+# --- model ----------------------------------------------------------------------
 
 [tasks.train]
 description = "Retrain the bundled baseline classifier"

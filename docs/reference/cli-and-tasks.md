@@ -6,55 +6,13 @@ Entry point `shield_engine.cli:main`, installed with the engine package. Inside 
 monorepo, run it as `uv run shield-engine …` from the repository root.
 
 ```
-shield-engine [-h] [--version] {eval,train} ...
+shield-engine [-h] [--version] {train} ...
 ```
 
 | Global option | Effect |
 | --- | --- |
 | `-h`, `--help` | Show help |
 | `--version` | Print the engine version (e.g. `0.1.0`) |
-
-### `shield-engine eval`
-
-Evaluate the pipeline on a labelled JSONL dataset.
-
-```
-shield-engine eval --data DATA [--report REPORT] [--pipeline {classifier,full}]
-```
-
-| Option | Required | Default | Meaning |
-| --- | --- | --- | --- |
-| `--data PATH` | yes | | JSONL dataset ([format](../how-to/run-evaluations.md#dataset-format)) |
-| `--report PATH` | no | none | Write the JSON report here (parent directories are created) |
-| `--pipeline` | no | `classifier` | `classifier`: bundled baseline only. `full`: baseline + `LlamaGuardModerator` + `DebateAdjudicator` over Groq |
-
-`--pipeline full` reads `GROQ_API_KEY` (required; the command exits with
-`--pipeline full needs GROQ_API_KEY in the environment` otherwise),
-`GROQ_GUARD_MODEL` (default `llama-guard-3-8b`) and `GROQ_DEBATE_MODEL`
-(default `llama-3.3-70b-versatile`). Evaluation uses clearance `NONE` and the
-default `ShieldConfig`.
-
-Standard output, one line:
-
-```
-n=40  precision=1.000  recall=0.550  f1=0.710  fpr=0.000  abstain=0.375  p50=0.13ms
-```
-
-Report JSON:
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `engine_version` | string | `shield_engine.__version__` |
-| `pipeline` | string | `classifier` or `full` |
-| `dataset.path` | string | `--data` as given |
-| `dataset.sha256` | string | SHA-256 of the dataset file |
-| `examples` | integer | Number of rows |
-| `metrics.tp`, `fp`, `tn`, `fn` | integer | Confusion matrix (positive = blocked) |
-| `metrics.precision`, `recall`, `f1`, `false_positive_rate`, `accuracy` | number | 0.0 on zero denominators |
-| `abstention_rate` | number | Share of `UNCERTAIN` final verdicts |
-| `latency_ms.p50`, `latency_ms.p95` | number | Per-prompt screening latency |
-
-Exit code 0 on success. Dataset errors raise `DatasetError` (non-zero exit with a traceback).
 
 ### `shield-engine train`
 
@@ -66,7 +24,7 @@ shield-engine train --data DATA [--out OUT] [--seed SEED]
 
 | Option | Required | Default | Meaning |
 | --- | --- | --- | --- |
-| `--data PATH` | yes | | Training JSONL |
+| `--data PATH` | yes | | Training JSONL (`{"text": …, "label": 0 or 1}` per line; see `shield_engine.dataset.load_jsonl`) |
 | `--out DIR` | no | `shield_engine.models.BASELINE_DIR` (the bundled `baseline/` directory) | Where to write `model.joblib`, `vectorizer.joblib`, `metadata.json` |
 | `--seed N` | no | `42` | `random_state` for `SGDClassifier` |
 
@@ -94,7 +52,7 @@ node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
 | Task | Runs | Description |
 | --- | --- | --- |
 | `setup` | `uv sync --all-packages`; `bun install` | Install all Python and JavaScript dependencies |
-| `api:dev` | `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api` | Run the gateway API with reload on :8000 |
+| `api:dev` | `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
 | `web:dev` | `bun run dev` in `apps/web` | Run the Nuxt web client on :3000 |
 | `dev` | depends on `api:dev`, `web:dev` | Run API and web together |
 | `test:engine` | `uv run pytest packages/engine --cov=shield_engine --cov-fail-under=90` | Engine unit tests with coverage (fails under 90%) |
@@ -113,7 +71,6 @@ node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
 | `contract:check` | the two `contract` commands, then `git diff --exit-code -- contracts apps/web/app/types/api.gen.ts` | Fail if the committed contract or generated types are stale |
 | `spec:check` | `uv run python scripts/check_spec_coverage.py` | Every acceptance criterion in accepted specs has a test |
 | `spec:new` | `uv run python scripts/new_spec.py <slug>` | Scaffold a new spec folder: `mise run spec:new <slug>` |
-| `eval` | `uv run shield-engine eval --data packages/engine/data/seed/eval.jsonl --report reports/eval-classifier.json` | Evaluate the baseline pipeline on the held-out seed set |
 | `train` | `uv run shield-engine train --data packages/engine/data/seed/train.jsonl` | Retrain the bundled baseline classifier |
 | `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check` | Everything CI runs. Must pass before pushing |
 | `build:web` | `bun run build` in `apps/web` | Production build of the web client |
@@ -130,10 +87,13 @@ node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
 | `db:env` | `supabase status -o json` → two lines | Print `SUPABASE_URL=` / `SUPABASE_KEY=` (service_role) for `apps/api/.env` |
 | `db:reset` | `supabase db reset` | Recreate the local database from migrations, then run `supabase/seed.sql` |
 | `db:migration` | `supabase migration new <name>` | Create `supabase/migrations/<timestamp>_<name>.sql` |
-| `db:diff` | `supabase db diff --schema public` | Generate SQL for changes made in Studio (`-f <name>` writes a migration) |
-| `db:lint` | `supabase db lint --schema public` | Lint the local schema |
+| `db:diff` | `supabase db diff --schema audit,game,players` | Generate SQL for changes made in Studio (`-f <name>` writes a migration) |
+| `db:lint` | `supabase db lint --schema audit,game,players` | Lint the local schema |
 | `db:link` | `supabase link` | Link to a hosted project (`--project-ref <ref>`) |
 | `db:push` | `supabase db push` | Apply pending migrations to the linked project; never runs seed |
+| `local:db:reset` | deletes `apps/api/var/shield.db`, `shield.audit.db`, `shield.game.db`, `shield.players.db` and their journals (asks first) | Reset the local SQLite data; stop the API first |
+| `admin:create` | `python -m shield_api.admin_cli create <email>` | Create a Supabase user as admin, or promote an existing one (`app_metadata.role = "admin"`); prompts for the password. Needs `SUPABASE_URL` and the service `SUPABASE_KEY` |
+| `admin:revoke` | `python -m shield_api.admin_cli revoke <email>` | Remove the admin role; other `app_metadata` is kept |
 | `up` | `docker compose up --build` | Build and run API + web containers |
 | `down` | `docker compose down` | Stop containers; the `shield-data` volume is kept |
 
@@ -150,7 +110,7 @@ of files mentioning the IDs) as JSON.
 | --- | --- |
 | [`scripts/new_spec.py`](../../scripts/new_spec.py) `<slug>` | Creates `specs/NNNN-<slug>/` with `spec.md`, `plan.md`, `tasks.md` from `specs/_templates/`, using the next free number and today's date. The slug must be kebab-case (`[a-z0-9]+(-[a-z0-9]+)*`); otherwise it prints usage and exits 2 |
 | [`scripts/sdd.py`](../../scripts/sdd.py) `start\|red\|green\|verify\|done\|status\|abort\|hook` | The enforced SDD cycle (spec 0010). State lives in `.sdd/state.json` (git-ignored). `hook pre-tool\|stop\|session-start` reads a Claude Code hook payload on stdin |
-| [`scripts/check_spec_coverage.py`](../../scripts/check_spec_coverage.py) | For every `specs/NNNN-*/spec.md` whose `- **Status:**` is `Accepted` or `Implemented`, finds every criterion defined as `- **AREA-COMP-NNN**` and checks that the ID string appears in some file matching `packages/*/tests/**/*.py`, `apps/*/tests/**/*.py` or `apps/*/test/**/*.ts`. Exits 1 and lists missing IDs, otherwise prints `spec coverage OK: N criteria, all traced to tests` |
+| [`scripts/check_spec_coverage.py`](../../scripts/check_spec_coverage.py) | For every `specs/NNNN-*/spec.md` whose `- **Status:**` is `Accepted` or `Implemented`, finds every criterion defined as `- **AREA-COMP-NNN**` and checks that the ID string appears in some file matching `packages/*/tests/**/*.py`, `apps/*/tests/**/*.py`, `apps/*/test/**/*.ts` or `scripts/tests/**/*.py`. Exits 1 and lists missing IDs, otherwise prints `spec coverage OK: N criteria, all traced to tests` |
 
 ## Web package scripts (`apps/web/package.json`)
 

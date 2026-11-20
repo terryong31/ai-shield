@@ -5,7 +5,7 @@ import logging
 
 import pytest
 
-from shield_api.demo.byok import PROVIDERS, ProviderAuthError
+from shield_api.providers.byok import PROVIDERS, ProviderAuthError
 from shield_engine.ports import ChatCompletion, UsageChatModel
 from shield_engine.testing import ScriptedUsageChatModel
 
@@ -71,7 +71,7 @@ def _run(harness: Harness, custom: dict | None = None, message: str | None = Non
 def _sign_in(harness: Harness, email: str, *, paid: bool) -> None:
     res = harness.client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "password123", "player_name": email.split("@")[0]},
+        json={"email": email, "password": "Password123", "player_name": email.split("@")[0]},
     )
     assert res.status_code == 200
     if paid:
@@ -137,9 +137,7 @@ def test_the_api_key_never_leaks_into_responses_logs_or_records(
     for response in (ok, rejected, failed, invalid):
         assert API_KEY not in response.text
     assert API_KEY not in caplog.text
-    assert API_KEY not in json.dumps(
-        [r.model_dump(mode="json") for r in harness.audit_log._records]
-    )
+    assert API_KEY not in json.dumps([r.model_dump(mode="json") for r in harness.scores._scores])
 
 
 @pytest.mark.spec("API-SANDBOX-004")

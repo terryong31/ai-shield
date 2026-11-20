@@ -41,19 +41,9 @@ time compare) → `GRANTED`; otherwise `DENIED`.
 ## Acceptance criteria
 
 - **API-HEALTH-001**: `GET /api/v1/health` returns 200 with `status="healthy"` and `model_loaded=true` when the classifier is available.
-- **API-PRED-001**: `POST /api/v1/predict` returns the Layer 1 verdict and score for a prompt; a body without `message` returns 422.
-- **API-SCREEN-001**: `POST /api/v1/screen` returns the engine decision (`verdict`, `policy`, `blocked`, `layer`, `reason`) without invoking the demo assistant.
-- **API-CHAT-001**: `POST /api/v1/chat` responds `application/x-ndjson`, one JSON object per line; the first event is `START` and an allowed request ends with `FINAL_RESPONSE`.
-- **API-CHAT-002**: Given a prompt the engine blocks, the stream contains `BLOCK` then `STAGE_CHANGE(final)`, never `FINAL_RESPONSE`, the assistant is not invoked, and an audit record with `action=BLOCKED` and the decision layer is stored.
 - ~~API-CHAT-003~~ Retired 2026-09-24: superseded by API-CLEAR-004 and API-CLEAR-011 (spec 0012).
-- **API-CHAT-004**: Mode `guardrail` sets `always_adjudicate` and mode `chaos` sets `skip_classifier` for that request only.
-- **API-CHAT-005**: The assistant receives exactly the tools allowed by the decision policy, and emitted `TOOL_START`/`TOOL_END` events are relayed in the stream.
-- **API-CHAT-006**: Given an unexpected server error mid-stream, the stream emits an `ERROR` event with a generic message that contains no exception text.
-- **API-FEED-001**: `POST /api/v1/feedback` teaches the classifier the label and, when `request_id` is given, marks that audit record reviewed with the new action.
-- **API-LOG-001**: `GET /api/v1/requests` returns audit records newest first; `limit` defaults to 30 and must be within 1–200 (else 422).
-- **API-STATS-001**: `GET /api/v1/stats` returns `total`, `blocked`, `allowed` and `block_rate` (percent, one decimal, 0 when empty).
 - **API-CONTRACT-001**: The OpenAPI document advertises only `/api/v1` routes and is identical to the committed `contracts/shield-api.openapi.json`.
-- **API-TOOLS-001**: In the demo tool catalogue, every tool that deletes, drops, exports or executes arbitrary queries is rated `HIGH` or `CRITICAL`.
+- **API-DOCS-001**: Given `APP_ENV=development`, when the gateway starts, then Swagger UI is served at `/api/v1/docs` and the schema at `/api/v1/openapi.json`; given `APP_ENV=production` (the default when unset), then `/api/v1/docs`, `/api/v1/redoc` and `/api/v1/openapi.json` all return `404`, while `mise run contract` still exports the same contract. Any other `APP_ENV` value fails settings validation. `mise run api:dev` runs in development; Docker Compose runs in production unless `APP_ENV` overrides it.
 
 ## Security & privacy considerations
 
@@ -66,6 +56,22 @@ time compare) → `GRANTED`; otherwise `DENIED`.
 
 None.
 
+## Retired by 0026
+
+The chat, screening, prediction, feedback, audit-log, stats and demo-tool routes were removed; the gateway serves only `/health`, `/auth/*`, `/game/*` and `/clearance`.
+
+- `API-PRED-001`: `POST /api/v1/predict` returns the Layer 1 verdict and score for a prompt; a body without `message` returns 422.
+- `API-SCREEN-001`: `POST /api/v1/screen` returns the engine decision (`verdict`, `policy`, `blocked`, `layer`, `reason`) without invoking the demo assistant.
+- `API-CHAT-001`: `POST /api/v1/chat` responds `application/x-ndjson`, one JSON object per line; the first event is `START` and an allowed request ends with `FINAL_RESPONSE`.
+- `API-CHAT-002`: Given a prompt the engine blocks, the stream contains `BLOCK` then `STAGE_CHANGE(final)`, never `FINAL_RESPONSE`, the assistant is not invoked, and an audit record with `action=BLOCKED` and the decision layer is stored.
+- `API-CHAT-004`: Mode `guardrail` sets `always_adjudicate` and mode `chaos` sets `skip_classifier` for that request only.
+- `API-CHAT-005`: The assistant receives exactly the tools allowed by the decision policy, and emitted `TOOL_START`/`TOOL_END` events are relayed in the stream.
+- `API-CHAT-006`: Given an unexpected server error mid-stream, the stream emits an `ERROR` event with a generic message that contains no exception text.
+- `API-FEED-001`: `POST /api/v1/feedback` teaches the classifier the label and, when `request_id` is given, marks that audit record reviewed with the new action.
+- `API-LOG-001`: `GET /api/v1/requests` returns audit records newest first; `limit` defaults to 30 and must be within 1–200 (else 422).
+- `API-STATS-001`: `GET /api/v1/stats` returns `total`, `blocked`, `allowed` and `block_rate` (percent, one decimal, 0 when empty).
+- `API-TOOLS-001`: In the demo tool catalogue, every tool that deletes, drops, exports or executes arbitrary queries is rated `HIGH` or `CRITICAL`.
+
 ## Verification
 
 ### 2026-09-23 · commit 489ecc5 (+ uncommitted changes) · backfilled
@@ -73,4 +79,11 @@ None.
 - Criteria: API-HEALTH-001, API-PRED-001, API-SCREEN-001, API-CHAT-001, API-CHAT-002, API-CHAT-003, API-CHAT-004, API-CHAT-005, API-CHAT-006, API-FEED-001, API-LOG-001, API-STATS-001, API-CONTRACT-001, API-TOOLS-001
 - Red: observed during the monorepo refactor, before `sdd` existed; not machine-recorded
 - Green: 25 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-09 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: API-DOCS-001
+- Red: 4 failing test(s) before implementation (`apps/api/tests/test_api_docs.py::test_production_and_unset_serve_no_docs_or_schema[env0]`, `apps/api/tests/test_api_docs.py::test_production_and_unset_serve_no_docs_or_schema[env1]`, `apps/api/tests/test_api_docs.py::test_unknown_app_env_is_rejected`)
+- Green: 5 passing test(s)
 - Gate: `mise run check` passed

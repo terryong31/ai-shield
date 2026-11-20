@@ -1,6 +1,6 @@
 # 0005. NDJSON event stream for `/chat`
 
-- **Status:** Accepted
+- **Status:** Superseded by spec 0026 (`/chat` and its event stream were removed; the game returns one JSON response per run)
 - **Date:** 2026-09-23
 
 ## Context

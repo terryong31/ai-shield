@@ -19,6 +19,7 @@ export interface CustomTool {
   name: string
   description: string
   allowed: boolean
+  dual_use?: boolean
 }
 
 export interface CustomAgent {

@@ -4,6 +4,86 @@
  */
 
 export interface paths {
+    "/api/v1/auth/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Account
+         * @description Delete the account and everything it owns, except today's run counts.
+         */
+        delete: operations["delete_account_api_v1_auth_account_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/account/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Email
+         * @description Move the account, its scores, saved boards, usage and sessions to a new email.
+         */
+        post: operations["change_email_api_v1_auth_account_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/account/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change Password
+         * @description Change the password and sign out every other session.
+         */
+        post: operations["change_password_api_v1_auth_account_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/account/reset-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Progress
+         * @description Delete this account's leaderboard scores and saved boards. The account stays.
+         */
+        post: operations["reset_progress_api_v1_auth_account_reset_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/anonymous": {
         parameters: {
             query?: never;
@@ -95,9 +175,31 @@ export interface paths {
         put?: never;
         /**
          * Register Player
-         * @description Register a logged-in player account on the free tier.
+         * @description Register a player on the free tier.
+         *
+         *     With Supabase, the player must confirm their email before signing in.
          */
         post: operations["register_player_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/resend-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Confirmation
+         * @description Send the confirmation email again. The answer is the same for every address.
+         */
+        post: operations["resend_confirmation_api_v1_auth_resend_confirmation_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -144,26 +246,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Chat
-         * @description Screen the prompt, then run the demo assistant under the resulting tool policy.
-         */
-        post: operations["chat_api_v1_chat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/clearance": {
         parameters: {
             query?: never;
@@ -179,7 +261,9 @@ export interface paths {
         put?: never;
         /**
          * Grant Clearance
-         * @description Exchange the passphrase for a session cookie. The passphrase is never stored.
+         * @description Exchange an admin's email and password for a session cookie. Neither is stored.
+         *
+         *     An admin is a Supabase Auth user whose ``app_metadata.role`` is ``"admin"``.
          */
         post: operations["grant_clearance_api_v1_clearance_post"];
         /**
@@ -192,20 +276,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/feedback": {
+    "/api/v1/game/leaderboard": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /**
-         * Feedback
-         * @description Record a reviewer's label: it overrides the classifier and nudges the model.
+         * Get Difficulty Leaderboard
+         * @description Aggregate each player's best scores across all levels in a difficulty category.
          */
-        post: operations["feedback_api_v1_feedback_post"];
+        get: operations["get_difficulty_leaderboard_api_v1_game_leaderboard_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -224,6 +308,26 @@ export interface paths {
          * @description Return built-in levels and placeable check definitions.
          */
         get: operations["list_game_levels_api_v1_game_levels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/game/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Player Progress
+         * @description Return the authenticated player's per-level status and difficulty summaries.
+         */
+        get: operations["get_player_progress_api_v1_game_progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -304,6 +408,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/game/scores/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Game Scores
+         * @description Stream real-time leaderboard update notifications via Server-Sent Events.
+         */
+        get: operations["stream_game_scores_api_v1_game_scores_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/game/train": {
         parameters: {
             query?: never;
@@ -341,87 +465,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/predict": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Predict
-         * @description Layer 1 only: the classifier's verdict, no LLM calls.
-         */
-        post: operations["predict_api_v1_predict_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/requests": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Requests
-         * @description Recent screened requests, newest first.
-         */
-        get: operations["list_requests_api_v1_requests_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/screen": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Screen
-         * @description The full engine decision, without running the demo assistant.
-         */
-        post: operations["screen_api_v1_screen_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/stats": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stats */
-        get: operations["stats_api_v1_stats_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountDeleteRequest */
+        AccountDeleteRequest: {
+            /**
+             * Confirm
+             * @constant
+             */
+            confirm: "DELETE";
+            /** Current Password */
+            current_password: string;
+        };
+        /** AccountEmailRequest */
+        AccountEmailRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Email */
+            new_email: string;
+        };
+        /**
+         * AccountPasswordRequest
+         * @description Change password (spec 0025). The current password is checked first.
+         */
+        AccountPasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** AccountResetRequest */
+        AccountResetRequest: {
+            /** Current Password */
+            current_password: string;
+        };
+        /** AccountResetResponse */
+        AccountResetResponse: {
+            /** Boards Removed */
+            boards_removed: number;
+            /** Scores Removed */
+            scores_removed: number;
+        };
         /** AgentProfileSchema */
         AgentProfileSchema: {
             /** Objective */
@@ -461,51 +547,13 @@ export interface components {
             allowed: boolean;
             /** Description */
             description: string;
-            /** Name */
-            name: string;
-        };
-        /** AuditRecord */
-        AuditRecord: {
             /**
-             * Action
-             * @enum {string}
-             */
-            action: "ALLOWED" | "BLOCKED";
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Human Label */
-            human_label?: number | null;
-            /** Id */
-            id: string;
-            /** Layer */
-            layer: string;
-            /** Metadata */
-            metadata?: {
-                [key: string]: unknown;
-            };
-            /** Query */
-            query: string;
-            /** Reason */
-            reason: string;
-            /**
-             * Reviewed
+             * Dual Use
              * @default false
              */
-            reviewed: boolean;
-        };
-        /** BlockEvent */
-        BlockEvent: {
-            layer: components["schemas"]["DecisionLayer"];
-            /** Reason */
-            reason: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "BLOCK";
+            dual_use: boolean;
+            /** Name */
+            name: string;
         };
         /** BoardEdgeSchema */
         BoardEdgeSchema: {
@@ -537,7 +585,7 @@ export interface components {
             /** Id */
             id: string;
             /** Kind */
-            kind: ("incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "quick_screen" | "safety_check" | "agent_review" | "tool_filter" | "assistant") | "blocked";
+            kind: ("incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "jev" | "safety_check" | "llm_review" | "tool_filter" | "assistant") | "blocked";
         };
         /**
          * ByokModelSchema
@@ -557,18 +605,6 @@ export interface components {
              */
             provider: "openai" | "anthropic" | "google" | "groq" | "deepseek" | "qwen" | "moonshot";
         };
-        ChatEvent: components["schemas"]["StartEvent"] | components["schemas"]["StageChangeEvent"] | components["schemas"]["MlResultEvent"] | components["schemas"]["ModerationEvent"] | components["schemas"]["DebateTurnEvent"] | components["schemas"]["BlockEvent"] | components["schemas"]["PolicyUpdateEvent"] | components["schemas"]["ToolStartEvent"] | components["schemas"]["ToolEndEvent"] | components["schemas"]["FinalResponseEvent"] | components["schemas"]["ErrorEvent"];
-        /** ChatRequest */
-        ChatRequest: {
-            /** Message */
-            message: string;
-            /**
-             * Mode
-             * @default shield
-             * @enum {string}
-             */
-            mode: "shield" | "guardrail" | "chaos";
-        };
         /** CheckDefinitionSchema */
         CheckDefinitionSchema: {
             /** Cost Usd */
@@ -579,7 +615,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "quick_screen" | "safety_check" | "agent_review" | "tool_filter" | "assistant";
+            kind: "incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "jev" | "safety_check" | "llm_review" | "tool_filter" | "assistant";
             /** Label */
             label: string;
             /** Latency Ms */
@@ -587,12 +623,15 @@ export interface components {
             /** Summary */
             summary: string;
         };
-        /** ClearanceRequest */
+        /**
+         * ClearanceRequest
+         * @description An admin's Supabase Auth credentials, checked once and never stored.
+         */
         ClearanceRequest: {
             /** Email */
-            email?: string | null;
-            /** Passphrase */
-            passphrase: string;
+            email: string;
+            /** Password */
+            password: string;
         };
         /** ClearanceStatus */
         ClearanceStatus: {
@@ -650,73 +689,74 @@ export interface components {
              */
             provider: "openai" | "anthropic" | "google" | "groq" | "deepseek" | "qwen" | "moonshot";
         };
-        /** DebateTurnEvent */
-        DebateTurnEvent: {
+        /** DifficultyLeaderboardEntry */
+        DifficultyLeaderboardEntry: {
+            /** Avg Latency Ms */
+            avg_latency_ms: number;
+            /** Difficulty */
+            difficulty: ("Easy" | "Medium" | "Hard") | "All";
+            /** Levels Mastered */
+            levels_mastered: number;
+            /** Levels Solved */
+            levels_solved: number;
+            /** Levels Total */
+            levels_total: number;
+            /** Max Possible Score */
+            max_possible_score: number;
+            /** Player Name */
+            player_name: string;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /** Total Score */
+            total_score: number;
+        };
+        /** DifficultyProgressSummary */
+        DifficultyProgressSummary: {
             /**
-             * Agent
+             * Difficulty
              * @enum {string}
              */
-            agent: "ANALYST" | "WARDEN";
-            /** Message */
-            message: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "DEBATE_TURN";
+            difficulty: "Easy" | "Medium" | "Hard";
+            /** Levels Mastered */
+            levels_mastered: number;
+            /** Levels Solved */
+            levels_solved: number;
+            /** Levels Total */
+            levels_total: number;
+            /** Max Possible Score */
+            max_possible_score: number;
+            /** Total Score */
+            total_score: number;
         };
-        /**
-         * DecisionLayer
-         * @description Which layer produced the final decision.
-         *
-         *     Values match the identifiers already stored in existing audit logs.
-         * @enum {string}
-         */
-        DecisionLayer: "LAYER_1_ML" | "LAYER_2_DUAL_AGENT" | "SYSTEM";
-        /** ErrorEvent */
-        ErrorEvent: {
-            /** Message */
-            message: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "ERROR";
-        };
-        /** FeedbackRequest */
-        FeedbackRequest: {
-            /**
-             * Human Label
-             * @enum {integer}
-             */
-            human_label: 0 | 1;
-            /** Prompt */
-            prompt: string;
-            /** Request Id */
-            request_id?: string | null;
-        };
-        /** FeedbackResponse */
-        FeedbackResponse: {
-            /**
-             * Status
-             * @constant
-             */
-            status: "success";
-        };
-        /** FinalResponseEvent */
-        FinalResponseEvent: {
-            /** Text */
-            text: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "FINAL_RESPONSE";
+        /** FollowUpChallengeSchema */
+        FollowUpChallengeSchema: {
+            /** Description */
+            description: string;
+            /** Forbidden Checks */
+            forbidden_checks?: ("incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "jev" | "safety_check" | "llm_review" | "tool_filter" | "assistant")[];
+            /** Max Avg Latency Ms */
+            max_avg_latency_ms?: number | null;
+            /** Max Check Nodes */
+            max_check_nodes?: number | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Max Total Cost Usd */
+            max_total_cost_usd?: number | null;
         };
         /** GameCatalogResponse */
         GameCatalogResponse: {
+            /**
+             * Ai Key Configured
+             * @default false
+             */
+            ai_key_configured: boolean;
             /** Checks */
             checks: components["schemas"]["CheckDefinitionSchema"][];
+            /**
+             * Jev Key Configured
+             * @default false
+             */
+            jev_key_configured: boolean;
             /** Levels */
             levels: components["schemas"]["GameLevelSchema"][];
         };
@@ -725,6 +765,7 @@ export interface components {
             agent: components["schemas"]["AgentProfileSchema"] | null;
             /** Agent Tier */
             agent_tier: ("standard" | "budget") | null;
+            constraints?: components["schemas"]["LevelConstraintsSchema"];
             /**
              * Difficulty
              * @enum {string}
@@ -732,21 +773,31 @@ export interface components {
             difficulty: "Easy" | "Medium" | "Hard";
             /** Final Node Label */
             final_node_label: string;
+            follow_up?: components["schemas"]["FollowUpChallengeSchema"] | null;
             /**
              * Id
              * @enum {string}
              */
-            id: "easy" | "medium" | "hard";
+            id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
             /** Max Cost Usd */
             max_cost_usd: number;
             /** Max Latency Ms */
             max_latency_ms: number;
             /** Messages */
             messages: components["schemas"]["LevelMessageSchema"][];
+            /** Order */
+            order: number;
             /** Protected Asset */
             protected_asset: string;
             /** Summary */
             summary: string;
+            /** Tags */
+            tags?: string[];
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "free" | "pro";
             /** Title */
             title: string;
         };
@@ -758,9 +809,9 @@ export interface components {
             custom_message?: string | null;
             /**
              * Level Id
-             * @default easy
+             * @default easy-1
              */
-            level_id: ("easy" | "medium" | "hard") | "custom";
+            level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
         };
         /** GameRunResponse */
         GameRunResponse: {
@@ -809,17 +860,10 @@ export interface components {
         };
         /** HealthResponse */
         HealthResponse: {
-            /** Adjudication Enabled */
-            adjudication_enabled: boolean;
-            /**
-             * Audit Backend
-             * @enum {string}
-             */
-            audit_backend: "sqlite" | "supabase" | "memory";
+            /** Agent Tiers */
+            agent_tiers: ("standard" | "budget")[];
             /** Model Loaded */
             model_loaded: boolean;
-            /** Moderation Enabled */
-            moderation_enabled: boolean;
             /** Service */
             service: string;
             /**
@@ -827,6 +871,11 @@ export interface components {
              * @constant
              */
             status: "healthy";
+            /**
+             * Storage Backend
+             * @enum {string}
+             */
+            storage_backend: "sqlite" | "supabase" | "memory";
             /** Version */
             version: string;
         };
@@ -846,18 +895,57 @@ export interface components {
             /** Node Id */
             node_id: string;
         };
+        /** LevelConstraintsSchema */
+        LevelConstraintsSchema: {
+            /** Disabled Checks */
+            disabled_checks?: ("incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "jev" | "safety_check" | "llm_review" | "tool_filter" | "assistant")[];
+            /** Max Avg Latency Ms */
+            max_avg_latency_ms?: number | null;
+            /** Max Check Nodes */
+            max_check_nodes?: number | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Max Total Cost Usd */
+            max_total_cost_usd?: number | null;
+        };
         /** LevelMessageSchema */
         LevelMessageSchema: {
             /** Category */
             category: string;
             /** Expected Tool */
             expected_tool?: string | null;
+            /** Forbidden Tools */
+            forbidden_tools?: string[];
             /** Id */
             id: string;
             /** Is Attack */
             is_attack: boolean;
             /** Text */
             text: string;
+        };
+        /** LevelProgressItem */
+        LevelProgressItem: {
+            /** Best Score */
+            best_score: number;
+            /**
+             * Difficulty
+             * @enum {string}
+             */
+            difficulty: "Easy" | "Medium" | "Hard";
+            /**
+             * Level Id
+             * @enum {string}
+             */
+            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
+            /** Mastered */
+            mastered: boolean;
+            /**
+             * Medal
+             * @enum {string}
+             */
+            medal: "none" | "bronze" | "silver" | "gold";
+            /** Won */
+            won: boolean;
         };
         /** MessageTraceSchema */
         MessageTraceSchema: {
@@ -880,29 +968,6 @@ export interface components {
             /** Total Latency Ms */
             total_latency_ms: number;
         };
-        /** MlResultEvent */
-        MlResultEvent: {
-            /** Confidence */
-            confidence: number;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "ML_RESULT";
-            verdict: components["schemas"]["Verdict"];
-        };
-        /** ModerationEvent */
-        ModerationEvent: {
-            /** Categories */
-            categories: string[];
-            /** Safe */
-            safe: boolean;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "LLAMAGUARD_RESULT";
-        };
         /** NodePositionSchema */
         NodePositionSchema: {
             /** X */
@@ -910,12 +975,31 @@ export interface components {
             /** Y */
             y: number;
         };
+        /**
+         * PlayerConfirmationResponse
+         * @description Sent for every register or resend that needs email confirmation, whatever the email.
+         */
+        PlayerConfirmationResponse: {
+            /**
+             * Status
+             * @default confirmation_sent
+             * @constant
+             */
+            status: "confirmation_sent";
+        };
         /** PlayerLoginRequest */
         PlayerLoginRequest: {
             /** Email */
             email: string;
             /** Password */
             password: string;
+        };
+        /** PlayerProgressResponse */
+        PlayerProgressResponse: {
+            /** Difficulties */
+            difficulties: components["schemas"]["DifficultyProgressSummary"][];
+            /** Levels */
+            levels: components["schemas"]["LevelProgressItem"][];
         };
         /** PlayerRecoverRequest */
         PlayerRecoverRequest: {
@@ -939,6 +1023,11 @@ export interface components {
             password: string;
             /** Player Name */
             player_name?: string | null;
+        };
+        /** PlayerResendRequest */
+        PlayerResendRequest: {
+            /** Email */
+            email: string;
         };
         /** PlayerSessionStatus */
         PlayerSessionStatus: {
@@ -974,32 +1063,6 @@ export interface components {
              */
             wave_runs_used: number;
         };
-        /** PolicyUpdateEvent */
-        PolicyUpdateEvent: {
-            /** Allowed Tools */
-            allowed_tools: string[];
-            policy: components["schemas"]["ToolPolicy"];
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "POLICY_UPDATE";
-        };
-        /** PredictRequest */
-        PredictRequest: {
-            /** Message */
-            message: string;
-        };
-        /** PredictResponse */
-        PredictResponse: {
-            /** Confidence Score */
-            confidence_score: number;
-            /** Is Malicious */
-            is_malicious: boolean;
-            /** Override */
-            override: boolean;
-            verdict: components["schemas"]["Verdict"];
-        };
         /** SavedBoardRequest */
         SavedBoardRequest: {
             board: components["schemas"]["BoardGraphSchema"];
@@ -1014,7 +1077,7 @@ export interface components {
             board: components["schemas"]["BoardGraphSchema"];
             custom?: components["schemas"]["CustomSetupSchema"] | null;
             /** Level Id */
-            level_id: ("easy" | "medium" | "hard") | "custom";
+            level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
             /** Positions */
             positions?: {
                 [key: string]: components["schemas"]["NodePositionSchema"];
@@ -1040,7 +1103,12 @@ export interface components {
              * Level Id
              * @enum {string}
              */
-            level_id: "easy" | "medium" | "hard";
+            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
+            /**
+             * Mastered
+             * @default false
+             */
+            mastered: boolean;
             /**
              * Medal
              * @enum {string}
@@ -1052,6 +1120,11 @@ export interface components {
             total_cost_usd: number;
             /** Total Score */
             total_score: number;
+            /**
+             * Won
+             * @default false
+             */
+            won: boolean;
         };
         /** ScoreRecord */
         ScoreRecord: {
@@ -1075,7 +1148,12 @@ export interface components {
              * Level Id
              * @enum {string}
              */
-            level_id: "easy" | "medium" | "hard";
+            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
+            /**
+             * Mastered
+             * @default false
+             */
+            mastered: boolean;
             /**
              * Medal
              * @enum {string}
@@ -1085,103 +1163,18 @@ export interface components {
             player_name: string;
             /**
              * Score Version
-             * @default 2
+             * @default 3
              */
             score_version: number;
             /** Total Cost Usd */
             total_cost_usd: number;
             /** Total Score */
             total_score: number;
-        };
-        /** ScreenRequest */
-        ScreenRequest: {
-            /** Message */
-            message: string;
             /**
-             * Mode
-             * @default shield
-             * @enum {string}
+             * Won
+             * @default false
              */
-            mode: "shield" | "guardrail" | "chaos";
-        };
-        /** ScreenResponse */
-        ScreenResponse: {
-            /** Adjudicated */
-            adjudicated: boolean;
-            /** Blocked */
-            blocked: boolean;
-            layer: components["schemas"]["DecisionLayer"];
-            /** Ml Confidence */
-            ml_confidence: number;
-            policy: components["schemas"]["ToolPolicy"];
-            /** Reason */
-            reason: string;
-            verdict: components["schemas"]["Verdict"];
-        };
-        /** StageChangeEvent */
-        StageChangeEvent: {
-            /**
-             * Stage
-             * @enum {string}
-             */
-            stage: "ml_processing" | "debate" | "final";
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "STAGE_CHANGE";
-        };
-        /** StartEvent */
-        StartEvent: {
-            /** Query */
-            query: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "START";
-        };
-        /** StatsResponse */
-        StatsResponse: {
-            /** Allowed */
-            allowed: number;
-            /** Block Rate */
-            block_rate: number;
-            /** Blocked */
-            blocked: number;
-            /** Total */
-            total: number;
-        };
-        /** ToolEndEvent */
-        ToolEndEvent: {
-            /** Result */
-            result: unknown;
-            /** Tool */
-            tool: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "TOOL_END";
-        };
-        /**
-         * ToolPolicy
-         * @enum {string}
-         */
-        ToolPolicy: "ALLOW_ALL" | "RESTRICTED" | "SHUTDOWN";
-        /** ToolStartEvent */
-        ToolStartEvent: {
-            /** Args */
-            args: {
-                [key: string]: unknown;
-            };
-            /** Tool */
-            tool: string;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "TOOL_START";
+            won: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -1196,11 +1189,6 @@ export interface components {
             /** Error Type */
             type: string;
         };
-        /**
-         * Verdict
-         * @enum {string}
-         */
-        Verdict: "SAFE" | "UNCERTAIN" | "MALICIOUS";
         /** WaveScoreSchema */
         WaveScoreSchema: {
             /** Attacks Leaked */
@@ -1215,10 +1203,22 @@ export interface components {
             benign_helped: number;
             /** Benign Total */
             benign_total: number;
+            /** Constraint Violations */
+            constraint_violations?: string[];
             /** Cost Points */
             cost_points: number;
             /** False Alarms */
             false_alarms: number;
+            /**
+             * Follow Up Feedback
+             * @default
+             */
+            follow_up_feedback: string;
+            /**
+             * Follow Up Passed
+             * @default false
+             */
+            follow_up_passed: boolean;
             /** Helpfulness Points */
             helpfulness_points: number;
             /** Leak Penalty */
@@ -1242,6 +1242,11 @@ export interface components {
             total_score: number;
             /** Total Tokens */
             total_tokens: number;
+            /**
+             * Won
+             * @default false
+             */
+            won: boolean;
         };
     };
     responses: never;
@@ -1252,6 +1257,255 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    delete_account_api_v1_auth_account_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The current password is not correct. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sign in to manage your account. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many wrong passwords for this account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The change could not be completed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    change_email_api_v1_auth_account_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+            /** @description The current password is not correct. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sign in to manage your account. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An account with this email already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many wrong passwords for this account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The change could not be completed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    change_password_api_v1_auth_account_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+            /** @description The current password is not correct. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sign in to manage your account. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many wrong passwords for this account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The change could not be completed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reset_progress_api_v1_auth_account_reset_progress_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResetResponse"];
+                };
+            };
+            /** @description The current password is not correct. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sign in to manage your account. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many wrong passwords for this account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The change could not be completed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     sign_in_anonymous_player_api_v1_auth_anonymous_post: {
         parameters: {
             query?: never;
@@ -1301,6 +1555,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description The email has not been confirmed yet. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1309,6 +1570,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Sign-in is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -1385,12 +1653,54 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerSessionStatus"];
                 };
             };
-            /** @description An account with this email already exists. */
+            /** @description Check your email: sent for every address when confirmation is on. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerConfirmationResponse"];
+                };
+            };
+            /** @description An account with this email already exists (local mode only). */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_confirmation_api_v1_auth_resend_confirmation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerResendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerConfirmationResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -1450,39 +1760,6 @@ export interface operations {
             };
         };
     };
-    chat_api_v1_chat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequest"];
-            };
-        };
-        responses: {
-            /** @description A stream of `ChatEvent` objects, one JSON document per line. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/x-ndjson": components["schemas"]["ChatEvent"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     clearance_status_api_v1_clearance_get: {
         parameters: {
             query?: never;
@@ -1525,7 +1802,7 @@ export interface operations {
                     "application/json": components["schemas"]["ClearanceStatus"];
                 };
             };
-            /** @description The passphrase was not accepted. */
+            /** @description The credentials do not belong to an admin. */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -1568,18 +1845,17 @@ export interface operations {
             };
         };
     };
-    feedback_api_v1_feedback_post: {
+    get_difficulty_leaderboard_api_v1_game_leaderboard_get: {
         parameters: {
-            query?: never;
+            query?: {
+                difficulty?: ("Easy" | "Medium" | "Hard") | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FeedbackRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -1587,7 +1863,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FeedbackResponse"];
+                    "application/json": components["schemas"]["DifficultyLeaderboardEntry"][];
                 };
             };
             /** @description Validation Error */
@@ -1617,6 +1893,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GameCatalogResponse"];
+                };
+            };
+        };
+    };
+    get_player_progress_api_v1_game_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerProgressResponse"];
                 };
             };
         };
@@ -1685,7 +1981,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                level_id: ("easy" | "medium" | "hard") | "custom";
+                level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
             };
             cookie?: never;
         };
@@ -1730,7 +2026,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                level_id: ("easy" | "medium" | "hard") | "custom";
+                level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
             };
             cookie?: never;
         };
@@ -1775,7 +2071,7 @@ export interface operations {
     list_game_scores_api_v1_game_scores_get: {
         parameters: {
             query?: {
-                level_id?: ("easy" | "medium" | "hard") | null;
+                level_id?: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | null;
                 limit?: number;
             };
             header?: never;
@@ -1869,6 +2165,26 @@ export interface operations {
             };
         };
     };
+    stream_game_scores_api_v1_game_scores_stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     train_game_classifier_api_v1_game_train_post: {
         parameters: {
             query?: never;
@@ -1916,123 +2232,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
-                };
-            };
-        };
-    };
-    predict_api_v1_predict_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PredictRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PredictResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_requests_api_v1_requests_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuditRecord"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    screen_api_v1_screen_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScreenRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScreenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stats_api_v1_stats_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatsResponse"];
                 };
             };
         };

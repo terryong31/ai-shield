@@ -1,0 +1,35 @@
+# ai-shield
+
+> ai-shield is an interactive prompt-injection defence game where players wire layered security checks on a visual node board to protect an LLM agent from injection waves, jailbreaks, secret leaks, and unauthorized tool calls.
+
+Players connect defence nodes between the `Input` source and the final node (`Help Desk` on Level 1 or `Protected Agent` on Levels 2, 3, and Custom). Each wave sends a mix of normal user prompts and prompt-injection attacks through the board and scores the run from 0 to 10,000 points. To win a wave, a board must stop every attack without blocking any legitimate prompt.
+
+## Pages
+
+- [Main Menu & Leaderboard](http://localhost:3000/): Level selector (`Easy`, `Medium`, `Hard`, `Custom`), high scores, and the live multi-level leaderboard.
+- [Defence Board](http://localhost:3000/game): Interactive Vue Flow canvas where players place, configure, and wire security checks, run waves, test single messages, and inspect confusion-matrix results.
+- [Plans](http://localhost:3000/plans): Comparison of `Free` (5 wave runs and 20 tests per day) and `Paid` (300 wave runs and 1,000 tests per day plus the Custom BYOK sandbox).
+
+## Game Levels
+
+- [Level 1: Public Helpdesk](http://localhost:3000/game?level=easy): Defend the store coupon system against direct prompt overrides while letting customer questions through (`Help Desk` final node, unlimited runs).
+- [Level 2: HR Handbook Assistant](http://localhost:3000/game?level=medium): Defend private employee salary records against hidden Base64 payloads and roleplay jailbreaks (`Protected Agent` standard model).
+- [Level 3: Production Operations](http://localhost:3000/game?level=hard): Defend the payroll database and SQL tools against indirect injections and unauthorized tool calls (`Protected Agent` budget model).
+- [Custom Sandbox](http://localhost:3000/game?level=custom): Paid-tier sandbox for bringing your own agent objective, tool list, CSV prompt dataset, and in-memory model API key.
+
+## Defence Tools
+
+- `word_filter` (Word filter): Blocks prompts matching player-configured custom words and phrases (`0.4 ms`, `Free`).
+- `text_cleanup` (Text cleanup): Normalizes obfuscated text with selectable `strip_zero_width`, `decode_base64`, and `decode_hex_url` transforms before downstream checks (`Free`).
+- `length_limit` (Length limit): Stops prompts longer than the configured character limit (`Free`).
+- `secret_scan` (Secret scanner): Scans prompts using player-configured case-insensitive regular expressions (`Free`).
+- `ml_classifier` (ML filter): Classifies prompts with the bundled `TF-IDF` baseline or custom CSV-trained models (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and splits traffic across `pass` (`safe`) and `unclear` (`suspicious`) handles (`Free`).
+- `jev` (Jev): Evaluates a player-written boolean `noul` question via TypeSafe System One (`12 ms`, `$0.00005`).
+- `safety_check` (Safety check): Dedicated guardrail LLM classifier supporting Llama Guard 3 8B, Llama Guard 4 12B, Qwen3Guard 8B, ShieldGemma 9B, and Nemotron Safety Guard 8B (requires player sign-in).
+- `llm_review` (LLM review): General-purpose LLM reviewer (`gemini-2.5-flash`, `gemini-2.0-flash`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `gpt-4o-mini`) guided by custom review instructions (requires player sign-in).
+- `tool_filter` (Tool filter): Gates allowed and restricted agent tools unconditionally or on regex matches (`Free`).
+
+## Optional
+
+- [Sign In](http://localhost:3000/auth/login): Sign in to unlock AI safety nodes, save boards across devices, and record scores on the leaderboard.
+- [Create Account](http://localhost:3000/auth/register): Create a free ai-shield player account.

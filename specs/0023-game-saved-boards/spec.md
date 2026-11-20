@@ -98,6 +98,7 @@ The save body:
 - **API-SAVE-004**: Given a save body whose `custom` object includes `api_key` or any unknown field, or a `custom` object on a non-custom level, when it is posted, then the response is `422` and nothing is stored.
 - **API-SAVE-005**: Given a save with more than 60 nodes or 200 edges, the response is `422`; given a body over 256 KB, the response is `413`; and an unwired board within the limits is accepted.
 - **API-SAVE-006**: Given the SQLite store, when the gateway restarts, then saves are still there, and the in-memory, SQLite and Supabase stores behave the same for save and load, with Supabase reading and writing `game.saved_boards`.
+- **API-SAVE-007**: Given a CORS preflight from an origin in `CORS_ORIGINS` for `PUT /api/v1/game/saves/{level_id}` with a `Content-Type` header and credentials, then the response is `200` and allows `PUT` with `Access-Control-Allow-Credentials: true`; from an origin not in the list, no CORS allow headers are returned. (Added 2026-11-10: the browser could not save boards because the preflight was refused with `400`.)
 - **WEB-SAVE-001**: Given `/game`, when the run bar renders, then it has a `Save` button that saves through `useShieldApi()` for signed-in players, opens the sign-in prompt for anonymous players, and shows a dot while the board has unsaved changes.
 - **WEB-SAVE-002**: Given a level with a save, when `/game` opens it, then the saved board and positions are restored; a save that fails to load falls back to the starter board with a toast; and in custom mode the key field stays empty.
 
@@ -129,4 +130,11 @@ _Filled in by `mise run sdd:done`._
 - Criteria: API-SAVE-001, API-SAVE-002, API-SAVE-003, API-SAVE-004, API-SAVE-005, API-SAVE-006, WEB-SAVE-001, WEB-SAVE-002
 - Red: 8 failing test(s) before implementation (`apps/api/tests/test_game_saves_api.py::test_save_and_load_round_trip_and_replace`, `apps/api/tests/test_game_saves_api.py::test_anonymous_players_cannot_save_or_load`, `apps/api/tests/test_game_saves_api.py::test_custom_saves_are_for_paid_players`)
 - Green: 8 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-10 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: API-SAVE-007
+- Red: 1 failing test(s) before implementation (`apps/api/tests/test_game_saves_api.py::test_browser_preflight_allows_saving_a_board`)
+- Green: 1 passing test(s)
 - Gate: `mise run check` passed

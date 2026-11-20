@@ -8,40 +8,33 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from shield_api.container import build_container
 from shield_api.openapi import render
-from shield_api.schemas import ChatRequest, ScreenRequest
-from shield_api.services.sessions import SqliteSessionStore
+from shield_api.services.admins import NoAdminAuthenticator
+from shield_api.services.clearance import Clearance, clearance_for
+from shield_api.services.sessions import AttemptLimiter, InMemorySessionStore, SqliteSessionStore
 from shield_api.services.sqlite import connect_domains
 from shield_api.settings import Settings
-from shield_engine import Clearance
 
 COOKIE = "shield_session"
 ORIGIN = "http://localhost:3000"
+CONTRACT = Path(__file__).resolve().parents[3] / "contracts" / "shield-api.openapi.json"
 
 
 def set_cookie(response) -> str:
     return response.headers.get("set-cookie", "")
 
 
-def clearance_seen(harness, message: str = "hello") -> Clearance:
-    """The clearance the engine saw: a SAFE prompt is adjudicated only when one is claimed."""
-    before = len(harness.adjudicator.calls)
-    harness.chat(message=message)
-    calls = harness.adjudicator.calls[before:]
-    return calls[0][1] if calls else Clearance.NONE
+def admin_allowed(harness) -> bool:
+    """Admin clearance gates the scoreboard reset, the gateway's admin-only route."""
+    status = harness.client.delete("/api/v1/game/scores").status_code
+    assert status in (204, 401)
+    return status == 204
 
 
-def screen_clearance(harness) -> Clearance:
-    before = len(harness.adjudicator.calls)
-    response = harness.client.post("/api/v1/screen", json={"message": "hello"})
-    assert response.status_code == 200
-    calls = harness.adjudicator.calls[before:]
-    return calls[0][1] if calls else Clearance.NONE
-
-
-@pytest.mark.spec("API-CLEAR-001")
-def test_correct_passphrase_grants_a_session_cookie(harness, valid_passphrase: str) -> None:
-    response = harness.grant(valid_passphrase)
+@pytest.mark.spec("API-CLEAR-014")
+def test_an_admin_account_is_granted_a_session_cookie(harness, admin_password: str) -> None:
+    response = harness.grant(admin_password)
 
     assert response.status_code == 200
     body = response.json()
@@ -54,73 +47,149 @@ def test_correct_passphrase_grants_a_session_cookie(harness, valid_passphrase: s
     assert "httponly" in header
     assert "samesite=lax" in header
     assert "path=/api/v1" in header
+    assert admin_allowed(harness)
 
 
-@pytest.mark.spec("API-CLEAR-002")
-def test_wrong_or_unconfigured_passphrase_is_refused_identically(make_harness) -> None:
-    configured = make_harness()
-    unconfigured = make_harness(secret=None)
-
-    wrong = configured.grant("guess")
-    unset = unconfigured.grant("guess")
-
-    assert wrong.status_code == unset.status_code == 401
-    assert wrong.json()["detail"] == unset.json()["detail"]
-    assert set_cookie(wrong) == set_cookie(unset) == ""
+@pytest.mark.spec("API-CLEAR-014")
+def test_the_admin_email_matches_case_insensitively(harness, admin_password: str) -> None:
+    assert harness.grant(admin_password, email="Admin@Example.com").status_code == 200
 
 
-@pytest.mark.spec("API-CLEAR-003")
-def test_neither_passphrase_nor_token_is_persisted_or_logged(
-    make_harness, valid_passphrase: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
+@pytest.mark.spec("API-CLEAR-015")
+def test_every_refusal_is_the_same_generic_401(make_harness, admin_password: str) -> None:
+    harness = make_harness()
+    harness.auth.add("player@example.com", "PlayerPass1", app_metadata={"provider": "email"})
+    harness.auth.add("sneaky@example.com", "sneaky-pass", user_metadata={"role": "admin"})
+    harness.client.post(
+        "/api/v1/auth/register",
+        json={"email": "player@example.com", "password": "PlayerPass1", "player_name": "Pat"},
+    )
+    unconfigured = make_harness(supabase_auth=False)
+    down = make_harness()
+    down.auth.fail = True
+
+    refusals = [
+        harness.grant("wrong password"),
+        harness.grant(admin_password, email="nobody@example.com"),
+        harness.grant("PlayerPass1", email="player@example.com"),
+        harness.grant("sneaky-pass", email="sneaky@example.com"),
+        down.grant(admin_password),
+        unconfigured.grant(admin_password),
+    ]
+
+    assert {r.status_code for r in refusals} == {401}
+    assert len({r.json()["detail"] for r in refusals}) == 1
+    assert {set_cookie(r) for r in refusals} == {""}
+    assert not admin_allowed(harness)
+
+
+@pytest.mark.spec("API-CLEAR-015")
+def test_without_supabase_nobody_can_be_an_admin(tmp_path: Path) -> None:
+    container = build_container(Settings(_env_file=None, SQLITE_PATH=tmp_path / "shield.db"))
+
+    assert isinstance(container.admins, NoAdminAuthenticator)
+
+
+@pytest.mark.spec("API-CLEAR-016")
+def test_neither_password_nor_token_is_persisted_or_logged(
+    make_harness, admin_password: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
     db = tmp_path / "shield.db"
     harness = make_harness(sessions=SqliteSessionStore(db))
+    harness.auth.add("player@example.com", "player-pass")
 
     harness.grant("wrong guess")
-    token = harness.grant(valid_passphrase).cookies[COOKIE]
-    harness.chat(message="hello")
+    harness.grant("player-pass", email="player@example.com")
+    token = harness.grant(admin_password).cookies[COOKIE]
+    admin_allowed(harness)
 
     stored = b"".join(p.read_bytes() for p in tmp_path.iterdir() if p.is_file())
-    for secret in (valid_passphrase, "wrong guess", token):
+    for secret in (admin_password, "wrong guess", "player-pass", token):
         assert secret.encode() not in stored
         assert secret not in caplog.text
-        assert secret not in json.dumps(
-            [r.model_dump(mode="json") for r in harness.audit_log._records]
-        )
     # Clearance sessions live in the attached `audit` schema (spec 0024).
     with connect_domains(db) as connection:
         hashes = [
             row[0] for row in connection.execute("select token_hash from audit.clearance_sessions")
         ]
     assert hashes == [hashlib.sha256(token.encode()).hexdigest()]
+    assert len(harness.auth.sign_ins) == 3
+    assert harness.auth.open_sessions == 0
 
 
-@pytest.mark.spec("API-CLEAR-004")
-def test_live_session_grants_clearance_on_chat_and_screen(harness, valid_passphrase: str) -> None:
-    harness.grant(valid_passphrase)
+@pytest.mark.spec("API-CLEAR-017")
+def test_repeated_failures_are_rate_limited(harness, admin_password: str) -> None:
+    limit = harness.container.settings.CLEARANCE_MAX_ATTEMPTS
+    for _ in range(limit):
+        assert harness.grant("guess").status_code == 401
+    calls = len(harness.auth.sign_ins)
 
-    assert clearance_seen(harness) is Clearance.GRANTED
-    assert screen_clearance(harness) is Clearance.GRANTED
+    blocked = harness.grant(admin_password)
+
+    assert blocked.status_code == 429
+    assert int(blocked.headers["retry-after"]) > 0
+    assert set_cookie(blocked) == ""
+    assert len(harness.auth.sign_ins) == calls
 
 
-@pytest.mark.spec("API-CLEAR-004")
+@pytest.mark.spec("API-CLEAR-017")
+def test_a_successful_grant_resets_the_failure_count(harness, admin_password: str) -> None:
+    limit = harness.container.settings.CLEARANCE_MAX_ATTEMPTS
+    for _ in range(limit - 1):
+        harness.grant("guess")
+    assert harness.grant(admin_password).status_code == 200
+
+    for _ in range(limit - 1):
+        assert harness.grant("guess").status_code == 401
+    assert harness.grant("guess").status_code == 401
+
+
+@pytest.mark.spec("API-CLEAR-017")
+def test_the_limit_lifts_after_the_window(harness, admin_password: str) -> None:
+    for _ in range(harness.container.settings.CLEARANCE_MAX_ATTEMPTS):
+        harness.grant("guess")
+
+    harness.clock.advance(harness.container.settings.CLEARANCE_WINDOW_MINUTES * 60 + 1)
+
+    assert harness.grant(admin_password).status_code == 200
+
+
+@pytest.mark.spec("API-CLEAR-018")
+def test_the_shared_passphrase_is_gone(harness) -> None:
+    assert "SECURE_PASSPHRASE" not in Settings.model_fields
+
+    response = harness.client.post("/api/v1/clearance", json={"passphrase": "anything"})
+
+    assert response.status_code == 422
+    for contract in (json.loads(render()), json.loads(CONTRACT.read_text(encoding="utf-8"))):
+        request = contract["components"]["schemas"]["ClearanceRequest"]
+        assert set(request["properties"]) == {"email", "password"}
+        assert set(request["required"]) == {"email", "password"}
+
+
+@pytest.mark.spec("API-CLEAN-003")
+def test_live_session_unlocks_the_admin_route(harness, admin_password: str) -> None:
+    harness.grant(admin_password)
+
+    assert admin_allowed(harness)
+
+
+@pytest.mark.spec("API-CLEAN-003")
 def test_missing_unknown_or_expired_cookie_means_no_clearance(harness) -> None:
-    assert clearance_seen(harness) is Clearance.NONE
-    assert screen_clearance(harness) is Clearance.NONE
+    assert not admin_allowed(harness)
 
     harness.client.cookies.set(COOKIE, "not-a-real-token")
-    assert clearance_seen(harness) is Clearance.NONE
+    assert not admin_allowed(harness)
 
     expired, _ = asyncio.run(harness.sessions.create(timedelta(seconds=-1)))
     harness.client.cookies.set(COOKIE, expired)
-    assert clearance_seen(harness) is Clearance.NONE
-    assert screen_clearance(harness) is Clearance.NONE
+    assert not admin_allowed(harness)
 
 
 @pytest.mark.spec("API-CLEAR-005")
-def test_revoking_ends_the_session(harness, valid_passphrase: str) -> None:
-    token = harness.grant(valid_passphrase).cookies[COOKIE]
+def test_revoking_ends_the_session(harness, admin_password: str) -> None:
+    token = harness.grant(admin_password).cookies[COOKIE]
 
     response = harness.client.delete("/api/v1/clearance")
 
@@ -130,7 +199,7 @@ def test_revoking_ends_the_session(harness, valid_passphrase: str) -> None:
     assert "max-age=0" in header or "expires=thu, 01 jan 1970" in header
     assert asyncio.run(harness.sessions.lookup(token)) is None
     harness.client.cookies.set(COOKIE, token)
-    assert clearance_seen(harness) is Clearance.NONE
+    assert not admin_allowed(harness)
 
 
 @pytest.mark.spec("API-CLEAR-005")
@@ -139,10 +208,10 @@ def test_revoking_without_a_session_is_a_no_op(harness) -> None:
 
 
 @pytest.mark.spec("API-CLEAR-006")
-def test_status_reports_the_live_session(harness, valid_passphrase: str) -> None:
+def test_status_reports_the_live_session(harness, admin_password: str) -> None:
     assert harness.client.get("/api/v1/clearance").json() == {"granted": False, "expires_at": None}
 
-    granted = harness.grant(valid_passphrase).json()
+    granted = harness.grant(admin_password).json()
     status = harness.client.get("/api/v1/clearance").json()
 
     assert status["granted"] is True
@@ -167,62 +236,13 @@ def test_sqlite_sessions_survive_a_restart_and_expired_rows_are_purged(tmp_path:
     assert count == 1
 
 
-@pytest.mark.spec("API-CLEAR-008")
-def test_repeated_failures_are_rate_limited(harness, valid_passphrase: str) -> None:
-    limit = harness.container.settings.CLEARANCE_MAX_ATTEMPTS
-    for _ in range(limit):
-        assert harness.grant("guess").status_code == 401
-
-    blocked = harness.grant(valid_passphrase)
-
-    assert blocked.status_code == 429
-    assert int(blocked.headers["retry-after"]) > 0
-    assert set_cookie(blocked) == ""
-
-
-@pytest.mark.spec("API-CLEAR-008")
-def test_a_successful_grant_resets_the_failure_count(harness, valid_passphrase: str) -> None:
-    limit = harness.container.settings.CLEARANCE_MAX_ATTEMPTS
-    for _ in range(limit - 1):
-        harness.grant("guess")
-    assert harness.grant(valid_passphrase).status_code == 200
-
-    for _ in range(limit - 1):
-        assert harness.grant("guess").status_code == 401
-    assert harness.grant("guess").status_code == 401
-
-
-@pytest.mark.spec("API-CLEAR-008")
-def test_the_limit_lifts_after_the_window(harness, valid_passphrase: str) -> None:
-    for _ in range(harness.container.settings.CLEARANCE_MAX_ATTEMPTS):
-        harness.grant("guess")
-
-    harness.clock.advance(harness.container.settings.CLEARANCE_WINDOW_MINUTES * 60 + 1)
-
-    assert harness.grant(valid_passphrase).status_code == 200
-
-
-@pytest.mark.spec("API-CLEAR-009")
-def test_requests_no_longer_carry_a_passphrase(harness) -> None:
-    assert "passphrase" not in ChatRequest.model_fields
-    assert "passphrase" not in ScreenRequest.model_fields
-
-    harness.chat(message="hello")
-
-    metadata = harness.audit_log._records[0].metadata
-    assert metadata["clearance"] == "NONE"
-    assert "passphrase_provided" not in metadata
-
-
-@pytest.mark.spec("API-CLEAR-009")
-def test_contract_publishes_clearance_and_drops_passphrase() -> None:
+@pytest.mark.spec("API-CLEAN-003")
+def test_contract_publishes_clearance() -> None:
     contract = json.loads(render())
     schemas = contract["components"]["schemas"]
 
     assert {"get", "post", "delete"} <= set(contract["paths"]["/api/v1/clearance"])
     assert set(schemas["ClearanceStatus"]["properties"]) == {"granted", "expires_at"}
-    assert "passphrase" not in schemas["ChatRequest"]["properties"]
-    assert "passphrase" not in schemas["ScreenRequest"]["properties"]
 
 
 @pytest.mark.spec("API-CLEAR-010")
@@ -250,25 +270,19 @@ def test_cors_allows_credentialed_delete_only_for_known_origins(harness, origin:
     assert "access-control-allow-origin" not in foreign.headers
 
 
-@pytest.mark.spec("API-CLEAR-011")
-def test_a_recent_failed_guess_means_denied_until_the_window_passes(harness) -> None:
-    harness.grant("guess")
+@pytest.mark.spec("API-CLEAN-003")
+async def test_a_recent_failed_guess_means_denied_until_the_window_passes() -> None:
+    now = [1_000.0]
+    attempts = AttemptLimiter(max_attempts=5, window=timedelta(minutes=10), clock=lambda: now[0])
+    sessions = InMemorySessionStore()
+    attempts.record_failure("1.2.3.4")
 
-    assert clearance_seen(harness) is Clearance.DENIED
-    assert screen_clearance(harness) is Clearance.DENIED
+    assert await clearance_for(None, "1.2.3.4", sessions, attempts) is Clearance.DENIED
+    token, _ = await sessions.create(timedelta(hours=1))
+    assert await clearance_for(token, "1.2.3.4", sessions, attempts) is Clearance.GRANTED
 
-    harness.clock.advance(harness.container.settings.CLEARANCE_WINDOW_MINUTES * 60 + 1)
-
-    assert clearance_seen(harness) is Clearance.NONE
-
-
-@pytest.mark.spec("API-CLEAR-011")
-def test_a_live_session_outranks_an_earlier_failed_guess(harness, valid_passphrase: str) -> None:
-    harness.grant("guess")
-    harness.grant(valid_passphrase)
-
-    assert clearance_seen(harness) is Clearance.GRANTED
-    assert harness.audit_log._records[0].metadata["clearance"] == "GRANTED"
+    now[0] += 10 * 60 + 1
+    assert await clearance_for(None, "1.2.3.4", sessions, attempts) is Clearance.NONE
 
 
 @pytest.mark.spec("API-CLEAR-012")
@@ -288,14 +302,11 @@ class ExplodingSessions:
         raise RuntimeError("disk full")
 
 
-@pytest.mark.spec("API-CLEAR-013")
+@pytest.mark.spec("API-CLEAN-003")
 def test_session_store_failure_fails_closed(make_harness, caplog: pytest.LogCaptureFixture) -> None:
     harness = make_harness(sessions=ExplodingSessions())
     harness.client.cookies.set(COOKIE, "some-token")
 
-    events = harness.chat(message="hello")
-
-    assert events[-1]["type"] == "FINAL_RESPONSE"
-    assert harness.adjudicator.calls == []
-    assert screen_clearance(harness) is Clearance.NONE
+    assert not admin_allowed(harness)
+    assert harness.client.get("/api/v1/game/levels").status_code == 200
     assert any(r.exc_info and "disk full" in str(r.exc_info[1]) for r in caplog.records)

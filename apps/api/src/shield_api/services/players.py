@@ -27,7 +27,7 @@ _MORE_RUNS_HINT: dict[PlayerTier, str] = {
     "free": "Upgrade to a paid plan for 300 wave runs a day.",
     "paid": "Try again tomorrow.",
 }
-AI_AGENT_NODE_KINDS: frozenset[str] = frozenset({"safety_check", "agent_review"})
+AI_AGENT_NODE_KINDS: frozenset[str] = frozenset({"safety_check", "llm_review"})
 
 
 class PlayerAlreadyExistsError(ValueError):
@@ -58,6 +58,17 @@ def _hash_password(password: str, salt: str) -> str:
         100_000,
     )
     return derived.hex()
+
+
+def _password_matches(password: str, password_hash: object, salt: object) -> bool:
+    """Local (development) password check. Profiles owned by Supabase Auth have no hash."""
+    if not isinstance(password_hash, str) or not isinstance(salt, str):
+        return False
+    return hmac.compare_digest(password_hash, _hash_password(password, salt))
+
+
+def _profile_name(email: str, player_name: str | None) -> str:
+    return (player_name or "").strip() or email.split("@")[0]
 
 
 def _today_utc() -> str:
@@ -153,6 +164,16 @@ class PlayerStore(Protocol):
         ttl: timedelta,
     ) -> tuple[str, PlayerSessionStatus]: ...
 
+    async def sign_in_verified(
+        self, *, email: str, player_name: str | None, ttl: timedelta
+    ) -> tuple[str, PlayerSessionStatus]:
+        """Open a session for an email Supabase Auth has verified (spec 0027).
+
+        Creates a free profile on first sign-in; an existing profile keeps its
+        name and tier.
+        """
+        ...
+
     async def lookup(self, token: str | None) -> PlayerSessionStatus: ...
 
     async def upgrade(self, token: str | None) -> PlayerSessionStatus: ...
@@ -173,12 +194,37 @@ class PlayerStore(Protocol):
 
     async def save_board(self, email: str, level_id: str, save: dict[str, Any]) -> datetime: ...
 
+    # Account settings (spec 0025). Emails are already trimmed and lower-cased.
+
+    async def verify_password(self, email: str, password: str) -> bool:
+        """Local (development) password check; ``False`` for Supabase-owned accounts."""
+        ...
+
+    async def set_password(self, email: str, password: str) -> None: ...
+
+    async def revoke_sessions(self, email: str, *, keep: str | None) -> None:
+        """End every session of this account except the one with token ``keep``."""
+        ...
+
+    async def email_taken(self, email: str) -> bool: ...
+
+    async def move_email(self, old: str, new: str) -> None:
+        """Move boards, usage (keeping the larger count per day), sessions, then the account."""
+        ...
+
+    async def delete_boards(self, email: str) -> int: ...
+
+    async def delete_account(self, email: str) -> None:
+        """Delete sessions, then the account. Usage rows are kept (spec 0025)."""
+        ...
+
 
 @dataclass
 class _AccountRecord:
     email: str
-    password_hash: str
-    salt: str
+    # None when Supabase Auth owns the password (spec 0027).
+    password_hash: str | None
+    salt: str | None
     player_name: str
     tier: PlayerTier
 
@@ -259,10 +305,12 @@ class InMemoryPlayerStore:
     ) -> tuple[str, PlayerSessionStatus]:
         clean_email = email.strip().lower()
         account = self._accounts.get(clean_email)
-        if account is None or not hmac.compare_digest(
-            account.password_hash, _hash_password(password, account.salt)
-        ):
+        if account is None or not _password_matches(password, account.password_hash, account.salt):
             raise InvalidCredentialsError("Invalid email or password.")
+        return self._open(account, ttl)
+
+    def _open(self, account: _AccountRecord, ttl: timedelta) -> tuple[str, PlayerSessionStatus]:
+        clean_email = account.email
         token = _new_token()
         self._sessions[_hash_token(token)] = _SessionRecord(
             email=clean_email,
@@ -279,6 +327,22 @@ class InMemoryPlayerStore:
             wave_runs_used=waves,
             test_runs_used=tests,
         )
+
+    async def sign_in_verified(
+        self, *, email: str, player_name: str | None, ttl: timedelta
+    ) -> tuple[str, PlayerSessionStatus]:
+        clean_email = email.strip().lower()
+        account = self._accounts.get(clean_email)
+        if account is None:
+            account = _AccountRecord(
+                email=clean_email,
+                password_hash=None,
+                salt=None,
+                player_name=_profile_name(clean_email, player_name),
+                tier="free",
+            )
+            self._accounts[clean_email] = account
+        return self._open(account, ttl)
 
     async def lookup(self, token: str | None) -> PlayerSessionStatus:
         if not token:
@@ -347,6 +411,51 @@ class InMemoryPlayerStore:
         self._boards[(email, level_id)] = (json.loads(json.dumps(save)), now)
         return now
 
+    async def verify_password(self, email: str, password: str) -> bool:
+        account = self._accounts.get(email)
+        return account is not None and _password_matches(
+            password, account.password_hash, account.salt
+        )
+
+    async def set_password(self, email: str, password: str) -> None:
+        account = self._accounts[email]
+        account.salt = secrets.token_hex(16)
+        account.password_hash = _hash_password(password, account.salt)
+
+    async def revoke_sessions(self, email: str, *, keep: str | None) -> None:
+        keep_hash = _hash_token(keep) if keep else None
+        for token_hash in [
+            h for h, session in self._sessions.items() if session.email == email and h != keep_hash
+        ]:
+            del self._sessions[token_hash]
+
+    async def email_taken(self, email: str) -> bool:
+        return email in self._accounts
+
+    async def move_email(self, old: str, new: str) -> None:
+        for email, level_id in [key for key in self._boards if key[0] == old]:
+            self._boards[(new, level_id)] = self._boards.pop((email, level_id))
+        for email, day in [key for key in self._usage if key[0] == old]:
+            waves, tests = self._usage.pop((email, day))
+            other_waves, other_tests = self._usage.get((new, day), (0, 0))
+            self._usage[(new, day)] = (max(waves, other_waves), max(tests, other_tests))
+        for session in self._sessions.values():
+            if session.email == old:
+                session.email = new
+        account = self._accounts.pop(old)
+        account.email = new
+        self._accounts[new] = account
+
+    async def delete_boards(self, email: str) -> int:
+        keys = [key for key in self._boards if key[0] == email]
+        for key in keys:
+            del self._boards[key]
+        return len(keys)
+
+    async def delete_account(self, email: str) -> None:
+        await self.revoke_sessions(email, keep=None)
+        self._accounts.pop(email, None)
+
 
 class SqlitePlayerStore:
     """SQLite player accounts, sessions and quotas in the attached ``players`` schema.
@@ -363,8 +472,8 @@ class SqlitePlayerStore:
                 """
                 create table if not exists players.accounts (
                   email         text primary key,
-                  password_hash text not null,
-                  salt          text not null,
+                  password_hash text,
+                  salt          text,
                   player_name   text not null,
                   tier          text not null default 'free',
                   created_at    text not null
@@ -394,6 +503,43 @@ class SqlitePlayerStore:
                 );
                 """
             )
+            self._relax_password_columns(connection)
+            connection.execute(
+                "delete from game.saved_boards where level_id in ('easy', 'medium', 'hard')"
+            )
+            # Mirrors the rename_agent_review_to_llm_review migration.
+            connection.execute(
+                "update game.saved_boards set save_json = "
+                "replace(save_json, '\"agent_review\"', '\"llm_review\"') "
+                "where save_json like '%\"agent_review\"%'"
+            )
+
+    @staticmethod
+    def _relax_password_columns(connection: sqlite3.Connection) -> None:
+        """Make the password columns nullable in databases created before spec 0027.
+
+        SQLite cannot drop NOT NULL in place, so the table is rebuilt.
+        """
+        columns = connection.execute("pragma players.table_info(accounts)").fetchall()
+        if not any(column[1] in ("password_hash", "salt") and column[3] for column in columns):
+            return
+        connection.executescript(
+            """
+            create table players.accounts_new (
+              email         text primary key,
+              password_hash text,
+              salt          text,
+              player_name   text not null,
+              tier          text not null default 'free',
+              created_at    text not null
+            );
+            insert into players.accounts_new
+              select email, password_hash, salt, player_name, tier, created_at
+              from players.accounts;
+            drop table players.accounts;
+            alter table players.accounts_new rename to accounts;
+            """
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = connect_domains(self._path)
@@ -456,13 +602,8 @@ class SqlitePlayerStore:
             " values (?, ?, 0, ?, 'free', ?, ?)",
             (_hash_token(token), clean_email, name, now.isoformat(), expires_at.isoformat()),
         )
-        return token, _build_logged_in_status(
-            email=clean_email,
-            player_name=name,
-            tier="free",
-            wave_runs_used=0,
-            test_runs_used=0,
-        )
+        # Usage left by a deleted account with this email still counts (API-ACCOUNT-009).
+        return token, await self.lookup(token)
 
     async def login(
         self,
@@ -480,10 +621,17 @@ class SqlitePlayerStore:
         if not rows:
             raise InvalidCredentialsError("Invalid email or password.")
         account = rows[0]
-        if not hmac.compare_digest(
-            str(account["password_hash"]), _hash_password(password, str(account["salt"]))
-        ):
+        if not _password_matches(password, account["password_hash"], account["salt"]):
             raise InvalidCredentialsError("Invalid email or password.")
+        return await self._open(clean_email, ttl)
+
+    async def _open(self, clean_email: str, ttl: timedelta) -> tuple[str, PlayerSessionStatus]:
+        rows = await asyncio.to_thread(
+            self._run,
+            "select * from players.accounts where email = ?",
+            (clean_email,),
+        )
+        account = rows[0]
         now = datetime.now(UTC)
         expires_at = now + ttl
         token = _new_token()
@@ -497,6 +645,19 @@ class SqlitePlayerStore:
             (_hash_token(token), clean_email, name, tier, now.isoformat(), expires_at.isoformat()),
         )
         return token, await self.lookup(token)
+
+    async def sign_in_verified(
+        self, *, email: str, player_name: str | None, ttl: timedelta
+    ) -> tuple[str, PlayerSessionStatus]:
+        clean_email = email.strip().lower()
+        await asyncio.to_thread(
+            self._run,
+            "insert into players.accounts"
+            " (email, password_hash, salt, player_name, tier, created_at)"
+            " values (?, null, null, ?, 'free', ?) on conflict(email) do nothing",
+            (clean_email, _profile_name(clean_email, player_name), datetime.now(UTC).isoformat()),
+        )
+        return await self._open(clean_email, ttl)
 
     async def lookup(self, token: str | None) -> PlayerSessionStatus:
         if not token:
@@ -619,6 +780,83 @@ class SqlitePlayerStore:
             (email, level_id, json.dumps(save), now.isoformat()),
         )
         return now
+
+    def _count(self, sql: str, params: tuple[Any, ...] = ()) -> int:
+        conn = self._connect()
+        try:
+            with conn:
+                return conn.execute(sql, params).rowcount
+        finally:
+            conn.close()
+
+    async def verify_password(self, email: str, password: str) -> bool:
+        rows = await asyncio.to_thread(
+            self._run,
+            "select password_hash, salt from players.accounts where email = ?",
+            (email,),
+        )
+        return bool(rows) and _password_matches(password, rows[0]["password_hash"], rows[0]["salt"])
+
+    async def set_password(self, email: str, password: str) -> None:
+        salt = secrets.token_hex(16)
+        await asyncio.to_thread(
+            self._run,
+            "update players.accounts set password_hash = ?, salt = ? where email = ?",
+            (_hash_password(password, salt), salt, email),
+        )
+
+    async def revoke_sessions(self, email: str, *, keep: str | None) -> None:
+        await asyncio.to_thread(
+            self._run,
+            "delete from players.sessions where email = ? and token_hash <> ?",
+            (email, _hash_token(keep) if keep else ""),
+        )
+
+    async def email_taken(self, email: str) -> bool:
+        rows = await asyncio.to_thread(
+            self._run, "select 1 from players.accounts where email = ?", (email,)
+        )
+        return bool(rows)
+
+    async def move_email(self, old: str, new: str) -> None:
+        def move() -> None:
+            conn = self._connect()
+            try:
+                with conn:
+                    conn.execute(
+                        "update game.saved_boards set email = ? where email = ?", (new, old)
+                    )
+                    conn.execute(
+                        """
+                        insert into players.daily_usage (email, usage_date, wave_runs, test_runs)
+                          select ?, usage_date, wave_runs, test_runs
+                          from players.daily_usage where email = ?
+                        on conflict(email, usage_date) do update set
+                          wave_runs = max(wave_runs, excluded.wave_runs),
+                          test_runs = max(test_runs, excluded.test_runs)
+                        """,
+                        (new, old),
+                    )
+                    conn.execute("delete from players.daily_usage where email = ?", (old,))
+                    conn.execute(
+                        "update players.sessions set email = ? where email = ?", (new, old)
+                    )
+                    conn.execute(
+                        "update players.accounts set email = ? where email = ?", (new, old)
+                    )
+            finally:
+                conn.close()
+
+        await asyncio.to_thread(move)
+
+    async def delete_boards(self, email: str) -> int:
+        return await asyncio.to_thread(
+            self._count, "delete from game.saved_boards where email = ?", (email,)
+        )
+
+    async def delete_account(self, email: str) -> None:
+        await asyncio.to_thread(self._run, "delete from players.sessions where email = ?", (email,))
+        await asyncio.to_thread(self._run, "delete from players.accounts where email = ?", (email,))
 
 
 class SupabasePlayerStore:
@@ -758,16 +996,41 @@ class SupabasePlayerStore:
 
         def write() -> str:
             account = self._account(clean_email)
-            if account is None or not hmac.compare_digest(
-                str(account["password_hash"]), _hash_password(password, str(account["salt"]))
+            if account is None or not _password_matches(
+                password, account["password_hash"], account["salt"]
             ):
                 raise InvalidCredentialsError("Invalid email or password.")
-            tier: PlayerTier = "paid" if str(account["tier"]) == "paid" else "free"
-            token = _new_token()
-            self._insert_session(
-                token, email=clean_email, name=str(account["player_name"]), tier=tier, ttl=ttl
-            )
-            return token
+            return self._open(account, ttl)
+
+        token = await asyncio.to_thread(write)
+        return token, await self.lookup(token)
+
+    def _open(self, account: dict[str, Any], ttl: timedelta) -> str:
+        tier: PlayerTier = "paid" if str(account["tier"]) == "paid" else "free"
+        token = _new_token()
+        self._insert_session(
+            token, email=str(account["email"]), name=str(account["player_name"]), tier=tier, ttl=ttl
+        )
+        return token
+
+    async def sign_in_verified(
+        self, *, email: str, player_name: str | None, ttl: timedelta
+    ) -> tuple[str, PlayerSessionStatus]:
+        clean_email = email.strip().lower()
+
+        def write() -> str:
+            account = self._account(clean_email)
+            if account is None:
+                account = {
+                    "email": clean_email,
+                    "password_hash": None,
+                    "salt": None,
+                    "player_name": _profile_name(clean_email, player_name),
+                    "tier": "free",
+                    "created_at": datetime.now(UTC).isoformat(),
+                }
+                self._table(self.ACCOUNTS_TABLE).insert(account).execute()
+            return self._open(account, ttl)
 
         token = await asyncio.to_thread(write)
         return token, await self.lookup(token)
@@ -862,3 +1125,79 @@ class SupabasePlayerStore:
                 .execute()
             )
         )
+
+    async def verify_password(self, email: str, password: str) -> bool:
+        account = await asyncio.to_thread(self._account, email)
+        return account is not None and _password_matches(
+            password, account.get("password_hash"), account.get("salt")
+        )
+
+    async def set_password(self, email: str, password: str) -> None:
+        salt = secrets.token_hex(16)
+        await asyncio.to_thread(
+            lambda: (
+                self._table(self.ACCOUNTS_TABLE)
+                .update({"password_hash": _hash_password(password, salt), "salt": salt})
+                .eq("email", email)
+                .execute()
+            )
+        )
+
+    async def revoke_sessions(self, email: str, *, keep: str | None) -> None:
+        def write() -> None:
+            query = self._table(self.SESSIONS_TABLE).delete().eq("email", email)
+            if keep:
+                query = query.neq("token_hash", _hash_token(keep))
+            query.execute()
+
+        await asyncio.to_thread(write)
+
+    async def email_taken(self, email: str) -> bool:
+        return await asyncio.to_thread(self._account, email) is not None
+
+    async def move_email(self, old: str, new: str) -> None:
+        # Separate PostgREST calls with no transaction: dependents first, the account
+        # row last, so a failure midway leaves the old login working (spec 0025).
+        def write() -> None:
+            self._boards().update({"email": new}).eq("email", old).execute()
+            old_usage = (
+                self._table(self.USAGE_TABLE).select("*").eq("email", old).execute().data or []
+            )
+            for row in old_usage:
+                existing = (
+                    self._table(self.USAGE_TABLE)
+                    .select("*")
+                    .eq("email", new)
+                    .eq("usage_date", row["usage_date"])
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+                other = existing[0] if existing else {"wave_runs": 0, "test_runs": 0}
+                self._table(self.USAGE_TABLE).upsert(
+                    {
+                        "email": new,
+                        "usage_date": row["usage_date"],
+                        "wave_runs": max(int(row["wave_runs"]), int(other["wave_runs"])),
+                        "test_runs": max(int(row["test_runs"]), int(other["test_runs"])),
+                    },
+                    on_conflict="email,usage_date",
+                ).execute()
+            self._table(self.USAGE_TABLE).delete().eq("email", old).execute()
+            self._table(self.SESSIONS_TABLE).update({"email": new}).eq("email", old).execute()
+            self._table(self.ACCOUNTS_TABLE).update({"email": new}).eq("email", old).execute()
+
+        await asyncio.to_thread(write)
+
+    async def delete_boards(self, email: str) -> int:
+        response = await asyncio.to_thread(
+            lambda: self._boards().delete().eq("email", email).execute()
+        )
+        return len(response.data or [])
+
+    async def delete_account(self, email: str) -> None:
+        def write() -> None:
+            self._table(self.SESSIONS_TABLE).delete().eq("email", email).execute()
+            self._table(self.ACCOUNTS_TABLE).delete().eq("email", email).execute()
+
+        await asyncio.to_thread(write)

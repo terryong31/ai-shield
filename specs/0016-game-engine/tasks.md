@@ -27,3 +27,5 @@
 - [x] **WEB-GAME-011** Show only an explanation in the `Input` node modal, and trim the tool info modal to summary, latency and cost
 - [x] **WEB-GAME-012** Move settings to `/settings` and player auth to `/auth/login`, `/auth/register`, and `/auth/recover`
 - [x] **WEB-GAME-012** Move settings to `/settings` and player auth to `/auth/login`, `/auth/register`, and `/auth/recover`
+- [x] **WEB-GAME-013** Remove the quota line from the main menu
+- [x] **WEB-GAME-014** `/plans` page with `UPricingPlans`; upgrade buttons link to it

@@ -88,16 +88,19 @@ Points:
 ### Web Client (`WEB`)
 - **WEB-GAME-001**: `/` renders the landing page with plain-English instructions, links to start `easy`, `medium`, and `hard` levels on `/game`, and the high-score table fetched from `useShieldApi().getScores()`.
 - **WEB-GAME-002**: `/game` allows adding check nodes (`word_filter`, `text_cleanup`, `quick_screen`, `safety_check`, `agent_review`, `tool_filter`), connecting node handles, running a level wave or custom test message via `useShieldApi().runGame()`, and saving a completed run to the scoreboard.
-- **WEB-GAME-003**: `/_console`, `/_console/logs`, and `/_console/settings` require an active admin clearance session (`granted === true`); when `granted === false`, normal users see the admin clearance login gate instead of console data, and `/dashboard*` routes redirect to `/_console*`.
 - **WEB-GAME-004**: Across `apps/web/app/**/*.{vue,ts}` (excluding `types/api.gen.ts`), no Tailwind palette utilities, no native `<button>`, `<input>`, `<select>`, `<textarea>`, `<table>`, or `<dialog>` elements, no `!` important overrides, no emojis, and no em-dashes (`\u2014`) appear.
 - **WEB-GAME-005**: The project is branded `ai-shield` with no client-side links to `/_console` on public pages, `/_console` is guarded by Nuxt UI `UAuthForm`, `/` serves as the game main menu with difficulty selection (showing solved status and high score) and leaderboard, and `/game` uses a two-row top nav with a quit confirmation modal (`Are you sure you want to quit? your progress will not be saved`), a `Tools` left panel, no right panel, `Safe` node label on `easy` and `Assistant` on `medium`/`hard`, live node arrival counters, and double-click node settings modals including custom ML dataset upload.
 - **WEB-GAME-006**: Client pages (`/` and `/game`) provide player authentication (`usePlayerAuth()` with `UAuthForm` sign-in/sign-up and anonymous session support), remove the BYOK `Configure secrets` section from Settings on `/`, lock AI agent nodes (`safety_check`, `agent_review`) in the `/game` Tools panel for anonymous users, display remaining daily wave/test quotas for logged-in free users, and record leaderboard high scores automatically for logged-in users while hiding score saving and high score recording for anonymous users.
-- **WEB-GAME-007**: Player sign-in and account creation live on a dedicated `/login` page (`pages/login.vue`) built with `UAuthForm`, with `/login?mode=register` selecting account creation. `/` contains no auth modal or `UAuthForm` and its sign-in entry points navigate to `/login`. Successful authentication returns to `/`, failed authentication stays on `/login`, and a player who is already signed in is sent to `/`. On `/`, anonymous players see no tier badge, the level selection has no `Sign in to record scores` button, and level cards show the numeric high score instead of `Not recorded (Anonymous)`.
+- **WEB-GAME-007**: Player sign-in and account creation live on a dedicated `/login` page (`pages/login.vue`) built with `UAuthForm`, with `/login?mode=register` selecting account creation. `/` contains no auth modal or `UAuthForm` and its sign-in entry points navigate to `/login`. Successful authentication returns to the previous page (WEB-GAME-015, else `/`), failed authentication stays on `/login`, and a player who is already signed in is sent to `/`. On `/`, anonymous players see no tier badge, the level selection has no `Sign in to record scores` button, and level cards show the numeric high score instead of `Not recorded (Anonymous)`.
 - **WEB-GAME-008**: The `/game` `Tools` panel lays out each placeable check as a portrait `3:4` Nuxt UI `UCard` in a two-column grid showing the check name, icon, subtitle, latency and cost (`Free` when the cost is zero), with locked AI agent cards dimmed and labelled `Sign in`. Cards are operable by pointer and keyboard.
 - **WEB-GAME-009**: The `/game` `Tools` panel has a fixed width with no resize handle, a hidden scrollbar (it still scrolls), and cards at least `min-w-40` wide, and its collapse control shows `i-lucide-chevron-right` when collapsed and `i-lucide-chevron-left` when expanded. Hovering or focusing a card blurs it and shows `Click or drag into canvas` (`Sign in to unlock` when locked). Unlocked cards can be dragged onto the canvas to place the node at the drop point, while locked cards cannot be dragged. Each card header has an info button that opens a modal with the tool's name, summary, latency, cost, outputs and access requirement, without placing a node.
 - **WEB-GAME-010**: Settings on `/` contains only the theme selector, with no `Account tier` section. Sign-in and upgrade remain available from the main menu.
 - **WEB-GAME-011**: On `/game`, the `Input` node's settings modal shows only the explanation `Connect the node with a tool and the prompt will flow into the next node.`, with no message list or connection controls. The tool info modal shows the tool name in its header, and its body shows the summary, latency and cost, with no outputs or access rows.
 - **WEB-GAME-012**: Player authentication and settings live on dedicated pages: `/auth/login` (`pages/auth/login.vue`), `/auth/register` (`pages/auth/register.vue`), `/auth/recover` (`pages/auth/recover.vue`) built with `UAuthForm`, and `/settings` (`pages/settings.vue`) with a return-to-menu header alongside the `Settings` title above a `min-w-80` card containing `Theme` on the left and a `UColorModeSelect` theme selector on the right, and no modal on `/`. `POST /api/v1/auth/recover` triggers Supabase `reset_password_for_email` when configured and returns `200` with `{"status": "ok"}`.
+- **WEB-GAME-013**: The main menu on `/` shows no `Name (Free): x/y waves, a/b tests left today` quota line under the subtitle (the game header's attempts counter replaces it), and `formatQuotaSummary` is removed. It also shows no tier badge next to the title and no `Paid` badge on the Custom card (removed by the owner; replaces the tier badge in WEB-GAME-007).
+- **WEB-GAME-014**: Every `Upgrade to Paid` / `Upgrade` button links to `/plans` instead of upgrading at once. `/plans` (`pages/plans.vue`) has a `Back` header (WEB-GAME-015) and a `UPricingPlans` with a `Free` plan (5 wave runs and 20 tests a day, AI agent tools, leaderboard) and a highlighted `Paid` plan (300 wave runs and 1,000 tests a day, plus the custom BYOK sandbox), both priced `$0`. The plan buttons depend on the player: anonymous players get `Sign in` (to `/auth/login`) on both; a free player sees `Current plan` (disabled) on Free and `Upgrade to Paid` on Paid, which calls the upgrade endpoint and returns to the previous page (WEB-GAME-015, else `/`); a paid player sees `Current plan` (disabled) on Paid and no action on Free.
+- **WEB-GAME-015**: Every in-app `Back` or `Return` button, and the redirect after signing in, after registering with immediate sign-in, and after upgrading on `/plans`, returns to the previous page of this app when the browser history has one (for example `/game` → `/plans` → `Back` returns to `/game`), and only otherwise navigates to that page's fallback (`/`, or `/auth/login` for `/auth/recover`); no `Back` button links to a fixed `to`. (Added 2026-11-10.)
+- **WEB-GAME-016**: Every page under `apps/web/app/pages/` configures page-specific SEO metadata via Nuxt's `useSeoMeta` (title, description, Open Graph tags, Twitter card `summary_large_image` pointing to `/twitter-card.png`, a 1200×630 PNG rendered from the code-authored `/twitter-card.svg` because social crawlers do not render SVG images, and `robots` directives with `noindex, nofollow` on `/settings`, `/auth/recover`, `/auth/confirmed`, and `/_console*`); `app.vue` and `nuxt.config.ts` configure global head defaults (`lang="en"`, `titleTemplate`, `/favicon.svg`, and Schema.org `VideoGame` JSON-LD); every public page exposes a semantic `<main>` landmark and `<h1>` heading; and `apps/web/public/` serves `/twitter-card.png`, `/twitter-card.svg`, `/favicon.svg`, `/robots.txt`, `/sitemap.xml`, and `/llms.txt`.
 
 ## Security & privacy considerations
 
@@ -112,6 +115,12 @@ Adds game level waves alongside the existing classifier benchmark without changi
 ## Open questions
 
 None.
+
+## Retired by 0026
+
+`/_console/logs` and the `/dashboard*` redirects were removed; console access is covered by WEB-CLEAN-002.
+
+- `WEB-GAME-003`: `/_console`, `/_console/logs`, and `/_console/settings` require an active admin clearance session (`granted === true`); when `granted === false`, normal users see the admin clearance login gate instead of console data, and `/dashboard*` routes redirect to `/_console*`.
 
 ## Verification
 
@@ -197,4 +206,46 @@ None.
 - Criteria: WEB-GAME-012
 - Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-012] provides dedicated /settings, /auth/login, /auth/register, and /auth/recover pages`)
 - Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-09 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: WEB-GAME-013, WEB-GAME-014
+- Red: 2 failing test(s) before implementation (`admin console access and routing [WEB-GAME-013] shows no quota line on the main menu`, `admin console access and routing [WEB-GAME-014] sends every upgrade button to /plans, which shows Free and Paid with UPricingPlans`)
+- Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-10 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: WEB-GAME-015
+- Red: 1 failing test(s) before implementation (`/Users/terryong/Desktop/nuxt-projects/ai-shield/apps/web/test/navigation.test.ts`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-16 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: WEB-GAME-008
+- Red: 1 failing test(s) before implementation (`admin console access and routing [WEB-GAME-008] renders the Tools panel as a two-column grid of portrait cards`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-17 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: WEB-GAME-016
+- Red: 1 failing test(s) before implementation (`/Users/terryong/Desktop/nuxt-projects/ai-shield/apps/web/test/seo.test.ts`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-17 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: WEB-GAME-016
+- Red: 1 failing test(s) before implementation (`SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016) [WEB-GAME-016] configures useSeoMeta, Twitter card, JSON-LD, semantic landmarks, sitemap.xml, robots.txt and llms.txt`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-18 · commit 2a0b84f (+ uncommitted changes)
+
+- Criteria: WEB-GAME-015, WEB-GAME-016
+- Red: 2 failing test(s) before implementation (`back navigation (spec 0016) [WEB-GAME-015] defines a catch-all 404 route so unmatched paths resolve without router warnings`, `SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016) [WEB-GAME-016] configures useSeoMeta, Twitter card, JSON-LD, semantic landmarks, sitemap.xml, robots.txt and llms.txt`)
+- Green: 3 passing test(s)
 - Gate: `mise run check` passed

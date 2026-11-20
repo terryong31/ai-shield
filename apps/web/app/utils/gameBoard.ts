@@ -8,9 +8,12 @@ import type {
   MessageTraceSchema,
   NodeKind,
   PlayerSessionStatus,
+  ScoreRecord,
   WaveScoreSchema
 } from '../types/api'
-import type { NodeStatus } from './pipelineGraph'
+
+/** A board node's state during and after a wave. */
+export type NodeStatus = 'idle' | 'active' | 'passed' | 'flagged' | 'blocked' | 'skipped'
 
 export interface NodeTraffic {
   in: number
@@ -107,21 +110,21 @@ export const NODE_CATALOG: Record<
   },
   ml_classifier: {
     label: 'ML filter',
-    subtitle: 'Custom dataset model',
+    subtitle: 'ML based router',
     icon: 'i-lucide-cpu',
     latencyMs: 4.5,
     costUsd: 0,
-    handles: ['safe'],
+    handles: ['safe', 'suspicious'],
     hasInput: true,
     isAnchor: false
   },
-  quick_screen: {
-    label: 'Quick screen',
-    subtitle: '3-way risk router',
-    icon: 'i-lucide-gauge',
-    latencyMs: 3.8,
-    costUsd: 0,
-    handles: ['safe', 'suspicious'],
+  jev: {
+    label: 'Jev',
+    subtitle: 'System One noul decider',
+    icon: 'i-lucide-zap',
+    latencyMs: 12.0,
+    costUsd: 0.00005,
+    handles: ['safe'],
     hasInput: true,
     isAnchor: false
   },
@@ -135,10 +138,10 @@ export const NODE_CATALOG: Record<
     hasInput: true,
     isAnchor: false
   },
-  agent_review: {
-    label: 'Agent review',
-    subtitle: 'Dual-agent debate',
-    icon: 'i-lucide-scale',
+  llm_review: {
+    label: 'LLM review',
+    subtitle: 'Single LLM judge',
+    icon: 'i-lucide-brain-circuit',
     latencyMs: 920.0,
     costUsd: 0.003,
     handles: ['safe'],
@@ -167,6 +170,22 @@ export const NODE_CATALOG: Record<
   }
 }
 
+export const SAFETY_CHECK_MODELS = [
+  { label: 'Llama Guard 3 8B', value: 'llama-guard-3-8b' },
+  { label: 'Llama Guard 4 12B', value: 'meta-llama/llama-guard-4-12b' },
+  { label: 'Qwen3Guard 8B', value: 'qwen3guard-8b' },
+  { label: 'ShieldGemma 9B', value: 'shieldgemma-9b' },
+  { label: 'Nemotron Safety Guard 8B', value: 'llama-nemotron-safety-guard-8b' }
+] as const
+
+export const LLM_REVIEW_MODELS = [
+  { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
+  { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
+  { label: 'Llama 3.3 70B Versatile', value: 'llama-3.3-70b-versatile' },
+  { label: 'Llama 3.1 8B Instant', value: 'llama-3.1-8b-instant' },
+  { label: 'GPT-4o mini', value: 'gpt-4o-mini' }
+] as const
+
 export function makeGameNode(
   id: string,
   kind: NodeKind,
@@ -176,18 +195,35 @@ export function makeGameNode(
 ): Node<GameNodeData> {
   const meta = NODE_CATALOG[kind]
   const defaultConfig: Record<string, unknown> = {}
-  if (kind === 'quick_screen') {
+  if (kind === 'jev') {
+    defaultConfig.question = ''
+    defaultConfig.threshold = 0.7
+    defaultConfig.tool_policy_enabled = false
+    defaultConfig.block_tools = []
+  } else if (kind === 'text_cleanup') {
+    defaultConfig.transforms = []
+  } else if (kind === 'ml_classifier') {
+    defaultConfig.algorithm = 'tfidf'
     defaultConfig.safe_threshold = 0.3
     defaultConfig.block_threshold = 0.75
-  } else if (kind === 'ml_classifier') {
-    defaultConfig.algorithm = 'logistic_regression'
-    defaultConfig.threshold = 0.5
     defaultConfig.dataset = []
   } else if (kind === 'length_limit') {
     defaultConfig.max_chars = 240
   } else if (kind === 'word_filter') {
-    defaultConfig.groups = ['override', 'encoded', 'sql_tools']
     defaultConfig.custom_words = []
+  } else if (kind === 'secret_scan') {
+    defaultConfig.patterns = []
+  } else if (kind === 'tool_filter') {
+    defaultConfig.rules = []
+    defaultConfig.blocked_tools = []
+  } else if (kind === 'safety_check') {
+    defaultConfig.model = 'llama-guard-3-8b'
+    defaultConfig.tool_policy_enabled = false
+    defaultConfig.block_tools = []
+  } else if (kind === 'llm_review') {
+    defaultConfig.model = 'gemini-2.5-flash'
+    defaultConfig.prompt = ''
+    defaultConfig.tool_policy_enabled = false
   } else if (kind === 'assistant') {
     defaultConfig.rules = []
   }
@@ -221,18 +257,52 @@ export function makeGameNode(
   }
 }
 
+export const ALL_LEVEL_IDS: readonly LevelId[] = [
+  'easy-1', 'easy-2', 'easy-3', 'easy-4', 'easy-5',
+  'medium-1', 'medium-2', 'medium-3', 'medium-4', 'medium-5',
+  'medium-6', 'medium-7', 'medium-8', 'medium-9', 'medium-10',
+  'hard-1', 'hard-2', 'hard-3', 'hard-4', 'hard-5',
+  'hard-6', 'hard-7', 'hard-8'
+]
+
+const ALL_LEVEL_ID_SET = new Set<string>(ALL_LEVEL_IDS)
+
+export function isValidLevelId(value: unknown): value is LevelId {
+  return typeof value === 'string' && ALL_LEVEL_ID_SET.has(value)
+}
+
 /** Easy is classification only: it ends at a Help Desk and runs no model (spec 0021). */
 export const FINAL_NODE_LABELS: Record<LevelId, string> = {
-  easy: 'Help Desk',
-  medium: 'Protected Agent',
-  hard: 'Protected Agent'
+  'easy-1': 'Help Desk',
+  'easy-2': 'Help Desk',
+  'easy-3': 'Help Desk',
+  'easy-4': 'Help Desk',
+  'easy-5': 'Help Desk',
+  'medium-1': 'Protected Agent',
+  'medium-2': 'Protected Agent',
+  'medium-3': 'Protected Agent',
+  'medium-4': 'Protected Agent',
+  'medium-5': 'Protected Agent',
+  'medium-6': 'Protected Agent',
+  'medium-7': 'Protected Agent',
+  'medium-8': 'Protected Agent',
+  'medium-9': 'Protected Agent',
+  'medium-10': 'Protected Agent',
+  'hard-1': 'Protected Agent',
+  'hard-2': 'Protected Agent',
+  'hard-3': 'Protected Agent',
+  'hard-4': 'Protected Agent',
+  'hard-5': 'Protected Agent',
+  'hard-6': 'Protected Agent',
+  'hard-7': 'Protected Agent',
+  'hard-8': 'Protected Agent'
 }
 
 export function isClassifyOnlyLevel(levelId: LevelId): boolean {
-  return levelId === 'easy'
+  return levelId.startsWith('easy-')
 }
 
-export function createStarterBoard(levelId: LevelId = 'easy'): BoardState {
+export function createStarterBoard(levelId: LevelId = 'easy-1'): BoardState {
   // Every level ends at one final node; prompts that never reach it count as blocked (spec 0020).
   const nodes: Node<GameNodeData>[] = [
     makeGameNode('incoming', 'incoming', { x: 60, y: 180 }),
@@ -349,7 +419,7 @@ export function toApiBoard(board: BoardState): BoardGraphSchema {
   return {
     nodes: board.nodes.map(n => ({
       id: n.id,
-      kind: (n.data?.kind ?? 'quick_screen') as NodeKind,
+      kind: (n.data?.kind ?? 'ml_classifier') as NodeKind,
       config: { ...(n.data?.config ?? {}) }
     })),
     edges: board.edges.map(e => ({
@@ -422,6 +492,8 @@ export function applyMessageTrace(board: BoardState, trace: MessageTraceSchema):
         ...node.data,
         status,
         detail: hop.detail,
+        latencyMs: hop.latency_ms,
+        costUsd: hop.cost_usd,
         hits: node.data.hits + 1
       }
     }
@@ -621,14 +693,35 @@ export function resolveConsoleAccess(status: ClearanceStatus): {
 }
 
 export function isAiAgentNode(kind: NodeKind): boolean {
-  return kind === 'safety_check' || kind === 'agent_review'
+  return kind === 'jev' || kind === 'safety_check' || kind === 'llm_review'
 }
 
-export function canUseNodeKind(kind: NodeKind, session: PlayerSessionStatus): boolean {
+export interface NodeKeyState {
+  jevKeyAvailable: boolean
+  aiKeyAvailable: boolean
+}
+
+export function canUseNodeKind(
+  kind: NodeKind,
+  session: PlayerSessionStatus,
+  keys?: NodeKeyState
+): boolean {
   if (isAiAgentNode(kind)) {
-    return !session.is_anonymous && session.ai_nodes_allowed
+    const signedIn = !session.is_anonymous && session.ai_nodes_allowed
+    if (!keys) return signedIn
+    return signedIn && (kind === 'jev' ? keys.jevKeyAvailable : keys.aiKeyAvailable)
   }
   return true
+}
+
+export function nodeKeyRequirement(kind: NodeKind, keys: NodeKeyState): string | null {
+  if (kind === 'jev' && !keys.jevKeyAvailable) {
+    return 'Insert Jev API key to continue: add TYPESAFE_API_KEY in system .env.'
+  }
+  if ((kind === 'safety_check' || kind === 'llm_review') && !keys.aiKeyAvailable) {
+    return 'Enter API key to continue: add GROQ_API_KEY or GOOGLE_API_KEY in system .env.'
+  }
+  return null
 }
 
 export function formatCheckCost(costUsd: number): string {
@@ -653,6 +746,22 @@ export function nextHighStars(
   medal: WaveScoreSchema['medal']
 ): number {
   return previousScore === null || score > previousScore ? starsForMedal(medal) : previousStars
+}
+
+export function waveOutcomeSummary(score: WaveScoreSchema): string {
+  if (score.won) {
+    return 'All attacks stopped and all normal prompts helped.'
+  }
+  if (score.attacks_leaked > 0 && score.false_alarms > 0) {
+    return `${score.attacks_leaked} attack(s) got through and ${score.false_alarms} normal prompt(s) were blocked.`
+  }
+  if (score.attacks_leaked > 0) {
+    return `${score.attacks_leaked} attack(s) got into the system.`
+  }
+  if (score.false_alarms > 0) {
+    return `${score.false_alarms} normal prompt(s) were blocked or refused.`
+  }
+  return 'Defeat'
 }
 
 export interface ConfusionMatrix {
@@ -682,13 +791,77 @@ export function confusionMatrix(traces: MessageTraceSchema[]): ConfusionMatrix {
   return matrix
 }
 
-export function formatQuotaSummary(session: PlayerSessionStatus): string {
-  if (session.is_anonymous || session.tier === 'anonymous' || session.tier === 'paid') {
-    return ''
+export interface PlanCard {
+  title: 'Free' | 'Paid'
+  description: string
+  price: string
+  billingCycle: string
+  features: string[]
+  highlight: boolean
+  badge?: string
+  terms?: string
+  button?: { label: string, to?: string, disabled?: boolean, color: 'neutral', variant: 'solid' | 'outline' }
+  /** Set when the button upgrades the player instead of linking somewhere. */
+  action?: 'upgrade'
+}
+
+/** Plans shown on /plans (WEB-GAME-014). Limits mirror the gateway's DAILY_LIMITS. */
+export function planCards(session: PlayerSessionStatus): PlanCard[] {
+  const anonymous = session.is_anonymous || session.tier === 'anonymous'
+  const signIn = { label: 'Sign in', to: '/auth/login', color: 'neutral' as const, variant: 'outline' as const }
+  const current = { label: 'Current plan', disabled: true, color: 'neutral' as const, variant: 'outline' as const }
+
+  const free: PlanCard = {
+    title: 'Free',
+    description: 'For players who sign in.',
+    price: '$0',
+    billingCycle: '/month',
+    highlight: false,
+    features: ['5 wave runs a day', '20 tests a day', 'AI agent tools', 'Scores on the leaderboard']
   }
-  const waveLimit = session.daily_wave_limit ?? 5
-  const testLimit = session.daily_test_limit ?? 20
-  const wavesLeft = Math.max(0, waveLimit - session.wave_runs_used)
-  const testsLeft = Math.max(0, testLimit - session.test_runs_used)
-  return `${session.player_name} (Free): ${wavesLeft}/${waveLimit} waves, ${testsLeft}/${testLimit} tests left today`
+  const paid: PlanCard = {
+    title: 'Paid',
+    description: 'For players who defend every day.',
+    price: '$0',
+    billingCycle: '/month',
+    highlight: true,
+    features: [
+      '300 wave runs a day',
+      '1,000 tests a day',
+      'Everything in Free',
+      'Custom sandbox with your own dataset and model key'
+    ]
+  }
+
+  if (anonymous) return [{ ...free, button: signIn }, { ...paid, button: { ...signIn, variant: 'solid' } }]
+  if (session.tier === 'paid') return [free, { ...paid, button: current }]
+  return [
+    { ...free, button: current },
+    { ...paid, button: { label: 'Upgrade to Paid', color: 'neutral', variant: 'solid' }, action: 'upgrade' }
+  ]
+}
+
+export interface ConsoleScoreStats {
+  scores: number
+  players: number
+  byLevel: { easy: number, medium: number, hard: number }
+  medals: Record<WaveScoreSchema['medal'], number>
+}
+
+/** Stat tiles for the admin console Overview, from the recorded scores (spec 0026). */
+export function consoleScoreStats(records: ScoreRecord[]): ConsoleScoreStats {
+  const byLevel = { easy: 0, medium: 0, hard: 0 }
+  const medals: Record<WaveScoreSchema['medal'], number> = { gold: 0, silver: 0, bronze: 0, none: 0 }
+  for (const record of records) {
+    if (record.level_id.startsWith('easy-')) byLevel.easy += 1
+    else if (record.level_id.startsWith('medium-')) byLevel.medium += 1
+    else if (record.level_id.startsWith('hard-')) byLevel.hard += 1
+    medals[record.medal] += 1
+  }
+  return {
+    scores: records.length,
+    players: new Set(records.map(r => r.player_name)).size,
+    byLevel,
+    medals
+  }
 }

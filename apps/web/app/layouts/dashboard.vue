@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AuthFormField, FormSubmitEvent, NavigationMenuItem } from '@nuxt/ui'
 
-const { granted, loginWithAuth, clearPassphrase } = usePassphrase()
+const { granted, signIn, signOut } = useAdminAccess()
 
 const open = ref(false)
 const signingIn = ref(false)
@@ -30,7 +30,7 @@ const authFields: AuthFormField[] = [
 const onAuthSubmit = async (event: FormSubmitEvent<{ email?: string, password?: string }>) => {
   signingIn.value = true
   try {
-    await loginWithAuth(event.data.email ?? '', event.data.password ?? '')
+    await signIn(event.data.email ?? '', event.data.password ?? '')
   } finally {
     signingIn.value = false
   }
@@ -41,11 +41,6 @@ const links = [[{
   icon: 'i-lucide-chart-no-axes-column',
   to: '/_console',
   exact: true,
-  onSelect: close
-}, {
-  label: 'Audit logs',
-  icon: 'i-lucide-scroll-text',
-  to: '/_console/logs',
   onSelect: close
 }, {
   label: 'Settings',
@@ -138,7 +133,7 @@ const links = [[{
           :block="!collapsed"
           :ui="{ base: !collapsed ? 'justify-start' : undefined }"
           aria-label="Sign out"
-          @click="clearPassphrase"
+          @click="signOut"
         />
       </template>
     </UDashboardSidebar>

@@ -14,7 +14,6 @@ from pydantic import SecretStr
 
 from shield_api.container import build_container
 from shield_api.schemas import BoardGraphSchema, ScoreCreateRequest
-from shield_api.services.audit import SqliteAuditLog, SupabaseAuditLog
 from shield_api.services.players import (
     InMemoryPlayerStore,
     InvalidCredentialsError,
@@ -23,6 +22,7 @@ from shield_api.services.players import (
     SqlitePlayerStore,
     SupabasePlayerStore,
 )
+from shield_api.services.scores import SqliteScoreStore, SupabaseScoreStore
 from shield_api.services.sessions import (
     InMemorySessionStore,
     SessionStore,
@@ -38,7 +38,8 @@ ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = ROOT / "supabase" / "migrations"
 
 DOMAIN_TABLES: dict[str, tuple[str, ...]] = {
-    "audit": ("requests", "clearance_sessions"),
+    # audit.requests (the chat request log) was dropped by spec 0026.
+    "audit": ("clearance_sessions",),
     "game": ("scores", "saved_boards"),
     "players": ("accounts", "sessions", "daily_usage"),
 }
@@ -52,22 +53,23 @@ def _migration_sql() -> str:
 def _migration_columns(schema: str, table: str) -> set[str]:
     sql = _migration_sql()
     body = re.search(rf"create table (?:if not exists )?{schema}\.{table} \((.*?)\n\);", sql, re.S)
-    if body is None and schema == "audit" and table == "requests":
-        # audit.requests is public.requests moved into the audit schema.
-        body = re.search(r"create table public\.requests \((.*?)\n\);", sql, re.S)
     assert body, f"no create table {schema}.{table} in supabase/migrations"
     columns = set()
     for line in body.group(1).strip().splitlines():
         word = line.strip().split()[0] if line.strip() else ""
         if word and word not in {"primary", "constraint", "unique", "check", "foreign"}:
             columns.add(word.strip(","))
+    # Columns added by later migrations (e.g. game.scores.email, spec 0025).
+    columns.update(
+        re.findall(rf"alter table {schema}\.{table} add column (?:if not exists )?(\w+)", sql)
+    )
     return columns
 
 
 def _score(name: str, total: int) -> ScoreCreateRequest:
     return ScoreCreateRequest(
         player_name=name,
-        level_id="medium",
+        level_id="medium-1",
         total_score=total,
         medal="bronze",
         attacks_blocked=2,
@@ -111,33 +113,26 @@ def test_postgrest_exposes_only_the_domain_schemas_and_seed_targets_audit() -> N
     assert "public" not in schemas
 
     seed = (ROOT / "supabase" / "seed.sql").read_text().lower()
-    assert "insert into audit.requests" in seed
+    assert "audit.requests" not in seed  # dropped by spec 0026
     assert "public.requests" not in seed
 
 
 @pytest.mark.spec("API-SCHEMA-003")
-async def test_supabase_audit_log_uses_audit_requests_and_persists_game_scores(
+async def test_supabase_score_store_persists_game_scores(
     fake_supabase: Callable[..., FakeClient],
 ) -> None:
     client = fake_supabase()
-    log = SupabaseAuditLog(client)
-
-    await log.record(query="q", action="BLOCKED", reason="r", layer="SYSTEM", metadata={})
-    assert [r.query for r in await log.recent(5)] == ["q"]
-    assert (await log.stats()).blocked == 1
-    record_id = (await log.recent(1))[0].id
-    await log.review(record_id, 0)
-    assert client.tables[("audit", "requests")].rows[0]["human_label"] == 0
+    log = SupabaseScoreStore(client)
 
     await log.record_score(_score("ada", 6000))
     await log.record_score(_score("ada", 5000))  # lower: keeps the best
     await log.record_score(_score("grace", 7000))
     assert len(client.tables[("game", "scores")].rows) == 2
 
-    reopened = SupabaseAuditLog(client)
-    listed = await reopened.list_scores(level_id="medium")
+    reopened = SupabaseScoreStore(client)
+    listed = await reopened.list_scores(level_id="medium-1")
     assert [(s.player_name, s.total_score) for s in listed] == [("grace", 7000), ("ada", 6000)]
-    assert {s.score_version for s in listed} == {2}
+    assert {s.score_version for s in listed} == {3}
 
     await reopened.clear_scores()
     assert await reopened.list_scores() == []
@@ -229,21 +224,20 @@ def test_supabase_settings_wire_every_store_and_otherwise_fall_back_to_sqlite(
     monkeypatch.setattr("supabase.create_client", fake_create)
     base = {
         "_env_file": None,
-        "FEEDBACK_PATH": tmp_path / "f.csv",
         "SQLITE_PATH": tmp_path / "var" / "shield.db",
     }
 
     online = build_container(
         Settings(**base, SUPABASE_URL="https://x.supabase.co", SUPABASE_KEY=SecretStr("k"))
     )
-    assert isinstance(online.audit_log, SupabaseAuditLog)
+    assert isinstance(online.scores, SupabaseScoreStore)
     assert isinstance(online.sessions, SupabaseSessionStore)
     assert isinstance(online.players, SupabasePlayerStore)
     assert len(created) == 1
 
     for partial in ({"SUPABASE_URL": "https://x.supabase.co"}, {"SUPABASE_KEY": SecretStr("k")}):
         offline = build_container(Settings(**base, **partial))
-        assert isinstance(offline.audit_log, SqliteAuditLog)
+        assert isinstance(offline.scores, SqliteScoreStore)
         assert isinstance(offline.sessions, SqliteSessionStore)
         assert isinstance(offline.players, SqlitePlayerStore)
 
@@ -253,7 +247,7 @@ def test_sqlite_stores_use_attached_domain_schemas_that_mirror_the_migrations(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "shield.db"
-    SqliteAuditLog(path)
+    SqliteScoreStore(path)
     SqliteSessionStore(path)
     SqlitePlayerStore(path)
 

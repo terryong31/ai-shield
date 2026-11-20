@@ -16,11 +16,11 @@ when a change goes straight from an idea to code. A spec forces them to be
 decided, in words, before anyone is invested in an implementation:
 
 - **Problem with evidence** keeps work tied to something observed: a prompt
-  that got through, an eval number, a bug.
+  that got through, a game score, a bug.
 - **Non-goals** stop scope creep and pre-empt review comments.
 - **Security & privacy** asks for the failure mode (fail-open, fail-closed,
   fail-restricted) and its rationale every time. The routing and fallback rules
-  in [Defense in depth](defense-in-depth.md) came out of these sections.
+  in the [threat model](threat-model.md) came out of these sections.
 - **Evaluation impact** asks for before/after numbers for detection changes,
   so claims of improvement are measured.
 
@@ -37,17 +37,17 @@ worse than none, because it creates false confidence.
 
 The engine's ports make test-first practical. Every external dependency is a
 `Protocol`, and `shield_engine.testing` ships deterministic doubles, so a
-criterion like "given the adjudicator raises mid-debate, the fallback carries
-the turns completed so far" is a few lines with a `ScriptedChatModel` whose
-second reply is an exception. No network, no mocks of internals.
+criterion like "given the agent model raises mid-wave, the run is not counted
+against the quota" is a few lines with a `ScriptedUsageChatModel` whose reply
+is an exception. No network, no mocks of internals.
 
 ## How IDs create traceability
 
 Each criterion has a permanent ID of the form `<AREA>-<COMPONENT>-<NNN>`, such
-as `ENG-PIPE-004`. The same string appears:
+as `ENG-GAME-004`. The same string appears:
 
-- in the spec, as `- **ENG-PIPE-004**: Given …`
-- on the test, as `@pytest.mark.spec("ENG-PIPE-004")` or `it('[WEB-STREAM-004] …')`
+- in the spec, as `- **ENG-GAME-004**: Given …`
+- on the test, as `@pytest.mark.spec("ENG-GAME-004")` or `it('[WEB-GAME-004] …')`
 - in code review, pull request descriptions and commit messages
 
 So you can go from a requirement to the tests that prove it with one `grep`,
@@ -68,7 +68,6 @@ The rules are checked by machines, not by memory:
 | The tests pass, with coverage floors (engine 90%, gateway 85%) | `mise run test:engine`, `test:api`, `test:web` | Python, Web |
 | The committed HTTP contract and generated client match the code | `mise run contract:check` and the `API-CONTRACT-001` test | Specs & contract, Python |
 | Lint and strict type checks | `mise run lint:*`, `typecheck:*` | Python, Web |
-| Detection metrics are recorded | `mise run eval`, uploaded as the `eval-report` artifact | Engine benchmark |
 
 `mise run check` runs the same gate locally
 ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs the pieces in parallel jobs).

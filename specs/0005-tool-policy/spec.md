@@ -1,6 +1,6 @@
 # 0005 — Tool policy gate
 
-- **Status:** Implemented
+- **Status:** Superseded by 0026
 - **Area:** ENG
 - **Created:** 2026-09-23
 - **Related:** spec 0001

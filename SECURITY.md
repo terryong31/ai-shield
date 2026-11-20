@@ -21,7 +21,7 @@ timeline with you. We credit reporters unless you ask us not to.
 The following are documented, not vulnerabilities. See
 [docs/explanation/threat-model.md](docs/explanation/threat-model.md).
 
-- The demo passphrase is a stand-in for real RBAC.
+- Admin accounts have no second factor; access is a password plus `app_metadata.role = "admin"`.
 - The bundled Layer 1 baseline has limited recall ([model card](packages/engine/MODEL_CARD.md)).
 - With no LLM provider configured, Layer 2 falls back to a conservative policy rather than a real judgement.
 

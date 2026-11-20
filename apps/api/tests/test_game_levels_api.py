@@ -9,8 +9,8 @@ from pydantic import SecretStr
 
 from shield_api.container import build_container
 from shield_api.schemas import BoardGraphSchema, ScoreCreateRequest
-from shield_api.services.audit import SqliteAuditLog
 from shield_api.services.players import SqlitePlayerStore
+from shield_api.services.scores import SqliteScoreStore
 from shield_api.services.sqlite import domain_path
 from shield_api.settings import Settings
 from shield_engine.game import get_level
@@ -43,7 +43,7 @@ def _board() -> dict:
 def _register(harness: Harness, email: str) -> None:
     res = harness.client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "password123", "player_name": email.split("@")[0]},
+        json={"email": email, "password": "Password123", "player_name": email.split("@")[0]},
     )
     assert res.status_code == 200
 
@@ -59,13 +59,13 @@ def _run(harness: Harness, level_id: str, message: str | None = None):
 def test_catalog_exposes_model_tier_and_final_node_label(harness: Harness) -> None:
     levels = {lvl["id"]: lvl for lvl in harness.client.get("/api/v1/game/levels").json()["levels"]}
 
-    assert levels["easy"]["agent"] is None
-    assert levels["easy"]["agent_tier"] is None
-    assert levels["easy"]["final_node_label"] == "Help Desk"
-    assert levels["medium"]["agent_tier"] == "standard"
-    assert levels["hard"]["agent_tier"] == "budget"
-    assert levels["medium"]["final_node_label"] == "Protected Agent"  # ENG-LEVEL-007
-    assert levels["hard"]["agent"]["objective"]
+    assert levels["easy-1"]["agent"] is None
+    assert levels["easy-1"]["agent_tier"] is None
+    assert levels["easy-1"]["final_node_label"] == "Help Desk"
+    assert levels["medium-1"]["agent_tier"] == "standard"
+    assert levels["hard-1"]["agent_tier"] == "budget"
+    assert levels["medium-1"]["final_node_label"] == "Protected Agent"  # ENG-LEVEL-007
+    assert levels["hard-1"]["agent"]["objective"]
 
 
 @pytest.mark.spec("API-LEVEL-002")
@@ -75,7 +75,6 @@ def test_settings_pick_a_model_per_tier_and_runs_use_their_own_tier(
     container = build_container(
         Settings(
             _env_file=None,
-            FEEDBACK_PATH=tmp_path / "f.csv",
             SQLITE_PATH=tmp_path / "var" / "shield.db",
             GROQ_API_KEY=SecretStr("gsk-test"),
             GOOGLE_API_KEY=SecretStr("g-test"),
@@ -89,7 +88,6 @@ def test_settings_pick_a_model_per_tier_and_runs_use_their_own_tier(
     offline = build_container(
         Settings(
             _env_file=None,
-            FEEDBACK_PATH=tmp_path / "g.csv",
             SQLITE_PATH=tmp_path / "var2" / "shield.db",
         )
     )
@@ -100,22 +98,23 @@ def test_settings_pick_a_model_per_tier_and_runs_use_their_own_tier(
     harness.container.game_agent = None
     harness.container.game_agents = {"standard": standard, "budget": budget}
     _register(harness, "tier@example.com")
+    assert harness.client.post("/api/v1/auth/upgrade").status_code == 200
 
-    medium = _run(harness, "medium")
+    medium = _run(harness, "medium-1")
     assert medium.status_code == 200
     assert medium.json()["agent_mode"] == "live"
     assert standard.calls
     assert not budget.calls
 
-    hard = _run(harness, "hard")
+    hard = _run(harness, "hard-1")
     assert hard.status_code == 200
     assert hard.json()["agent_mode"] == "live"
     assert budget.calls
 
     harness.container.game_agents = {"standard": standard}
-    simulated = _run(harness, "hard")
+    simulated = _run(harness, "hard-1")
     assert simulated.json()["agent_mode"] == "simulated"
-    recorded = harness.client.get("/api/v1/game/scores", params={"level_id": "hard"}).json()
+    recorded = harness.client.get("/api/v1/game/scores", params={"level_id": "hard-1"}).json()
     assert len(recorded) == 1
 
 
@@ -127,22 +126,22 @@ def test_easy_runs_use_no_quota_and_are_recorded(harness: Harness, tmp_path: Pat
     }
 
     assert harness.client.post("/api/v1/auth/anonymous").status_code == 200
-    assert [_run(harness, "easy").status_code for _ in range(3)] == [200] * 3
+    assert [_run(harness, "easy-1").status_code for _ in range(3)] == [200] * 3
     assert harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 0
 
     _register(harness, "easy@example.com")
-    runs = [_run(harness, "easy") for _ in range(7)]
+    runs = [_run(harness, "easy-1") for _ in range(7)]
     assert [r.status_code for r in runs] == [200] * 7
     assert {r.json()["agent_mode"] for r in runs} == {"none"}
-    tests = [_run(harness, "easy", f"question {n}").status_code for n in range(25)]
+    tests = [_run(harness, "easy-1", f"question {n}").status_code for n in range(25)]
     assert tests == [200] * 25
     session = harness.client.get("/api/v1/auth/session").json()
     assert (session["wave_runs_used"], session["test_runs_used"]) == (0, 0)
 
-    scores = harness.client.get("/api/v1/game/scores", params={"level_id": "easy"}).json()
+    scores = harness.client.get("/api/v1/game/scores", params={"level_id": "easy-1"}).json()
     assert [row["player_name"] for row in scores] == ["easy"]
 
-    assert _run(harness, "medium").status_code == 200
+    assert _run(harness, "medium-1").status_code == 200
     assert harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 1
 
 
@@ -168,13 +167,21 @@ async def test_leaderboard_lists_only_the_current_score_version(tmp_path: Path) 
             (json.dumps({"nodes": [], "edges": []}),),
         )
 
-    log = SqliteAuditLog(path)
+    log = SqliteScoreStore(path)
+    # Spec 0039 purges pre-v3 / legacy 'easy' rows on startup, and list_scores filters by version.
     with sqlite3.connect(domain_path(path, "game")) as connection:
-        rows = connection.execute("select id, score_version from scores").fetchall()
-    assert rows == [("old", 1)]
-    assert await log.list_scores(level_id="easy") == []
+        assert connection.execute("select id from scores").fetchall() == []
+        connection.execute(
+            "insert into scores (id, created_at, player_name, level_id, total_score, medal,"
+            " attacks_blocked, attacks_total, false_alarms, avg_latency_ms, total_cost_usd,"
+            " board_json, score_version, email, won, mastered)"
+            " values ('v2-row', '2026-06-01T00:00:00+00:00', 'veteran', 'easy-1',"
+            " 9999, 'gold', 4, 4, 0, 1.0, 0.0, ?, 2, 'vet@example.com', 1, 0)",
+            (json.dumps({"nodes": [], "edges": []}),),
+        )
+    assert await log.list_scores(level_id="easy-1") == []
 
-    level = get_level("easy")
+    level = get_level("easy-1")
     recorded = await log.record_score(
         ScoreCreateRequest(
             player_name="newcomer",
@@ -189,6 +196,6 @@ async def test_leaderboard_lists_only_the_current_score_version(tmp_path: Path) 
             board=BoardGraphSchema(nodes=[], edges=[]),
         )
     )
-    assert recorded.score_version == 2
-    listed = await log.list_scores(level_id="easy")
-    assert [(s.player_name, s.score_version) for s in listed] == [("newcomer", 2)]
+    assert recorded.score_version == 3
+    listed = await log.list_scores(level_id="easy-1")
+    assert [(s.player_name, s.score_version) for s in listed] == [("newcomer", 3)]

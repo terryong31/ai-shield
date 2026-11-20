@@ -1,29 +1,32 @@
 import type {
-  AuditRecord,
-  ChatEvent,
-  ChatRequest,
+  AccountDeleteRequest,
+  AccountEmailRequest,
+  AccountPasswordRequest,
+  AccountResetRequest,
+  AccountResetResponse,
   ClearanceStatus,
-  FeedbackRequest,
-  FeedbackResponse,
+  DifficultyCategory,
+  DifficultyLeaderboardEntry,
   GameCatalogResponse,
   GameRunRequest,
   GameRunResponse,
   GameTrainRequest,
   GameTrainResponse,
   LevelId,
+  PlayerConfirmationResponse,
   PlayerLoginRequest,
+  PlayerProgressResponse,
   PlayerRecoverRequest,
   PlayerRecoverResponse,
   PlayerRegisterRequest,
+  PlayerResendRequest,
   PlayerSessionStatus,
   RunLevelId,
   SavedBoardRequest,
   SavedBoardResponse,
   ScoreCreateRequest,
-  ScoreRecord,
-  Stats
+  ScoreRecord
 } from '~/types/api'
-import { parseNdjson } from '~/utils/chatStream'
 
 /**
  * The only way the web app talks to the backend. Every shape comes from the
@@ -32,55 +35,36 @@ import { parseNdjson } from '~/utils/chatStream'
  */
 export const useShieldApi = () => {
   const baseURL = `${useRuntimeConfig().public.apiBaseUrl}/api/v1`
-  // Credentials carry the HttpOnly clearance session cookie (spec 0012).
+  // Credentials carry the HttpOnly player and admin session cookies (specs 0012, 0016).
   const api = $fetch.create({ baseURL, credentials: 'include' })
 
-  async function* streamChat(body: ChatRequest, signal?: AbortSignal): AsyncGenerator<ChatEvent> {
-    const response = await fetch(`${baseURL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      credentials: 'include',
-      signal
-    })
-    if (!response.ok || !response.body) {
-      throw new Error(`Chat request failed with HTTP ${response.status}`)
-    }
-
-    const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-    let buffer = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const { events, errors, rest } = parseNdjson(buffer + value)
-      buffer = rest
-      for (const line of errors) console.warn('Skipping malformed stream line:', line)
-      yield* events
-    }
-    // A final line without a trailing newline is still a complete event.
-    if (buffer.trim()) yield* parseNdjson(`${buffer}\n`).events
-  }
-
   return {
-    streamChat,
-    listRequests: (limit = 30) => api<AuditRecord[]>('/requests', { query: { limit } }),
-    getStats: () => api<Stats>('/stats'),
     getClearance: () => api<ClearanceStatus>('/clearance'),
-    grantClearance: (passphrase: string, email?: string) =>
-      api<ClearanceStatus>('/clearance', { method: 'POST', body: { passphrase, email: email ?? null } }),
+    grantClearance: (email: string, password: string) =>
+      api<ClearanceStatus>('/clearance', { method: 'POST', body: { email, password } }),
     revokeClearance: () => api('/clearance', { method: 'DELETE' }),
     getAuthSession: () => api<PlayerSessionStatus>('/auth/session'),
     signInAnonymously: () => api<PlayerSessionStatus>('/auth/anonymous', { method: 'POST' }),
+    // 200 signs the player in; 202 means "check your email" (spec 0027).
     registerPlayer: (body: PlayerRegisterRequest) =>
-      api<PlayerSessionStatus>('/auth/register', { method: 'POST', body }),
+      api<PlayerSessionStatus | PlayerConfirmationResponse>('/auth/register', { method: 'POST', body }),
+    resendConfirmation: (body: PlayerResendRequest) =>
+      api<PlayerConfirmationResponse>('/auth/resend-confirmation', { method: 'POST', body }),
     loginPlayer: (body: PlayerLoginRequest) =>
       api<PlayerSessionStatus>('/auth/login', { method: 'POST', body }),
     recoverPlayer: (body: PlayerRecoverRequest) =>
       api<PlayerRecoverResponse>('/auth/recover', { method: 'POST', body }),
     upgradePlayer: () => api<PlayerSessionStatus>('/auth/upgrade', { method: 'POST' }),
     logoutPlayer: () => api('/auth/logout', { method: 'POST' }),
-    sendFeedback: (body: FeedbackRequest) =>
-      api<FeedbackResponse>('/feedback', { method: 'POST', body }),
+    // Account settings (spec 0025); each needs the current password.
+    changePassword: (body: AccountPasswordRequest) =>
+      api<PlayerSessionStatus>('/auth/account/password', { method: 'POST', body }),
+    changeEmail: (body: AccountEmailRequest) =>
+      api<PlayerSessionStatus>('/auth/account/email', { method: 'POST', body }),
+    resetProgress: (body: AccountResetRequest) =>
+      api<AccountResetResponse>('/auth/account/reset-progress', { method: 'POST', body }),
+    deleteAccount: (body: AccountDeleteRequest) =>
+      api('/auth/account', { method: 'DELETE', body }),
     getLevels: () => api<GameCatalogResponse>('/game/levels'),
     runGame: (body: GameRunRequest) =>
       api<GameRunResponse>('/game/run', { method: 'POST', body }),
@@ -90,6 +74,12 @@ export const useShieldApi = () => {
       api<SavedBoardResponse>(`/game/saves/${levelId}`),
     putSave: (levelId: RunLevelId, body: SavedBoardRequest) =>
       api<SavedBoardResponse>(`/game/saves/${levelId}`, { method: 'PUT', body }),
+    getLeaderboard: (difficulty: DifficultyCategory = 'Easy', limit = 25) =>
+      api<DifficultyLeaderboardEntry[]>('/game/leaderboard', {
+        query: { difficulty, limit }
+      }),
+    getProgress: () =>
+      api<PlayerProgressResponse>('/game/progress'),
     getScores: (levelId?: LevelId, limit = 25) =>
       api<ScoreRecord[]>('/game/scores', {
         query: levelId ? { level_id: levelId, limit } : { limit }

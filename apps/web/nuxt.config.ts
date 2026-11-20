@@ -6,20 +6,33 @@ export default defineNuxtConfig({
     '@nuxt/ui',
     '@vueuse/nuxt'
   ],
+  app: {
+    head: {
+      htmlAttrs: {
+        lang: 'en'
+      },
+      charset: 'utf-8',
+      viewport: 'width=device-width, initial-scale=1',
+      titleTemplate: '%s | ai-shield',
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }
+      ]
+    }
+  },
   css: [
-    '~/assets/css/main.css',
     '@vue-flow/core/dist/style.css',
     '@vue-flow/core/dist/theme-default.css',
-    '@vue-flow/controls/dist/style.css'
+    '~/assets/css/main.css'
   ],
   colorMode: {
     preference: 'dark'
   },
   // The browser talks only to the gateway API; no database keys live here.
-  // Override at runtime with NUXT_PUBLIC_API_BASE_URL.
+  // Override at runtime with NUXT_PUBLIC_API_BASE_URL and NUXT_PUBLIC_SITE_URL.
   runtimeConfig: {
     public: {
-      apiBaseUrl: 'http://localhost:8000'
+      apiBaseUrl: 'http://localhost:8000',
+      siteUrl: 'http://localhost:3000'
     }
   },
   devServer: {

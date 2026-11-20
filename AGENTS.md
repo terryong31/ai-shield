@@ -6,14 +6,14 @@ working in this repository. `CLAUDE.md` files import this file. Package-level
 
 ## What this is
 
-`ai-shield` is a layered **prompt-injection deflector** and interactive workflow defence game for LLM applications,
-built to commercial and research standards. It has three separately deployable parts:
+`ai-shield` is an interactive **prompt-injection defence game**: players wire checks on a
+board to protect an LLM agent from injection waves. It has three separately deployable parts:
 
 | Path | What | Stack |
 | --- | --- | --- |
-| `packages/engine` | The deflector engine (`shield_engine`), a framework-free library | Python 3.12, scikit-learn |
-| `apps/api` | Demo gateway (`shield_api`) that exposes the engine over HTTP | FastAPI |
-| `apps/web` | Demo client that visualises the pipeline | Nuxt 4, Nuxt UI, Vue Flow |
+| `packages/engine` | The game's check library (`shield_engine`), framework-free | Python 3.12, scikit-learn |
+| `apps/api` | Game gateway (`shield_api`): players, runs, saves, scores, admin clearance | FastAPI |
+| `apps/web` | Game client and the `/_console` admin page | Nuxt 4, Nuxt UI, Vue Flow |
 
 Supporting: `specs/` (specifications), `docs/` (Diátaxis docs),
 `contracts/` (OpenAPI contract), `supabase/` (migrations, seed, local config),
@@ -33,7 +33,9 @@ mise run typecheck      # mypy --strict + vue-tsc
 mise run spec:check     # every acceptance criterion has a test
 mise run contract       # regenerate OpenAPI contract + web types
 mise run check          # the full CI gate: run before saying you are done
-mise run eval           # benchmark the engine
+mise run train          # retrain the bundled baseline classifier
+mise run local:db:reset # delete the local SQLite databases
+mise run admin:create <email>  # make a Supabase user an admin (prompts for the password)
 mise run up             # API + web in Docker Compose
 mise run db:start       # local Supabase (optional; SQLite is the default store)
 ```
@@ -110,7 +112,7 @@ verify again.
 - [ ] `mise run check` passes locally
 - [ ] Reference docs in `docs/reference/` reflect the change
 - [ ] `CHANGELOG.md` updated under `## [Unreleased]`
-- [ ] Engine changes: `mise run eval` numbers compared before/after and noted in the spec
+- [ ] Scoring or classifier changes: before/after game scores noted in the spec
 
 ## Boundaries for agents
 

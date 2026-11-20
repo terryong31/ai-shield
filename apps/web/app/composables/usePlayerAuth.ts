@@ -1,4 +1,8 @@
 import type { PlayerSessionStatus } from '~/types/api'
+import { isConfirmationSent, loginFailure } from '~/utils/playerAuth'
+
+export type RegisterOutcome = 'signed_in' | 'confirmation_sent' | 'failed'
+export type SignInOutcome = 'signed_in' | 'unconfirmed' | 'failed'
 
 const DEFAULT_ANONYMOUS_SESSION: PlayerSessionStatus = {
   authenticated: false,
@@ -19,6 +23,7 @@ export const usePlayerAuth = () => {
     getAuthSession,
     signInAnonymously,
     registerPlayer,
+    resendConfirmation,
     loginPlayer,
     recoverPlayer,
     upgradePlayer,
@@ -55,7 +60,7 @@ export const usePlayerAuth = () => {
     }
   }
 
-  const signInWithPassword = async (email: string, password: string): Promise<boolean> => {
+  const signInWithPassword = async (email: string, password: string): Promise<SignInOutcome> => {
     loadingAuth.value = true
     try {
       session.value = await loginPlayer({
@@ -68,8 +73,10 @@ export const usePlayerAuth = () => {
         icon: 'i-lucide-user-check',
         color: 'neutral'
       })
-      return true
+      return 'signed_in'
     } catch (err) {
+      const failure = loginFailure((err as { statusCode?: number }).statusCode)
+      if (failure === 'unconfirmed') return 'unconfirmed'
       const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Invalid email or password.'
       toast.add({
         title: 'Sign in failed',
@@ -77,27 +84,29 @@ export const usePlayerAuth = () => {
         icon: 'i-lucide-triangle-alert',
         color: 'neutral'
       })
-      return false
+      return 'failed'
     } finally {
       loadingAuth.value = false
     }
   }
 
-  const registerAccount = async (email: string, password: string, playerName?: string): Promise<boolean> => {
+  const registerAccount = async (email: string, password: string, playerName?: string): Promise<RegisterOutcome> => {
     loadingAuth.value = true
     try {
-      session.value = await registerPlayer({
+      const result = await registerPlayer({
         email: email.trim(),
         password: password.trim(),
         player_name: playerName?.trim() || null
       })
+      if (isConfirmationSent(result)) return 'confirmation_sent'
+      session.value = result
       toast.add({
         title: 'Account created',
         description: `Signed in as ${session.value.player_name}.`,
         icon: 'i-lucide-user-plus',
         color: 'neutral'
       })
-      return true
+      return 'signed_in'
     } catch (err) {
       const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Could not create account.'
       toast.add({
@@ -106,7 +115,30 @@ export const usePlayerAuth = () => {
         icon: 'i-lucide-triangle-alert',
         color: 'neutral'
       })
-      return false
+      return 'failed'
+    } finally {
+      loadingAuth.value = false
+    }
+  }
+
+  const resendConfirmationEmail = async (email: string) => {
+    loadingAuth.value = true
+    try {
+      await resendConfirmation({ email: email.trim() })
+      toast.add({
+        title: 'Email sent',
+        description: 'If that address needs confirming, a new link is on its way.',
+        icon: 'i-lucide-mail',
+        color: 'neutral'
+      })
+    } catch (err) {
+      console.warn('Resend failed:', err)
+      toast.add({
+        title: 'Could not resend',
+        description: 'Check the email address and try again.',
+        icon: 'i-lucide-triangle-alert',
+        color: 'neutral'
+      })
     } finally {
       loadingAuth.value = false
     }
@@ -143,7 +175,7 @@ export const usePlayerAuth = () => {
       session.value = await upgradePlayer()
       toast.add({
         title: 'Plan upgraded',
-        description: 'Unlimited daily wave and test runs unlocked.',
+        description: '300 wave runs and 1,000 tests a day, plus the custom sandbox.',
         icon: 'i-lucide-sparkles',
         color: 'neutral'
       })
@@ -165,9 +197,10 @@ export const usePlayerAuth = () => {
     try {
       await logoutPlayer()
       session.value = { ...DEFAULT_ANONYMOUS_SESSION }
+      useSavedBoardCache().clearSavedBoardCache()
       toast.add({
         title: 'Signed out',
-        description: 'Now browsing as an anonymous user.',
+        description: 'Logged out successfully.',
         icon: 'i-lucide-log-out',
         color: 'neutral'
       })
@@ -186,6 +219,7 @@ export const usePlayerAuth = () => {
     continueAnonymously,
     signInWithPassword,
     registerAccount,
+    resendConfirmationEmail,
     recoverPassword,
     upgradeToPaid,
     signOutPlayer

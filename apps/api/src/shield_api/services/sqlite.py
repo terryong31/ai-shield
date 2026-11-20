@@ -1,7 +1,7 @@
 """SQLite connections laid out like the Postgres domain schemas (spec 0024).
 
 Each domain (``audit``, ``game``, ``players``) is its own database file attached
-under the schema's name, so SQL reads ``audit.requests`` or ``players.accounts``
+under the schema's name, so SQL reads ``game.scores`` or ``players.accounts``
 exactly as it does in Postgres, and the main database stays empty.
 """
 

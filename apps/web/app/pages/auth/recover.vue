@@ -1,5 +1,15 @@
 <script setup lang="ts">
 import type { AuthFormField, FormSubmitEvent } from '@nuxt/ui'
+import { buildPageSeo } from '~/utils/seo'
+
+const runtimeConfig = useRuntimeConfig()
+useSeoMeta(buildPageSeo({
+  title: 'Recover Password',
+  description: 'Request a password recovery email for your ai-shield player account.',
+  path: '/auth/recover',
+  siteUrl: runtimeConfig.public.siteUrl,
+  noindex: true
+}))
 
 const {
   isLoggedIn,
@@ -7,6 +17,7 @@ const {
   refreshSession,
   recoverPassword
 } = usePlayerAuth()
+const goBack = useGoBack()
 
 const recoverFields: AuthFormField[] = [
   {
@@ -37,16 +48,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto">
+  <main class="h-full overflow-y-auto">
     <div class="flex min-h-full flex-col items-center justify-center gap-4 p-4">
       <div class="w-full max-w-md">
         <UButton
-          to="/auth/login"
           label="Back"
           icon="i-lucide-arrow-left"
           color="neutral"
           variant="link"
           size="xl"
+          @click="goBack('/auth/login')"
         />
       </div>
 
@@ -74,5 +85,5 @@ onMounted(async () => {
         </UAuthForm>
       </UPageCard>
     </div>
-  </div>
+  </main>
 </template>

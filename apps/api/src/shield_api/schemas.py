@@ -1,28 +1,36 @@
-"""HTTP request/response models and the NDJSON chat event protocol.
+"""HTTP request/response models for the game gateway.
 
 These models are the public contract. Changing them changes
 ``contracts/shield-api.openapi.json``, which the web client is generated from.
 """
 
+import re
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StringConstraints,
+    model_validator,
+)
 
-from shield_engine import DecisionLayer, ToolPolicy, Verdict
 from shield_engine.game import (
     AgentMode,
     AgentTier,
     AgentVerdict,
+    DifficultyCategory,
     HandleKind,
+    LevelId,
+    LevelTier,
     MedalKind,
     NodeKind,
     OutcomeKind,
     RetiredNodeKind,
 )
-
-Mode = Literal["shield", "guardrail", "chaos"]
-Prompt = Annotated[str, Field(min_length=1, max_length=8000)]
 
 
 class HealthResponse(BaseModel):
@@ -30,45 +38,16 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     model_loaded: bool
-    moderation_enabled: bool
-    adjudication_enabled: bool
-    audit_backend: Literal["sqlite", "supabase", "memory"]
-
-
-class PredictRequest(BaseModel):
-    message: Prompt
-
-
-class PredictResponse(BaseModel):
-    verdict: Verdict
-    confidence_score: float
-    is_malicious: bool
-    override: bool
-
-
-class ScreenRequest(BaseModel):
-    message: Prompt
-    mode: Mode = "shield"
-
-
-class ScreenResponse(BaseModel):
-    verdict: Verdict
-    policy: ToolPolicy
-    blocked: bool
-    layer: DecisionLayer
-    reason: str
-    ml_confidence: float
-    adjudicated: bool
-
-
-class ChatRequest(BaseModel):
-    message: Prompt
-    mode: Mode = "shield"
+    # Agent tiers that run a live model; the rest use the offline stand-in.
+    agent_tiers: list[AgentTier]
+    storage_backend: Literal["sqlite", "supabase", "memory"]
 
 
 class ClearanceRequest(BaseModel):
-    passphrase: Annotated[str, Field(min_length=1, max_length=512)]
-    email: str | None = None
+    """An admin's Supabase Auth credentials, checked once and never stored."""
+
+    email: Annotated[str, Field(min_length=3, max_length=320)]
+    password: Annotated[str, Field(min_length=1, max_length=512)]
 
 
 class ClearanceStatus(BaseModel):
@@ -76,119 +55,7 @@ class ClearanceStatus(BaseModel):
     expires_at: datetime | None
 
 
-class FeedbackRequest(BaseModel):
-    prompt: Prompt
-    human_label: Literal[0, 1]
-    request_id: str | None = None
-
-
-class FeedbackResponse(BaseModel):
-    status: Literal["success"]
-
-
-class AuditRecord(BaseModel):
-    id: str
-    created_at: datetime
-    query: str
-    action: Literal["ALLOWED", "BLOCKED"]
-    reason: str
-    layer: str
-    reviewed: bool = False
-    human_label: int | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class StatsResponse(BaseModel):
-    total: int
-    blocked: int
-    allowed: int
-    block_rate: float
-
-
-# --- Chat stream events (one JSON object per NDJSON line) -------------------
-
-
-class StartEvent(BaseModel):
-    type: Literal["START"] = "START"
-    query: str
-
-
-class StageChangeEvent(BaseModel):
-    type: Literal["STAGE_CHANGE"] = "STAGE_CHANGE"
-    stage: Literal["ml_processing", "debate", "final"]
-
-
-class MlResultEvent(BaseModel):
-    type: Literal["ML_RESULT"] = "ML_RESULT"
-    confidence: float
-    verdict: Verdict
-
-
-class ModerationEvent(BaseModel):
-    type: Literal["LLAMAGUARD_RESULT"] = "LLAMAGUARD_RESULT"
-    safe: bool
-    categories: list[str]
-
-
-class DebateTurnEvent(BaseModel):
-    type: Literal["DEBATE_TURN"] = "DEBATE_TURN"
-    agent: Literal["ANALYST", "WARDEN"]
-    message: str
-
-
-class BlockEvent(BaseModel):
-    type: Literal["BLOCK"] = "BLOCK"
-    reason: str
-    layer: DecisionLayer
-
-
-class PolicyUpdateEvent(BaseModel):
-    type: Literal["POLICY_UPDATE"] = "POLICY_UPDATE"
-    policy: ToolPolicy
-    allowed_tools: list[str]
-
-
-class ToolStartEvent(BaseModel):
-    type: Literal["TOOL_START"] = "TOOL_START"
-    tool: str
-    args: dict[str, Any]
-
-
-class ToolEndEvent(BaseModel):
-    type: Literal["TOOL_END"] = "TOOL_END"
-    tool: str
-    result: Any
-
-
-class FinalResponseEvent(BaseModel):
-    type: Literal["FINAL_RESPONSE"] = "FINAL_RESPONSE"
-    text: str
-
-
-class ErrorEvent(BaseModel):
-    type: Literal["ERROR"] = "ERROR"
-    message: str
-
-
-ChatEvent = Annotated[
-    StartEvent
-    | StageChangeEvent
-    | MlResultEvent
-    | ModerationEvent
-    | DebateTurnEvent
-    | BlockEvent
-    | PolicyUpdateEvent
-    | ToolStartEvent
-    | ToolEndEvent
-    | FinalResponseEvent
-    | ErrorEvent,
-    Field(discriminator="type"),
-]
-
-
 # --- Game models --------------------------------------------------------------
-
-LevelId = Literal["easy", "medium", "hard"]
 
 
 class BoardNodeSchema(BaseModel):
@@ -225,12 +92,14 @@ class LevelMessageSchema(BaseModel):
     is_attack: bool
     category: str
     expected_tool: str | None = None
+    forbidden_tools: list[str] = Field(default_factory=list)
 
 
 class AgentToolSchema(BaseModel):
     name: str
     description: str
     allowed: bool
+    dual_use: bool = False
 
 
 class AgentProfileSchema(BaseModel):
@@ -239,10 +108,29 @@ class AgentProfileSchema(BaseModel):
     token_budget: int
 
 
+class LevelConstraintsSchema(BaseModel):
+    max_check_nodes: int | None = None
+    disabled_checks: list[NodeKind] = Field(default_factory=list)
+    max_avg_latency_ms: float | None = None
+    max_total_cost_usd: float | None = None
+    max_tokens: int | None = None
+
+
+class FollowUpChallengeSchema(BaseModel):
+    description: str
+    max_check_nodes: int | None = None
+    forbidden_checks: list[NodeKind] = Field(default_factory=list)
+    max_avg_latency_ms: float | None = None
+    max_total_cost_usd: float | None = None
+    max_tokens: int | None = None
+
+
 class GameLevelSchema(BaseModel):
     id: LevelId
+    order: int
+    tier: LevelTier
     title: str
-    difficulty: Literal["Easy", "Medium", "Hard"]
+    difficulty: DifficultyCategory
     summary: str
     protected_asset: str
     max_latency_ms: float
@@ -250,6 +138,9 @@ class GameLevelSchema(BaseModel):
     messages: list[LevelMessageSchema]
     # ``null`` on a classification-only level, where no model runs (spec 0021).
     agent: AgentProfileSchema | None
+    tags: list[str] = Field(default_factory=list)
+    constraints: LevelConstraintsSchema = Field(default_factory=LevelConstraintsSchema)
+    follow_up: FollowUpChallengeSchema | None = None
     agent_tier: AgentTier | None
     final_node_label: str
 
@@ -257,20 +148,109 @@ class GameLevelSchema(BaseModel):
 class GameCatalogResponse(BaseModel):
     levels: list[GameLevelSchema]
     checks: list[CheckDefinitionSchema]
+    jev_key_configured: bool = False
+    ai_key_configured: bool = False
 
 
 PlayerTier = Literal["anonymous", "free", "paid"]
 
 
+# A light shape check so obvious typos are rejected before Supabase is called (spec 0027).
+PlayerEmail = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=3,
+        max_length=254,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    ),
+]
+
+
+def _validate_strong_password(value: str) -> str:
+    if (
+        len(value) < 8
+        or not re.search(r"\d", value)
+        or not re.search(r"[a-z]", value)
+        or not re.search(r"[A-Z]", value)
+    ):
+        raise ValueError(
+            "Password must be at least 8 characters and include a number, "
+            "a lowercase letter, and an uppercase letter."
+        )
+    return value
+
+
+StrongPassword = Annotated[
+    str,
+    Field(min_length=8, max_length=512),
+    AfterValidator(_validate_strong_password),
+]
+
+
 class PlayerRegisterRequest(BaseModel):
-    email: Annotated[str, Field(min_length=3, max_length=254)]
-    password: Annotated[str, Field(min_length=6, max_length=512)]
+    email: PlayerEmail
+    password: StrongPassword
     player_name: Annotated[str, Field(min_length=1, max_length=64)] | None = None
 
 
 class PlayerLoginRequest(BaseModel):
-    email: Annotated[str, Field(min_length=3, max_length=254)]
-    password: Annotated[str, Field(min_length=1, max_length=512)]
+    email: PlayerEmail
+    password: Annotated[str, Field(min_length=8, max_length=512)]
+
+
+class PlayerResendRequest(BaseModel):
+    email: PlayerEmail
+
+
+CurrentPassword = Annotated[str, Field(min_length=1, max_length=512)]
+NewPassword = StrongPassword
+
+
+class AccountPasswordRequest(BaseModel):
+    """Change password (spec 0025). The current password is checked first."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: CurrentPassword
+    new_password: NewPassword
+
+    @model_validator(mode="after")
+    def _new_differs(self) -> "AccountPasswordRequest":
+        if self.new_password == self.current_password:
+            raise ValueError("The new password must differ from the current one.")
+        return self
+
+
+class AccountEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_email: PlayerEmail
+    current_password: CurrentPassword
+
+
+class AccountResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: CurrentPassword
+
+
+class AccountDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: CurrentPassword
+    confirm: Literal["DELETE"]
+
+
+class AccountResetResponse(BaseModel):
+    scores_removed: int
+    boards_removed: int
+
+
+class PlayerConfirmationResponse(BaseModel):
+    """Sent for every register or resend that needs email confirmation, whatever the email."""
+
+    status: Literal["confirmation_sent"] = "confirmation_sent"
 
 
 class PlayerRecoverRequest(BaseModel):
@@ -372,7 +352,7 @@ class SavedBoardResponse(SavedBoardRequest):
 
 
 class GameRunRequest(BaseModel):
-    level_id: RunLevelId = "easy"
+    level_id: RunLevelId = "easy-1"
     board: BoardGraphSchema
     custom_message: str | None = None
     # Required when level_id is "custom" (paid players only, spec 0022).
@@ -429,6 +409,10 @@ class WaveScoreSchema(BaseModel):
     total_tokens: int
     avg_latency_ms: float
     total_cost_usd: float
+    won: bool = False
+    constraint_violations: list[str] = Field(default_factory=list)
+    follow_up_passed: bool = False
+    follow_up_feedback: str = ""
 
 
 class GameRunResponse(BaseModel):
@@ -449,6 +433,8 @@ class ScoreCreateRequest(BaseModel):
     avg_latency_ms: float
     total_cost_usd: float
     board: BoardGraphSchema
+    won: bool = False
+    mastered: bool = False
 
 
 class ScoreRecord(BaseModel):
@@ -465,7 +451,44 @@ class ScoreRecord(BaseModel):
     total_cost_usd: float
     board: BoardGraphSchema
     # Scoring scale the row was recorded under; the leaderboard lists only the current one.
-    score_version: int = 2
+    score_version: int = 3
+    won: bool = False
+    mastered: bool = False
+
+
+class DifficultyLeaderboardEntry(BaseModel):
+    player_name: str
+    difficulty: DifficultyCategory | Literal["All"]
+    total_score: int
+    max_possible_score: int
+    levels_solved: int
+    levels_mastered: int
+    levels_total: int
+    avg_latency_ms: float
+    total_cost_usd: float
+
+
+class LevelProgressItem(BaseModel):
+    level_id: LevelId
+    difficulty: DifficultyCategory
+    best_score: int
+    medal: MedalKind
+    won: bool
+    mastered: bool
+
+
+class DifficultyProgressSummary(BaseModel):
+    difficulty: DifficultyCategory
+    total_score: int
+    max_possible_score: int
+    levels_solved: int
+    levels_mastered: int
+    levels_total: int
+
+
+class PlayerProgressResponse(BaseModel):
+    levels: list[LevelProgressItem]
+    difficulties: list[DifficultyProgressSummary]
 
 
 class GameTrainRequest(BaseModel):

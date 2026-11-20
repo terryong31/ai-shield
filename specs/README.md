@@ -74,20 +74,20 @@ Check locally with `mise run spec:check`.
 
 | # | Spec | Area | Status |
 | --- | --- | --- | --- |
-| 0001 | [Screening pipeline](0001-screening-pipeline/spec.md) | ENG | Implemented |
+| 0001 | [Screening pipeline](0001-screening-pipeline/spec.md) | ENG | Superseded by 0026 |
 | 0002 | [Classifier detector](0002-classifier-detector/spec.md) | ENG | Implemented |
-| 0003 | [Moderation detector](0003-moderation-detector/spec.md) | ENG | Implemented |
-| 0004 | [Debate adjudication](0004-debate-adjudication/spec.md) | ENG | Implemented |
-| 0005 | [Tool policy](0005-tool-policy/spec.md) | ENG | Implemented |
-| 0006 | [Evaluation harness](0006-evaluation-harness/spec.md) | ENG | Implemented |
+| 0003 | [Moderation detector](0003-moderation-detector/spec.md) | ENG | Superseded by 0026 |
+| 0004 | [Debate adjudication](0004-debate-adjudication/spec.md) | ENG | Superseded by 0026 |
+| 0005 | [Tool policy](0005-tool-policy/spec.md) | ENG | Superseded by 0026 |
+| 0006 | [Evaluation harness](0006-evaluation-harness/spec.md) | ENG | Superseded by 0026 |
 | 0007 | [Gateway HTTP API](0007-gateway-http-api/spec.md) | API | Implemented |
-| 0008 | [Web stream client](0008-web-stream-client/spec.md) | WEB | Implemented |
-| 0009 | [Audit log storage backends](0009-audit-log-storage/spec.md) | API | Implemented |
+| 0008 | [Web stream client](0008-web-stream-client/spec.md) | WEB | Superseded by 0026 |
+| 0009 | [Audit log storage backends](0009-audit-log-storage/spec.md) | API | Superseded by 0026 |
 | 0010 | [Enforced SDD + TDD workflow](0010-enforced-sdd-tdd-workflow/spec.md) | DEV | Accepted (awaiting human sign-off) |
-| 0011 | [Web product redesign](0011-web-product-redesign/spec.md) | WEB | Draft |
+| 0011 | [Web product redesign](0011-web-product-redesign/spec.md) | WEB | Superseded by 0026 |
 | 0012 | [Clearance sessions](0012-clearance-sessions/spec.md) | API | Implemented |
-| 0013 | [Web trace model](0013-web-trace-model/spec.md) | WEB | Accepted |
-| 0014 | [Web audit view](0014-web-audit-view/spec.md) | WEB | Accepted |
+| 0013 | [Web trace model](0013-web-trace-model/spec.md) | WEB | Superseded by 0026 |
+| 0014 | [Web audit view](0014-web-audit-view/spec.md) | WEB | Superseded by 0026 |
 | 0015 | [Web design-system hygiene](0015-web-design-hygiene/spec.md) | WEB | Accepted |
 | 0016 | [AI Defender workflow game](0016-game-engine/spec.md) | ENG, API, WEB | Implemented |
 | 0017 | [Game gateway API](0017-game-api/spec.md) | API | Superseded by 0016 |
@@ -97,6 +97,22 @@ Check locally with `mise run spec:check`.
 | 0022 | [Custom sandbox (BYOD, BYOK)](0022-game-custom-sandbox/spec.md) | ENG, API, WEB | Implemented |
 | 0023 | [Saved boards](0023-game-saved-boards/spec.md) | API, WEB | Implemented |
 | 0024 | [Domain-scoped database schemas (`audit`, `game`, `players`)](0024-domain-schema-storage/spec.md) | API | Implemented |
+| 0025 | [Account settings](0025-account-settings/spec.md) | API, WEB | Draft |
+| 0029 | [Strict win/lose and tool configuration](0029-strict-win-lose-and-tool-config/spec.md) | ENG, API, WEB | Implemented |
+| 0030 | [Tool refinements and Jev](0030-tool-refinements-and-jev/spec.md) | ENG, API, WEB | Implemented |
+| 0031 | [Live Jev & AI node API keys and real measured latency/cost](0031-live-api-keys-and-real-metrics/spec.md) | ENG, API, WEB | Implemented |
+| 0032 | [System .env-only API keys](0032-env-only-api-keys/spec.md) | API, WEB | Accepted |
+| 0033 | [Saved board return check and instant loading state](0033-saved-board-return-and-loading/spec.md) | WEB | Implemented |
+| 0034 | [Distinct Safety check vs Agent review](0034-safety-vs-agent-review-models/spec.md) | ENG, API, WEB | Implemented |
+| 0035 | [Merge Quick screen into ML filter](0035-merge-quick-screen-into-ml-filter/spec.md) | ENG, API, WEB | Implemented |
+| 0036 | [Password strength indicator and validation](0036-password-strength-validation/spec.md) | API, WEB | Implemented |
+| 0037 | [LangGraph AI Agent and Tool Policy extension](0037-langgraph-agent-and-tool-policy/spec.md) | ENG, API, WEB | Implemented |
+| 0038 | [ML filter user-defined training data only](0038-ml-classifier-user-data-only/spec.md) | ENG, API, WEB | Implemented |
+| 0039 | [Campaign levels and difficulty leaderboard](0039-campaign-levels-and-difficulty-leaderboard/spec.md) | ENG, API | Implemented |
+| 0040 | [Minimal monochrome Level Select and in-game briefing UI](0040-campaign-problem-hub-and-briefing-ui/spec.md) | WEB | Implemented |
+| 0028 | [Instant leaderboard](0028-instant-leaderboard/spec.md) | API, WEB | Draft |
+| 0026 | [Game-only cleanup](0026-game-only-cleanup/spec.md) | ENG, API, WEB | Draft |
+| 0027 | [Player email confirmation](0027-player-email-confirmation/spec.md) | API, WEB | Draft |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

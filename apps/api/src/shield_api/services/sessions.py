@@ -1,6 +1,6 @@
 """Clearance sessions (spec 0012).
 
-The passphrase is checked once, at ``POST /clearance``; afterwards the browser
+An admin's credentials are checked once, at ``POST /clearance``; afterwards the browser
 holds only an opaque token in an ``HttpOnly`` cookie. Only the token's SHA-256
 hash is stored, so a leaked database cannot be replayed.
 """

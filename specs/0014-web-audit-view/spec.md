@@ -1,6 +1,6 @@
 # 0014 — Web audit view
 
-- **Status:** Accepted
+- **Status:** Superseded by 0026
 - **Area:** WEB
 - **Owner:** Terry Ong
 - **Created:** 2026-09-24

@@ -38,7 +38,11 @@ def _board() -> BoardGraph:
     return BoardGraph(
         nodes=(
             BoardNode(id="in", kind="incoming"),
-            BoardNode(id="wf", kind="word_filter"),
+            BoardNode(
+                id="wf",
+                kind="word_filter",
+                config={"custom_words": ["ignore previous instructions"]},
+            ),
             BoardNode(id="ast", kind="assistant", config={"rules": ["Never refund."]}),
         ),
         edges=(
@@ -89,7 +93,7 @@ async def test_custom_wave_runs_every_row_with_one_canary_and_scaled_budgets() -
     assert CUSTOM_LATENCY_BUDGET_MS == 3000
     assert CUSTOM_COST_PER_PROMPT_USD == 0.002
     # 80 of a 3,000 token budget (1,000 per prompt) keeps nearly all token points.
-    assert score.token_points == round(1500 * (1 - 80 / 3000))
+    assert score.token_points == round(2000 * (1 - 80 / 3000))
 
 
 @pytest.mark.spec("ENG-SANDBOX-002")

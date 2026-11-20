@@ -1,17 +1,17 @@
 # Change the HTTP contract
 
-The gateway's request, response and stream-event models in
+The gateway's request and response models in
 [`apps/api/src/shield_api/schemas.py`](../../apps/api/src/shield_api/schemas.py)
 are the public contract. They are exported to
 [`contracts/shield-api.openapi.json`](../../contracts/shield-api.openapi.json),
 from which the web client's types (`apps/web/app/types/api.gen.ts`) are
-generated. This guide uses an example: adding moderation categories to
-`ScreenResponse`.
+generated. This guide uses an example: adding a `wave_size` field to
+`GameLevelSchema` so the level cards can show how many prompts a wave has.
 
 ## 1. Spec it
 
-A contract change is a behaviour change. Add criteria to the gateway spec
-([0007](../../specs/0007-gateway-http-api/spec.md)) or create a new spec. Get
+A contract change is a behaviour change. Add criteria to the owning spec
+(for example [0016](../../specs/0016-game-engine/spec.md) for the game routes) or create a new spec. Get
 approval first: [`AGENTS.md`](../../AGENTS.md) lists HTTP contract changes as
 "ask before". Say whether the change is breaking:
 
@@ -19,32 +19,29 @@ approval first: [`AGENTS.md`](../../AGENTS.md) lists HTTP contract changes as
 | --- | --- |
 | Add an optional response field | no |
 | Add a required request field, remove or rename any field, narrow a type | yes |
-| Add a new `ChatEvent` type | no for the web client (it ignores unknown types in `applyChatEvent`), but document it |
 
 ## 2. Write the failing test
 
 In `apps/api/tests/`, for example:
 
 ```python
-@pytest.mark.spec("API-SCREEN-002")
-def test_screen_reports_moderation_categories(harness) -> None:
-    response = harness.client.post("/api/v1/screen", json={"message": "hello"})
+@pytest.mark.spec("API-GAME-010")
+def test_levels_report_their_wave_size(harness) -> None:
+    levels = harness.client.get("/api/v1/game/levels").json()["levels"]
 
-    assert response.json()["moderation_categories"] == []
+    assert all(level["wave_size"] == len(level["messages"]) for level in levels)
 ```
 
 ## 3. Edit the schema and the route
 
 ```python
-class ScreenResponse(BaseModel):
+class GameLevelSchema(BaseModel):
     ...
-    moderation_categories: list[str] = Field(default_factory=list)
+    wave_size: int = 0
 ```
 
-And populate it in [`routers/screening.py`](../../apps/api/src/shield_api/routers/screening.py)
-from `decision.moderation`. For a new stream event, add the model to the
-`ChatEvent` union in `schemas.py` and yield it from
-[`services/chat.py`](../../apps/api/src/shield_api/services/chat.py).
+And populate it in [`routers/game.py`](../../apps/api/src/shield_api/routers/game.py)
+where the level catalog is built.
 
 Run the gateway tests. The new test passes, and the drift test fails:
 
@@ -76,9 +73,8 @@ Review the diff of both files. It should contain only what you intended.
   [`apps/web/app/types/api.ts`](../../apps/web/app/types/api.ts).
 - New calls go in [`useShieldApi.ts`](../../apps/web/app/composables/useShieldApi.ts),
   the only module that talks to the gateway.
-- New stream events: handle them in `applyChatEvent` in
-  [`app/utils/chatStream.ts`](../../apps/web/app/utils/chatStream.ts), with a
-  Vitest test named `[WEB-…] …`.
+- Logic worth testing goes in `app/utils/` as pure functions, with a Vitest
+  test named `[WEB-…] …`.
 
 Then type-check. A breaking change surfaces here:
 
@@ -112,4 +108,3 @@ Commit together: `schemas.py`, the route or service change, `contracts/shield-ap
 ## Background
 
 - [ADR 0004: The frontend talks only to the gateway](../explanation/decisions/0004-frontend-talks-only-to-gateway.md)
-- [ADR 0005: NDJSON event stream](../explanation/decisions/0005-ndjson-event-stream.md)

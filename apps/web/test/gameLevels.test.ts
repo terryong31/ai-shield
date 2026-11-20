@@ -22,20 +22,20 @@ const score = {
 
 describe('game level tiers (spec 0021)', () => {
   it('[WEB-LEVEL-001] ends Easy at a Help Desk with no agent settings and no tool or token score', () => {
-    const finalLabel = (level: 'easy' | 'medium' | 'hard') =>
+    const finalLabel = (level: 'easy-1' | 'medium-1' | 'hard-1') =>
       createStarterBoard(level).nodes.find(n => n.id === 'assistant')?.data?.label
-    expect(finalLabel('easy')).toBe('Help Desk')
-    expect(finalLabel('medium')).toBe('Protected Agent')
-    expect(finalLabel('hard')).toBe('Protected Agent')
+    expect(finalLabel('easy-1')).toBe('Help Desk')
+    expect(finalLabel('medium-1')).toBe('Protected Agent')
+    expect(finalLabel('hard-1')).toBe('Protected Agent')
 
-    expect(scoreBreakdown(score, 'easy').map(r => r.label)).toEqual([
+    expect(scoreBreakdown(score, 'easy-1').map(r => r.label)).toEqual([
       'Protection',
       'Helpfulness',
       'Speed',
       'Cost',
       'Leak penalty'
     ])
-    expect(scoreBreakdown(score, 'medium').map(r => r.label)).toContain('Tool use')
+    expect(scoreBreakdown(score, 'medium-1').map(r => r.label)).toContain('Tool use')
 
     const gameSource = read('pages', 'game.vue')
     expect(gameSource).toContain('Every prompt that reaches the help desk is answered. Stop the injections before they get here.')

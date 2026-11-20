@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -18,14 +18,18 @@ class Settings(BaseSettings):
     VERSION: str = "0.2.0"
     API_PREFIX: str = "/api/v1"
     LOG_LEVEL: str = "INFO"
+    # Interactive docs and the schema route exist only in development (API-DOCS-001).
+    # Unset means production, so a deployment never exposes them by accident.
+    APP_ENV: Literal["development", "production"] = "production"
 
     GROQ_API_KEY: SecretStr | None = None
-    GROQ_GUARD_MODEL: str = "llama-guard-3-8b"
-    GROQ_DEBATE_MODEL: str = "llama-3.3-70b-versatile"
     GROQ_CHAT_MODEL: str = "llama-3.3-70b-versatile"
 
     GOOGLE_API_KEY: SecretStr | None = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    TYPESAFE_API_KEY: SecretStr | None = Field(
+        default=None, validation_alias=AliasChoices("TYPESAFE_API_KEY", "JEV_API_KEY")
+    )
     # Game AI Agent models per level tier (spec 0021). Standard defaults to the Gemini
     # model (or GROQ_CHAT_MODEL without a Google key); budget runs on Groq.
     GAME_MODEL_STANDARD: str | None = None
@@ -37,21 +41,22 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices("SUPABASE_KEY", "SUPABASE_ANON_KEY")
     )
 
-    # Demo stand-in for RBAC. Unset means nobody can obtain GRANTED clearance.
-    SECURE_PASSPHRASE: SecretStr | None = None
+    # Public origin of the web client; confirmation emails link to
+    # <WEB_BASE_URL>/auth/confirmed (spec 0027). Must be in Supabase's Redirect URLs.
+    WEB_BASE_URL: str = "http://localhost:3000"
 
-    # Clearance sessions (spec 0012), stored in SQLITE_PATH.
+    # Clearance sessions (spec 0012). Admins are Supabase users with
+    # app_metadata.role "admin"; without Supabase nobody can obtain clearance.
     SESSION_TTL_MINUTES: int = Field(default=480, gt=0)
     # Browsers accept Secure cookies on http://localhost; disable only for other plain-HTTP hosts.
     SESSION_COOKIE_SECURE: bool = True
     CLEARANCE_MAX_ATTEMPTS: int = Field(default=5, gt=0)
     CLEARANCE_WINDOW_MINUTES: int = Field(default=10, gt=0)
 
-    # Audit log file used whenever Supabase is not configured.
+    # SQLite base path (one file per domain beside it) used whenever Supabase is not configured.
     SQLITE_PATH: Path = Path("var/shield.db")
-
-    FEEDBACK_PATH: Path = Path("var/feedback.csv")
-
+    # Optional Redis URL for sub-millisecond leaderboard caching and Pub/Sub SSE (spec 0028).
+    REDIS_URL: SecretStr | None = None
     # Comma-separated in the environment. Includes IPv4/IPv6 loopback variants
     # that local dev servers (e.g. `nuxt dev` under Bun) may print.
     CORS_ORIGINS: Annotated[list[str], NoDecode] = [

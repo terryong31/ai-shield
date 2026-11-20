@@ -14,7 +14,7 @@ supersedes the old one and update the old one's status to
 | [0002](0002-engine-gateway-split.md) | Split the engine from the gateway | Accepted | 2026-09-23 |
 | [0003](0003-spec-driven-and-test-driven-development.md) | Spec-driven and test-driven development | Accepted | 2026-09-23 |
 | [0004](0004-frontend-talks-only-to-gateway.md) | The frontend talks only to the gateway | Accepted | 2026-09-23 |
-| [0005](0005-ndjson-event-stream.md) | NDJSON event stream for `/chat` | Accepted | 2026-09-23 |
+| [0005](0005-ndjson-event-stream.md) | NDJSON event stream for `/chat` | Superseded by spec 0026 | 2026-09-23 |
 | [0006](0006-hash-verified-model-artifacts.md) | Hash-verified model artifacts | Accepted | 2026-09-23 |
 
 ## Template

@@ -1,6 +1,6 @@
 # 0008 — Web stream client
 
-- **Status:** Implemented
+- **Status:** Superseded by 0026
 - **Area:** WEB
 - **Created:** 2026-09-23
 - **Related:** spec 0007, [ADR 0005](../../docs/explanation/decisions/0005-ndjson-event-stream.md)

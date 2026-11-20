@@ -15,62 +15,55 @@ ai-shield/
 ├── .dockerignore, .editorconfig, .gitignore
 │
 ├── packages/
-│   └── engine/                  # shield-engine: the framework-free deflector (Python)
+│   └── engine/                  # shield-engine: the game's check library (Python)
 │       ├── pyproject.toml       # deps: scikit-learn, joblib; extra [groq]; script shield-engine
 │       ├── README.md
-│       ├── MODEL_CARD.md        # baseline classifier: data, metrics, limitations
-│       ├── data/seed/
-│       │   ├── train.jsonl      # 20 training prompts
-│       │   └── eval.jsonl       # 40 held-out evaluation prompts
+│       ├── MODEL_CARD.md        # baseline classifier (Quick screen): data, limitations
+│       ├── data/seed/train.jsonl # 20 training prompts for the baseline
 │       ├── src/shield_engine/
 │       │   ├── __init__.py      # public API (__all__)
-│       │   ├── types.py         # enums and value dataclasses
-│       │   ├── events.py        # screen_stream events
-│       │   ├── ports.py         # Protocols: ChatModel, FeedbackStore, Classifier, Moderator, Adjudicator
-│       │   ├── config.py        # ShieldConfig
-│       │   ├── pipeline.py      # Shield: routing
-│       │   ├── policy.py        # ToolSpec, allowed_tools (deterministic gate)
-│       │   ├── feedback.py      # InMemoryFeedbackStore, CsvFeedbackStore
-│       │   ├── detectors/       # classifier.py (Layer 1), moderation.py (Llama Guard)
-│       │   ├── adjudication/    # debate.py (Layer 2), fallback.py
-│       │   ├── game/            # workflow defence graph evaluator, custom ML training, wave scoring
+│       │   ├── types.py         # Verdict, Signal
+│       │   ├── ports.py         # Protocols: ChatModel, UsageChatModel, Classifier
+│       │   ├── untrusted.py     # wrap_untrusted
+│       │   ├── detectors/       # classifier.py (baseline TF-IDF + SGD)
+│       │   ├── game/            # board interpreter, checks, levels, agent.py, custom.py, scoring
 │       │   ├── models/          # hash-verified artifact loading + baseline/ artifacts
 │       │   ├── training.py      # train_baseline
-│       │   ├── evaluation/      # dataset.py, metrics.py, runner.py
+│       │   ├── dataset.py       # load_jsonl, Example
 │       │   ├── adapters/groq.py # GroqChatModel (optional extra)
 │       │   ├── testing.py       # test doubles for hosts
-│       │   └── cli.py           # shield-engine eval | train
+│       │   └── cli.py           # shield-engine train
 │       └── tests/
 │
 ├── apps/
-│   ├── api/                     # shield-api: FastAPI demo gateway (Python)
-│   │   ├── pyproject.toml       # deps: shield-engine[groq], fastapi, supabase, google-genai, …
+│   ├── api/                     # shield-api: FastAPI game gateway (Python)
+│   │   ├── pyproject.toml       # deps: shield-engine[groq], fastapi, supabase, google-genai, httpx, …
 │   │   ├── Dockerfile           # build from repo root
 │   │   ├── .env.example
 │   │   ├── src/shield_api/
-│   │   │   ├── main.py          # create_app(): CORS, routers, stream schemas in OpenAPI
+│   │   │   ├── main.py          # create_app(): CORS, routers, docs only in development
 │   │   │   ├── container.py     # composition root: builds adapters from Settings
 │   │   │   ├── settings.py      # environment configuration
-│   │   │   ├── schemas.py       # HTTP models + ChatEvent union (the contract)
-│   │   │   ├── dependencies.py  # ContainerDep
+│   │   │   ├── schemas.py       # HTTP models (the contract)
+│   │   │   ├── dependencies.py  # ContainerDep, ClearanceDep
 │   │   │   ├── openapi.py       # shield-api-export-openapi
-│   │   │   ├── routers/         # health, screening, chat, feedback, audit, clearance, game
-│   │   │   ├── services/        # chat.py, access.py, sessions.py, audit.py
-│   │   │   └── demo/            # assistant.py, tools.py (catalogue), gemini.py (adapter)
+│   │   │   ├── routers/         # health, auth, game, clearance
+│   │   │   ├── services/        # players.py, scores.py, sessions.py, clearance.py, sqlite.py
+│   │   │   └── providers/       # gemini.py (standard-tier agent), byok.py (custom sandbox)
 │   │   └── tests/
 │   │
 │   └── web/                     # @ai-shield/web: Nuxt 4 + Nuxt UI + Vue Flow client
-│       ├── nuxt.config.ts       # runtimeConfig.public.apiBaseUrl
+│       ├── nuxt.config.ts       # app.head defaults, runtimeConfig.public.{apiBaseUrl,siteUrl}
 │       ├── Dockerfile           # build from repo root
 │       ├── .env.example
+│       ├── public/              # twitter-card.png, twitter-card.svg, favicon.svg, robots.txt, sitemap.xml, llms.txt
 │       ├── app/
-│       │   ├── pages/           # index.vue (main menu + levels), game.vue (defence board), console/{index,logs,settings}.vue (/_console)
+│       │   ├── pages/           # index.vue (menu + levels), game.vue (board), plans.vue, settings.vue, auth/*, console/{index,settings}.vue (/_console)
 │       │   ├── layouts/         # dashboard.vue (UAuthForm-guarded layout for /_console)
-│       │   ├── middleware/      # console-redirect.global.ts (/dashboard -> /)
-│       │   ├── components/      # chat/, dashboard/, workflow/ (GameNode.vue, etc.)
-│       │   ├── composables/     # useShieldApi, useByodSecrets, usePassphrase, useSecurityMode, useShieldWorkflow
-│       │   ├── utils/           # gameBoard.ts, chatStream.ts, trace.ts, audit.ts
-│       │   └── types/           # api.gen.ts (generated), api.ts (aliases), workflow.ts
+│       │   ├── components/      # workflow/GameNode.vue
+│       │   ├── composables/     # useShieldApi, usePlayerAuth, useAdminAccess
+│       │   ├── utils/           # gameBoard.ts, customSandbox.ts, format.ts, seo.ts
+│       │   └── types/           # api.gen.ts (generated), api.ts (aliases)
 │       └── test/                # Vitest
 │
 ├── contracts/
@@ -78,12 +71,11 @@ ai-shield/
 ├── supabase/                    # `supabase init` project: config.toml, migrations/, seed.sql
 ├── compose.yaml                 # Docker Compose: api + web, SQLite volume
 ├── specs/                       # spec-driven development: README, _templates/, NNNN-slug/spec.md
-├── scripts/                     # new_spec.py, check_spec_coverage.py
-├── docs/                        # this documentation (Diátaxis)
-└── reports/                     # evaluation output (git-ignored)
+├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py
+└── docs/                        # this documentation (Diátaxis)
 ```
 
-Git-ignored runtime and local paths: `apps/api/var/` (feedback CSV), `reports/`,
+Git-ignored runtime and local paths: `apps/api/var/` (SQLite databases),
 `.env*` (except `.env.example`), `*.csv`, `*.pkl`, `company_document/`,
 `injection_dataset/`, `.claude/settings.local.json`.
 

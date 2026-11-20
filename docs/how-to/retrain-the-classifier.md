@@ -1,15 +1,16 @@
-# Retrain the Layer 1 classifier
+# Retrain the baseline classifier
 
-Use this when you change the training data for the bundled baseline
-(`packages/engine/src/shield_engine/models/baseline/`). Detection changes need a
-spec with before/after numbers ([Write a spec](write-a-spec.md)).
+The bundled baseline (`packages/engine/src/shield_engine/models/baseline/`) is
+the model behind the game's **Quick screen** check. Retraining it changes how
+every board with a Quick screen scores, so it needs a spec with before/after
+game scores ([Write a spec](write-a-spec.md)).
 
-## 1. Record the current numbers
+## 1. Record the current behaviour
 
-```bash
-mise run eval
-cp reports/eval-classifier.json reports/before.json
-```
+Run each level's wave against a fixed reference board (for example a board with
+only Input → Quick screen → final node) and note the `total_score`, attacks
+blocked and false alarms. A small pytest that calls `run_wave` with
+`load_baseline()` is the easiest way to get repeatable numbers.
 
 ## 2. Edit the training data
 
@@ -30,9 +31,8 @@ One JSON object per line:
 
 Rules:
 
-- Never copy or paraphrase rows from `data/seed/eval.jsonl` into the training
-  set. The evaluation set must stay held out
-  ([Evaluation methodology](../explanation/evaluation-methodology.md#dataset-hygiene)).
+- Never copy or paraphrase prompts from the game's level waves into the training
+  set, or Quick screen will look better than it is.
 - Keep the classes roughly balanced. The training code repeats the whole set
   20 times (`replicate=20`), so every row carries weight.
 
@@ -74,7 +74,7 @@ that `sklearn_version` matches the pinned range in the engine's
 Training is byte-for-byte reproducible: with the same data, seed and
 scikit-learn version, the `files` digests come out identical. If they change
 when you did not touch the data, a dependency version moved. Either way,
-compare behaviour with `mise run eval`.
+compare behaviour with step 5.
 
 ## Why the digests matter
 
@@ -91,18 +91,10 @@ joblib files are pickles, and loading a pickle can execute arbitrary code.
 
 Background: [ADR 0006](../explanation/decisions/0006-hash-verified-model-artifacts.md).
 
-## 5. Evaluate and compare
+## 5. Compare
 
-```bash
-mise run eval
-```
-
-Compare `reports/eval-classifier.json` with `reports/before.json`: precision,
-recall, F1, false-positive rate, abstention rate. Check that `dataset.sha256` is
-identical in both, or the comparison is invalid. With 40 evaluation rows, one
-example is 2.5 percentage points of accuracy; treat single-example moves as noise.
-
-Run the engine tests too. `ENG-CLS-007` pins the baseline's behaviour on three
+Repeat step 1 and record both sets of numbers in the spec. Run the engine
+tests too. `ENG-CLS-007` pins the baseline's behaviour on three
 known prompts:
 
 ```bash
@@ -112,8 +104,8 @@ mise run test:engine
 ## 6. Update the model card
 
 Update [`packages/engine/MODEL_CARD.md`](../../packages/engine/MODEL_CARD.md):
-the training data row (count, class balance), the evaluation table and date,
-and any new notable misses or limitations.
+the training data row (count, class balance), the date, and any new notable
+misses or limitations.
 
 ## 7. Commit
 
@@ -126,11 +118,6 @@ Commit together, in one commit:
 - `packages/engine/MODEL_CARD.md`
 - the spec with before/after numbers
 
-`reports/` is git-ignored; copy numbers into the spec rather than committing reports.
-
-## Reviewer feedback is separate
-
-Labels sent to `POST /api/v1/feedback` go to the feedback CSV (`FEEDBACK_PATH`)
-and nudge the running model with `partial_fit`. They do not change the bundled
-artifacts, and the nudged weights are not saved. To fold reviewed labels into
-the baseline, copy them into `train.jsonl` after checking them, then retrain.
+The player-trained **ML filter** node is separate: it trains a fresh model per
+board from the player's CSV (`POST /api/v1/game/train`) and never touches the
+bundled baseline.

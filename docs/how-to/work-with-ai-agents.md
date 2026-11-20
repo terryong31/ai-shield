@@ -14,7 +14,7 @@ use that setup.
 | [`.claude/settings.json`](../../.claude/settings.json) | Shared Claude Code permissions and hooks |
 | [`.claude/hooks/format.sh`](../../.claude/hooks/format.sh) | Formats each file after the agent edits it |
 | `.claude/agents/` | Subagents: `spec-reviewer`, `test-author`, `code-reviewer` |
-| `.claude/skills/` | Skills: `new-spec`, `tdd`, `run-eval` |
+| `.claude/skills/` | Skills: `new-spec`, `tdd` |
 
 Personal overrides go in `.claude/settings.local.json`, which is git-ignored.
 
@@ -60,7 +60,6 @@ specs/0009-sensitive-keyword-password/spec.md."
 | --- | --- | --- |
 | `/new-spec` | A behaviour change is requested and no spec covers it | Checks for an existing spec, runs `mise run spec:new`, reads the affected code, drafts `spec.md` (status stays `Draft`), adds the index row, runs `spec-reviewer`, then **stops** for human approval |
 | `/tdd` | Implementing an `Accepted` spec | Drives the enforced cycle: `sdd:start`, tagged tests (itself or via `test-author`), `sdd:red`, code, `sdd:green`, docs, `sdd:verify`, `code-reviewer`, `sdd:done` |
-| `/run-eval` | A change may affect detection quality | Runs `mise run eval` before and after, optionally the full pipeline (asks first; costs money), compares metrics, checks dataset digests match, updates the model card and spec |
 
 ## The loop
 
@@ -86,7 +85,7 @@ flowchart LR
 ```
 
 1. **Request.** Describe the problem, not the solution: "Prompts asking for
-   passwords pass Layer 1 as SAFE. They should be reviewed."
+   passwords pass Quick screen as safe. They should be flagged suspicious."
 2. **Draft.** Run `/new-spec`. The agent scaffolds the spec, fills it from the
    code and runs `spec-reviewer`. It cannot mark the spec accepted.
 3. **Accept.** Read the spec, answer its open questions, and change

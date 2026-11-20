@@ -1,23 +1,30 @@
+import asyncio
+import contextlib
+import json
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import asdict
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 
 from shield_api.container import Container
-from shield_api.demo.byok import ProviderAuthError
 from shield_api.dependencies import PLAYER_SESSION_COOKIE, ClearanceDep, ContainerDep
+from shield_api.providers.byok import ProviderAuthError
 from shield_api.schemas import (
     BoardGraphSchema,
     CheckDefinitionSchema,
+    DifficultyLeaderboardEntry,
     GameCatalogResponse,
     GameLevelSchema,
     GameRunRequest,
     GameRunResponse,
     GameTrainRequest,
     GameTrainResponse,
-    LevelId,
     MessageTraceSchema,
+    PlayerProgressResponse,
     PlayerSessionStatus,
     RunLevelId,
     SavedBoardRequest,
@@ -26,8 +33,13 @@ from shield_api.schemas import (
     ScoreRecord,
     WaveScoreSchema,
 )
+from shield_api.services.clearance import Clearance
 from shield_api.services.players import AI_AGENT_NODE_KINDS, QuotaExceededError
-from shield_engine import Clearance
+from shield_api.services.scores import (
+    RedisCachedScoreStore,
+    aggregate_difficulty_leaderboard,
+    build_player_progress,
+)
 from shield_engine.game import (
     AgentProfile,
     AgentTool,
@@ -36,6 +48,8 @@ from shield_engine.game import (
     BoardGraph,
     BoardNode,
     BoardValidationError,
+    DifficultyCategory,
+    LevelId,
     get_check_catalog,
     get_level,
     get_levels,
@@ -43,6 +57,7 @@ from shield_engine.game import (
     run_wave,
     train_custom_classifier,
     validate_board,
+    validate_board_for_level,
 )
 from shield_engine.game.custom import (
     build_custom_messages,
@@ -50,6 +65,7 @@ from shield_engine.game.custom import (
     run_custom_wave,
     validate_custom_profile,
 )
+from shield_engine.ports import JevClient, UsageChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +90,16 @@ def _to_engine_board(schema: BoardGraphSchema) -> BoardGraph:
 
 
 @router.get("/levels")
-async def list_game_levels() -> GameCatalogResponse:
+async def list_game_levels(container: ContainerDep) -> GameCatalogResponse:
     """Return built-in levels and placeable check definitions."""
     levels = [GameLevelSchema.model_validate(asdict(lvl)) for lvl in get_levels()]
     checks = [CheckDefinitionSchema.model_validate(asdict(chk)) for chk in get_check_catalog()]
-    return GameCatalogResponse(levels=levels, checks=checks)
+    return GameCatalogResponse(
+        levels=levels,
+        checks=checks,
+        jev_key_configured=container.jev_client is not None,
+        ai_key_configured=bool(container.game_agent or container.game_agents),
+    )
 
 
 @router.post(
@@ -109,15 +130,31 @@ async def run_game_board(
     if uses_ai_nodes and not player.ai_nodes_allowed:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            "Sign in required to use AI agent nodes (safety_check, agent_review).",
+            "Sign in required to use AI agent nodes (safety_check, llm_review).",
         )
 
+    jev_client = container.jev_client
+    check_model = container.game_agent
+
     if body.level_id == "custom":
-        return await _run_custom(body, board, player, container)
+        return await _run_custom(
+            body, board, player, container, jev_client=jev_client, check_model=check_model
+        )
+
+    level = get_level(body.level_id)
+    if level.tier == "pro" and player.tier != "paid":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Upgrade to a Pro plan to play this campaign level.",
+        )
+    try:
+        validate_board_for_level(board, level)
+    except BoardValidationError as err:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
 
     is_custom_test = body.custom_message is not None
     # A classification-only level calls no model, so it costs no quota (spec 0021).
-    counts_quota = get_level(body.level_id).agent is not None
+    counts_quota = level.agent is not None
     if counts_quota:
         try:
             player = await container.players.check_run(token, is_custom_test=is_custom_test)
@@ -133,6 +170,9 @@ async def run_game_board(
                 classifier=container.classifier,
                 agent=container.game_agent,
                 agents=container.game_agents,
+                jev_client=jev_client,
+                check_model=check_model,
+                check_model_for=container.check_model_for,
             )
         else:
             result = await run_wave(
@@ -141,10 +181,18 @@ async def run_game_board(
                 classifier=container.classifier,
                 agent=container.game_agent,
                 agents=container.game_agents,
+                jev_client=jev_client,
+                check_model=check_model,
+                check_model_for=container.check_model_for,
             )
     except BoardValidationError as err:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
     except AgentUnavailableError as err:
+        cause = err.__cause__
+        if isinstance(cause, ProviderAuthError):
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY, "The model provider rejected the API key."
+            ) from None
         logger.exception("Game AI Agent model failed; run not counted")
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -162,7 +210,7 @@ async def run_game_board(
     # Simulated agent runs are practice; live and model-free (Easy) runs are recorded.
     recordable = result.agent_mode in ("live", "none")
     if not is_custom_test and player.can_record_scores and recordable:
-        await container.audit_log.record_score(
+        await container.scores.record_score(
             ScoreCreateRequest(
                 player_name=player.player_name,
                 level_id=body.level_id,
@@ -174,8 +222,13 @@ async def run_game_board(
                 avg_latency_ms=score_schema.avg_latency_ms,
                 total_cost_usd=score_schema.total_cost_usd,
                 board=body.board,
-            )
+                won=score_schema.won,
+                mastered=score_schema.follow_up_passed,
+            ),
+            email=player.email,
         )
+        if not isinstance(container.scores, RedisCachedScoreStore):
+            await container.leaderboard_notifier.publish(level_id=body.level_id, reason="recorded")
 
     return GameRunResponse(
         level_id=result.level_id,
@@ -190,6 +243,9 @@ async def _run_custom(
     board: BoardGraph,
     player: PlayerSessionStatus,
     container: Container,
+    *,
+    jev_client: JevClient | None = None,
+    check_model: UsageChatModel | None = None,
 ) -> GameRunResponse:
     """Custom sandbox (spec 0022): the player's agent, dataset and key, for paid players.
 
@@ -227,6 +283,8 @@ async def _run_custom(
                 message=body.custom_message,
                 agent=model,
                 classifier=container.classifier,
+                jev_client=jev_client,
+                check_model=check_model or model,
             )
         else:
             result = await run_custom_wave(
@@ -235,6 +293,8 @@ async def _run_custom(
                 messages=messages,
                 agent=model,
                 classifier=container.classifier,
+                jev_client=jev_client,
+                check_model=check_model or model,
             )
     except AgentUnavailableError as err:
         cause = err.__cause__
@@ -262,13 +322,41 @@ SIGN_IN_TO_SAVE = "Sign in to save your board."
 
 
 async def _saving_email(request: Request, container: Container, level_id: RunLevelId) -> str:
-    """The signed-in player's email that keys the save; custom needs a paid plan (spec 0023)."""
+    """The signed-in player's email that keys the save; custom/pro need paid (spec 0023, 0039)."""
     player = await container.players.lookup(request.cookies.get(PLAYER_SESSION_COOKIE))
     if not player.authenticated or player.is_anonymous or not player.email:
         raise HTTPException(status.HTTP_403_FORBIDDEN, SIGN_IN_TO_SAVE)
     if level_id == "custom" and player.tier != "paid":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Custom mode is for paid players.")
+    if level_id != "custom" and get_level(level_id).tier == "pro" and player.tier != "paid":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Upgrade to a Pro plan to play or save this campaign level.",
+        )
     return player.email
+
+
+def _upgrade_legacy_save(save: dict[str, Any]) -> dict[str, Any]:
+    """Migrate retired ``quick_screen`` nodes in saved boards to ``ml_classifier`` (tfidf)."""
+    board = save.get("board")
+    if not isinstance(board, dict):
+        return save
+    raw_nodes = board.get("nodes")
+    if not isinstance(raw_nodes, list):
+        return save
+    changed = False
+    upgraded_nodes: list[Any] = []
+    for node in raw_nodes:
+        if isinstance(node, dict) and node.get("kind") == "quick_screen":
+            cfg = node.get("config")
+            merged_cfg = {"algorithm": "tfidf", **(cfg if isinstance(cfg, dict) else {})}
+            upgraded_nodes.append({**node, "kind": "ml_classifier", "config": merged_cfg})
+            changed = True
+        else:
+            upgraded_nodes.append(node)
+    if not changed:
+        return save
+    return {**save, "board": {**board, "nodes": upgraded_nodes}}
 
 
 @router.get(
@@ -287,9 +375,14 @@ async def get_saved_board(
     if found is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No board saved for this level.")
     save, updated_at = found
-    return SavedBoardResponse.model_validate(
-        {**save, "level_id": level_id, "updated_at": updated_at}
-    )
+    try:
+        return SavedBoardResponse.model_validate(
+            {**_upgrade_legacy_save(save), "level_id": level_id, "updated_at": updated_at}
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "No compatible board saved for this level."
+        ) from exc
 
 
 @router.put(
@@ -330,7 +423,75 @@ async def list_game_scores(
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> list[ScoreRecord]:
     """List top scoreboard records ordered by score, speed, and cost."""
-    return await container.audit_log.list_scores(level_id=level_id, limit=limit)
+    return await container.scores.list_scores(level_id=level_id, limit=limit)
+
+
+@router.get("/leaderboard")
+async def get_difficulty_leaderboard(
+    container: ContainerDep,
+    difficulty: DifficultyCategory | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> list[DifficultyLeaderboardEntry]:
+    """Aggregate each player's best scores across all levels in a difficulty category."""
+    owned_scores = await container.scores.list_all_current_scores()
+    return aggregate_difficulty_leaderboard(owned_scores, difficulty=difficulty, limit=limit)
+
+
+@router.get("/progress")
+async def get_player_progress(request: Request, container: ContainerDep) -> PlayerProgressResponse:
+    """Return the authenticated player's per-level status and difficulty summaries."""
+    player = await container.players.lookup(request.cookies.get(PLAYER_SESSION_COOKIE))
+    if not player.authenticated or player.is_anonymous or not player.email:
+        return build_player_progress([])
+    owned = await container.scores.list_scores_for_owner(player.email)
+    return build_player_progress(owned)
+
+
+_STREAM_KEEPALIVE_SECONDS = 25.0
+
+
+@router.get("/scores/stream")
+async def stream_game_scores(request: Request, container: ContainerDep) -> StreamingResponse:
+    """Stream real-time leaderboard update notifications via Server-Sent Events."""
+
+    async def event_stream() -> AsyncIterator[str]:
+        subscription = container.leaderboard_notifier.subscribe()
+        pending: asyncio.Task[dict[str, str | None]] | None = None
+
+        async def next_event() -> dict[str, str | None]:
+            return await anext(subscription)
+
+        try:
+            while not await request.is_disconnected():
+                if pending is None:
+                    pending = asyncio.create_task(next_event())
+                done, _ = await asyncio.wait({pending}, timeout=_STREAM_KEEPALIVE_SECONDS)
+                if pending in done:
+                    try:
+                        event = pending.result()
+                    except StopAsyncIteration:
+                        pending = None
+                        return
+                    pending = None
+                    yield f"event: leaderboard\ndata: {json.dumps(event)}\n\n"
+                else:
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            return
+        finally:
+            if pending is not None and not pending.done():
+                pending.cancel()
+                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                    await pending
+            aclose = getattr(subscription, "aclose", None)
+            if callable(aclose):
+                await aclose()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
@@ -348,7 +509,10 @@ async def create_game_score(
             status.HTTP_403_FORBIDDEN,
             "Sign in required to record leaderboard scores.",
         )
-    return await container.audit_log.record_score(body)
+    record = await container.scores.record_score(body, email=player.email)
+    if not isinstance(container.scores, RedisCachedScoreStore):
+        await container.leaderboard_notifier.publish(level_id=body.level_id, reason="recorded")
+    return record
 
 
 @router.delete(
@@ -360,7 +524,9 @@ async def clear_game_scores(clearance: ClearanceDep, container: ContainerDep) ->
     """Clear scoreboard records. Requires an active admin clearance session."""
     if clearance is not Clearance.GRANTED:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Admin access required.")
-    await container.audit_log.clear_scores()
+    await container.scores.clear_scores()
+    if not isinstance(container.scores, RedisCachedScoreStore):
+        await container.leaderboard_notifier.publish(level_id=None, reason="cleared")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

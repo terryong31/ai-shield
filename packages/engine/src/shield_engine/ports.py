@@ -6,11 +6,11 @@ methods works: no inheritance, no registration, trivial test doubles.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from shield_engine.types import Adjudication, Clearance, DialogueTurn, ModerationResult, Signal
+from shield_engine.types import Signal
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,29 +52,28 @@ class UsageChatModel(Protocol):
     ) -> ChatCompletion: ...
 
 
-class FeedbackStore(Protocol):
-    """Human-reviewed labels keyed by exact prompt text (1 = malicious)."""
-
-    def lookup(self, text: str) -> int | None: ...
-
-    def record(self, text: str, label: int) -> None: ...
-
-
 class Classifier(Protocol):
-    """Layer 1: fast, local, synchronous scoring."""
+    """Fast, local, synchronous scoring (the game's ML filter)."""
 
     def score(self, text: str) -> Signal: ...
 
 
-class Moderator(Protocol):
-    """Optional independent safety check that can only escalate."""
+@dataclass(frozen=True, slots=True)
+class JevEvaluation:
+    """Result of evaluating a boolean ``noul`` question against TypeSafe's System One model."""
 
-    async def moderate(self, text: str) -> ModerationResult: ...
+    probability: float
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
-class Adjudicator(Protocol):
-    """Layer 2: yields dialogue turns as they happen, then one Adjudication."""
+class JevClient(Protocol):
+    """System One fast decision engine (TypeSafe Jev ``/v1/systemone``)."""
 
-    def adjudicate(
-        self, prompt: str, clearance: Clearance
-    ) -> AsyncIterator[DialogueTurn | Adjudication]: ...
+    async def evaluate_noul(
+        self,
+        state: str,
+        question: str,
+        *,
+        model: str = "jev-latest",
+    ) -> JevEvaluation: ...

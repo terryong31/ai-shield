@@ -33,7 +33,7 @@ and [docs/tutorials/03-your-first-spec-driven-change.md](docs/tutorials/03-your-
 - The engine never imports web frameworks or databases, and never reads env vars.
 - The web client uses only the generated contract types.
 - No secrets in prompts, logs or audit records.
-- Detection changes include before/after `mise run eval` numbers.
+- Scoring or classifier changes include before/after game scores.
 - Never weaken a test to make it pass.
 
 The full list is in [AGENTS.md](AGENTS.md), which humans and AI agents share.
@@ -47,5 +47,5 @@ The full list is in [AGENTS.md](AGENTS.md), which humans and AI agents share.
 ## AI-assisted contributions
 
 Welcome, under the same rules. Agents read `AGENTS.md`; Claude Code users also
-get project skills (`/new-spec`, `/tdd`, `/run-eval`) and reviewer subagents.
+get project skills (`/new-spec`, `/tdd`) and reviewer subagents.
 The human author is responsible for every line they submit.

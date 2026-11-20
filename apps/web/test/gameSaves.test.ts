@@ -15,7 +15,7 @@ const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
 
 function wiredBoard() {
-  const withFilter = addCheckNode(createStarterBoard('medium'), 'word_filter', { x: 300, y: 140 })
+  const withFilter = addCheckNode(createStarterBoard('medium-1'), 'word_filter', { x: 300, y: 140 })
   const wiredIn = connectBoardEdge(withFilter, { source: 'incoming', sourceHandle: 'out', target: 'word_filter' })
   return connectBoardEdge(wiredIn, { source: 'word_filter', sourceHandle: 'safe', target: 'assistant' })
 }
@@ -51,7 +51,7 @@ describe('saved boards (spec 0023)', () => {
 
   it('[WEB-SAVE-002] restores a save with positions, falls back to the starter board and never restores a key', () => {
     const save = saveFromBoard(wiredBoard())
-    const restored = boardFromSave(save, 'medium')
+    const restored = boardFromSave(save, 'medium-1')
     expect(restored).not.toBeNull()
     expect(restored?.nodes.find(n => n.id === 'word_filter')?.position).toEqual({ x: 300, y: 140 })
     expect(restored?.nodes.find(n => n.id === 'assistant')?.data?.label).toBe('Protected Agent')
@@ -62,8 +62,8 @@ describe('saved boards (spec 0023)', () => {
     expect(boardSignature(restored!)).toBe(boardSignature(wiredBoard()))
 
     const retired = { ...save, board: { ...save.board, nodes: [...save.board.nodes, { id: 'old', kind: 'blocked' as never, config: {} }] } }
-    expect(boardFromSave(retired, 'medium')).toBeNull()
-    expect(boardFromSave({ ...save, board: { nodes: [], edges: [] } }, 'medium')).toBeNull()
+    expect(boardFromSave(retired, 'medium-1')).toBeNull()
+    expect(boardFromSave({ ...save, board: { nodes: [], edges: [] } }, 'medium-1')).toBeNull()
 
     const rows = [
       { text: 'Where is order 1, please?', label: 'normal' as const, expected_tool: 'lookup_order' },
@@ -76,5 +76,30 @@ describe('saved boards (spec 0023)', () => {
     expect(game).toContain('boardFromSave(')
     expect(game).toContain('Your saved board could not be loaded')
     expect(game).not.toMatch(/customApiKey\.value\s*=\s*(?!'')/)
+  })
+
+  it('[WEB-SAVE-003] skips quit confirmation when there are no unsaved changes and prompts only on unsaved edits', () => {
+    const game = read('pages', 'game.vue')
+    expect(game).toContain('handleReturnClick')
+    expect(game).toContain('@click="handleReturnClick"')
+    expect(game).not.toContain('@click="isQuitModalOpen = true"')
+
+    const returnBlock = game.slice(game.indexOf('const handleReturnClick'), game.indexOf('const confirmQuitToMenu'))
+    expect(returnBlock).toContain('hasUnsavedChanges')
+    expect(returnBlock).toContain('goBack(\'/\')')
+    expect(returnBlock).toContain('isQuitModalOpen.value = true')
+  })
+
+  it('[WEB-SAVE-004] parallelizes mount fetches, caches saved boards, and shows a loading overlay over the canvas', () => {
+    const game = read('pages', 'game.vue')
+    expect(game).toContain('useSavedBoardCache')
+    expect(game).toContain('isLoadingBoard')
+    expect(game).toContain('Loading workflow...')
+    // Collapse button must sit above the z-30 canvas loading overlay, and no white Controls widget renders on canvas.
+    expect(game).toContain('absolute top-1/2 z-40')
+    expect(game).not.toContain('<Controls')
+    expect(game).not.toContain('@vue-flow/controls')
+    const mountBlock = game.slice(game.indexOf('onMounted('), game.indexOf('</script>'))
+    expect(mountBlock).toContain('Promise.all(')
   })
 })

@@ -13,7 +13,6 @@ async def health(container: ContainerDep) -> HealthResponse:
         service=container.settings.PROJECT_NAME,
         version=container.settings.VERSION,
         model_loaded=container.classifier is not None,
-        moderation_enabled=container.shield.moderator is not None,
-        adjudication_enabled=container.shield.adjudicator is not None,
-        audit_backend=container.audit_log.backend,
+        agent_tiers=sorted(container.game_agents),
+        storage_backend=container.scores.backend,
     )

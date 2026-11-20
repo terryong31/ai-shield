@@ -1,6 +1,6 @@
 # 0001 — Screening pipeline
 
-- **Status:** Implemented
+- **Status:** Superseded by 0026
 - **Area:** ENG
 - **Created:** 2026-09-23
 - **Related:** [ADR 0002](../../docs/explanation/decisions/0002-engine-gateway-split.md), specs 0002–0005

@@ -5,5 +5,10 @@
   "workspaces": [
     "apps/web"
   ],
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "overrides": {
+    "esbuild": "^0.28.2",
+    "glob": "^14.0.5",
+    "minimatch": "^11.0.8"
+  }
 }

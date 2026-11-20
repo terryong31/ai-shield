@@ -63,18 +63,18 @@ function trace(hops: Array<[string, MessageTraceSchema['hops'][number]['handle']
 }
 
 function boardWithFilter() {
-  const withFilter = addCheckNode(createStarterBoard('easy'), 'word_filter', { x: 240, y: 120 })
+  const withFilter = addCheckNode(createStarterBoard('easy-1'), 'word_filter', { x: 240, y: 120 })
   const wiredIn = connectBoardEdge(withFilter, { source: 'incoming', sourceHandle: 'out', target: 'word_filter' })
   return connectBoardEdge(wiredIn, { source: 'word_filter', sourceHandle: 'safe', target: 'assistant' })
 }
 
 describe('game AI agent (spec 0020)', () => {
   it('[WEB-AGENT-001] starts every level with only Input and AI Agent nodes', () => {
-    for (const level of ['easy', 'medium', 'hard'] as const) {
+    for (const level of ['easy-1', 'medium-1', 'hard-1'] as const) {
       const board = createStarterBoard(level)
       expect(board.nodes.map(n => n.data?.kind)).toEqual(['incoming', 'assistant'])
       // Easy ends at a Help Desk instead (WEB-LEVEL-001, spec 0021)
-      expect(board.nodes.find(n => n.id === 'assistant')?.data?.label).toBe(level === 'easy' ? 'Help Desk' : 'Protected Agent')
+      expect(board.nodes.find(n => n.id === 'assistant')?.data?.label).toBe(level.startsWith('easy-') ? 'Help Desk' : 'Protected Agent')
     }
     expect(Object.keys(NODE_CATALOG)).not.toContain('blocked')
     expect(read('pages', 'game.vue')).not.toContain('\'blocked\'')
@@ -98,7 +98,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(agentRulesFrom({ rules: ['keep', 3, 'also'] })).toEqual(['keep', 'also'])
     expect(agentRulesFrom({})).toEqual([])
 
-    const board = createStarterBoard('easy')
+    const board = createStarterBoard('easy-1')
     const withRules = {
       ...board,
       nodes: board.nodes.map(n => n.id === 'assistant' && n.data
@@ -175,7 +175,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(header).not.toContain('scoreBreakdown')
     expect(header).not.toContain('avg_latency_ms')
     expect(header).not.toContain('total_cost_usd')
-    expect(header).toMatch(/label="Results"[^>]*?size="lg"/)
+    expect(header).toMatch(/label="Results"[^>]*?size="md"/)
     expect(header).toMatch(/<UInputRating[\s\S]*?readonly[\s\S]*?\/>/)
 
     expect(results).toContain('scoreBreakdown(waveScore, currentLevelId)')
@@ -218,16 +218,25 @@ describe('game AI agent (spec 0020)', () => {
     const start = gameSource.indexOf('v-model:open="isBreakdownOpen"')
     const breakdown = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
 
-    expect(gameSource).toMatch(/const breakdownAccordionItems = \[\{ label: 'Points', value: 'points'/)
+    expect(gameSource).toMatch(/const breakdownAccordionItems = \[\{ label: 'Score breakdown', value: 'points'/)
     expect(breakdown).toMatch(/<UAccordion[\s\S]*?:items="breakdownAccordionItems"[\s\S]*?#body[\s\S]*?scoreBreakdown\(waveScore, currentLevelId\)/)
     expect(breakdown).not.toMatch(/<UAccordion[^>]*default-value/)
     expect(breakdown).toContain('(row.points || 0).toLocaleString()')
     expect(breakdown).toMatch(/<\/UAccordion>\s*<div[\s\S]*?Prompt outcomes/)
     expect(breakdown).not.toContain('border-t border-default pt-4')
     expect(breakdown).not.toContain('<USeparator')
-    expect(breakdown).toContain('Click a cell to see its prompts.')
+    expect(breakdown).toMatch(/<UTooltip text="Click a cell to see the prompts">/)
     for (const icon of ['i-lucide-timer', 'i-lucide-coins', 'i-lucide-cpu']) expect(breakdown).toContain(icon)
-    expect(breakdown).toMatch(/v-for="cell in resultCells"[\s\S]*?:name="cell\.icon"/)
+  })
+
+  it('[WEB-AGENT-022] lists only the prompt text in a matrix cell modal', () => {
+    const gameSource = read('pages', 'game.vue')
+    const start = gameSource.indexOf('v-model:open="isResultCellOpen"')
+    const cellModal = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
+
+    expect(cellModal).toMatch(/v-for="item in selectedResultCell\.items"[\s\S]*?\{\{ item\.text \}\}/)
+    expect(cellModal).not.toContain('lastHopDetail')
+    expect(gameSource).not.toContain('lastHopDetail')
   })
 
   it('[WEB-AGENT-018] leads Run results with stars, score and New record, and opens the breakdown and each matrix cell in modals', () => {
@@ -252,7 +261,6 @@ describe('game AI agent (spec 0020)', () => {
     expect(gameSource).toContain('title="Score breakdown"')
     expect(gameSource).toContain('v-model:open="isResultCellOpen"')
     expect(gameSource).toMatch(/v-for="item in selectedResultCell\.items"/)
-    expect(gameSource).toContain('lastHopDetail(item)')
     expect(gameSource).toMatch(/newRecord\.value = isNewRecord\(highScore\.value, response\.score\.total_score\)/)
   })
 
@@ -447,7 +455,7 @@ describe('game AI agent (spec 0020)', () => {
     for (const [kind, meta] of Object.entries(NODE_CATALOG)) {
       expect(meta.handles, kind).not.toContain('block')
     }
-    expect(NODE_CATALOG.quick_screen.handles).toEqual(['safe', 'suspicious'])
+    expect(NODE_CATALOG.ml_classifier.handles).toEqual(['safe', 'suspicious'])
 
     const legacy = {
       board: {
@@ -464,7 +472,7 @@ describe('game AI agent (spec 0020)', () => {
       positions: {},
       custom: null
     }
-    expect(boardFromSave(legacy, 'medium')?.edges.map(e => e.sourceHandle)).toEqual(['out'])
+    expect(boardFromSave(legacy, 'medium-1')?.edges.map(e => e.sourceHandle)).toEqual(['out'])
 
     const gameSource = read('pages', 'game.vue')
     const nodeModal = gameSource.slice(gameSource.indexOf('<!-- Double-Click Node Settings Modal -->'))

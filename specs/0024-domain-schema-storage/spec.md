@@ -89,6 +89,10 @@ None. `packages/engine` is untouched.
 
 None.
 
+## Retired by 0026
+
+`audit.requests` was dropped (migration `20261108213955_drop_audit_requests.sql`), so the parts of API-SCHEMA-001, -002, -003 and -006 that mention it, the request methods of the score store and the seed rows no longer apply. The `audit` schema keeps `audit.clearance_sessions`; `SupabaseAuditLog`/`SqliteAuditLog` are now `SupabaseScoreStore`/`SqliteScoreStore` and `container.audit_log` is `container.scores`.
+
 ## Verification
 
 _Filled in by `mise run sdd:done`._

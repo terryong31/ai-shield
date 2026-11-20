@@ -2,8 +2,9 @@
 
 In this tutorial you will make a small change to the engine the way this
 project makes every change: spec first, then a failing test, then the code.
-You will teach the Layer 1 classifier that prompts mentioning "password" are
-sensitive, so they are reviewed by Layer 2 instead of passing straight through.
+You will teach the baseline classifier behind the game's **Quick screen** check
+that prompts mentioning "password" are sensitive, so Quick screen sends them to
+its `suspicious` output instead of waving them through as `safe`.
 
 You need the repository set up as in [Tutorial 1](01-run-the-demo.md), steps 1
 to 3. Work on a branch so you can throw the change away afterwards:
@@ -23,12 +24,13 @@ print(load_baseline().score('How do I reset the admin password?'))"
 ```
 
 You should see a `SAFE` verdict with a score of about 0.11 and
-`sensitive_floor_applied: False`. With default settings, a `SAFE` prompt from
-a caller without clearance never reaches Layer 2, and gets `ALLOW_ALL` tools.
+`sensitive_floor_applied: False`. With its default `safe_threshold` of 0.30,
+Quick screen sends that prompt straight to `safe`.
 
 The classifier already has a safety net for this: a list of sensitive keywords
 (`salary`, `database`, `confidential`, …). A low score on a prompt that mentions
-one is raised to 0.40, which is `UNCERTAIN`, so Layer 2 reviews it. "password"
+one is raised to 0.40, which is `UNCERTAIN` and lands on Quick screen's
+`suspicious` output, where a player can route it to a stricter check. "password"
 is not on the list. That is the change you will make.
 
 ## 2. Scaffold a spec
@@ -70,13 +72,12 @@ the sections. Keep it short:
 
 ## Problem
 
-"How do I reset the admin password?" scores 0.11 (SAFE) on the baseline, so it
-bypasses Layer 2 and receives ALLOW_ALL tools. Credential requests should be
-reviewed.
+"How do I reset the admin password?" scores 0.11 (SAFE) on the baseline, so
+Quick screen passes it as `safe`. Credential requests should be reviewed.
 
 ## Goals
 
-- Prompts that mention "password" are routed to Layer 2 when Layer 1 scores them low.
+- Prompts that mention "password" reach Quick screen's `suspicious` output when the classifier scores them low.
 
 ## Non-goals
 
@@ -93,12 +94,13 @@ reviewed.
 
 ## Security & privacy considerations
 
-More benign prompts reach Layer 2 (cost, latency). The floor can only raise
-scores, so no prompt becomes less likely to be blocked.
+More benign prompts land on `suspicious`. The floor can only raise scores, so
+no prompt becomes less likely to be blocked.
 
 ## Evaluation impact
 
-Abstention on `mise run eval` may rise slightly. Record before/after numbers.
+Boards that route `suspicious` to a block may gain false alarms on prompts that
+mention passwords. Record a reference board's wave scores before and after.
 
 ## Open questions
 
@@ -214,25 +216,11 @@ mise run test:engine
 
 ## 7. Measure the effect
 
-This change affects detection, so the spec asks for before/after numbers. Run
-the evaluation:
-
-```bash
-mise run eval
-```
-
-Compare the printed line with the baseline in the
-[model card](../../packages/engine/MODEL_CARD.md#evaluation). You should see
-precision, recall, F1 and false-positive rate unchanged, and `abstain` rise from
-0.375 to 0.400:
-
-```
-n=40  precision=1.000  recall=0.550  f1=0.710  fpr=0.000  abstain=0.400  p50=0.13ms
-```
-
-(Latency varies by machine.) One benign prompt in the evaluation set, "How do I
-reset my own password on the HR portal?", is now sent to Layer 2. That is the
-cost the spec predicted. Paste the before and after lines into the spec's
+This change affects how boards score, so the spec asks for before and after
+numbers. Run a level's wave against a fixed board with a Quick screen, for
+example from a short pytest that calls `run_wave(board, level_id="easy",
+classifier=load_baseline())`, once on `main` and once on your branch, and paste
+both `total_score`, attacks blocked and false alarms into the spec's
 "Evaluation impact" section.
 
 ## 8. Run the full gate

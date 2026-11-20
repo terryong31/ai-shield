@@ -36,7 +36,7 @@ def _board(*, with_blocked: bool = False) -> dict:
 
 def _wave(harness: Harness) -> int:
     response = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "medium", "board": _board()}
+        "/api/v1/game/run", json={"level_id": "medium-1", "board": _board()}
     )
     return response.status_code
 
@@ -44,7 +44,7 @@ def _wave(harness: Harness) -> int:
 def _test(harness: Harness, n: int) -> int:
     response = harness.client.post(
         "/api/v1/game/run",
-        json={"level_id": "medium", "board": _board(), "custom_message": f"question {n}"},
+        json={"level_id": "medium-1", "board": _board(), "custom_message": f"question {n}"},
     )
     return response.status_code
 
@@ -52,7 +52,7 @@ def _test(harness: Harness, n: int) -> int:
 def _register(harness: Harness, email: str) -> None:
     res = harness.client.post(
         "/api/v1/auth/register",
-        json={"email": email, "password": "password123", "player_name": email.split("@")[0]},
+        json={"email": email, "password": "Password123", "player_name": email.split("@")[0]},
     )
     assert res.status_code == 200
 
@@ -77,7 +77,7 @@ async def test_daily_limits_are_one_five_and_three_hundred_waves_by_tier(
     assert [_wave(harness) for _ in range(6)] == [200] * 5 + [429]
     assert [_test(harness, n) for n in range(21)] == [200] * 20 + [429]
     limited = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "medium", "board": _board()}
+        "/api/v1/game/run", json={"level_id": "medium-1", "board": _board()}
     )
     assert "Upgrade" in limited.json()["detail"]
 
@@ -101,7 +101,7 @@ def test_provider_failure_returns_503_without_consuming_quota_or_recording(
     _register(harness, "ada@example.com")
 
     response = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "medium", "board": _board()}
+        "/api/v1/game/run", json={"level_id": "medium-1", "board": _board()}
     )
     assert response.status_code == 503
 
@@ -118,14 +118,14 @@ def test_only_live_agent_runs_are_recorded_on_the_leaderboard(
     _register(harness, "grace@example.com")
 
     simulated = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "medium", "board": _board()}
+        "/api/v1/game/run", json={"level_id": "medium-1", "board": _board()}
     )
     assert simulated.status_code == 200
     assert simulated.json()["agent_mode"] == "simulated"
     assert harness.client.get("/api/v1/game/scores").json() == []
 
     harness.container.game_agent = ScriptedUsageChatModel(replies=[], default=HELPFUL)
-    live = harness.client.post("/api/v1/game/run", json={"level_id": "medium", "board": _board()})
+    live = harness.client.post("/api/v1/game/run", json={"level_id": "medium-1", "board": _board()})
     assert live.status_code == 200
     assert live.json()["agent_mode"] == "live"
     scores = harness.client.get("/api/v1/game/scores").json()
@@ -148,7 +148,7 @@ def test_levels_expose_agent_profile_and_runs_return_agent_results(harness: Harn
     assert "CANARY" not in levels.text.upper()
 
     harness.container.game_agent = ScriptedUsageChatModel(replies=[], default=HELPFUL)
-    run = harness.client.post("/api/v1/game/run", json={"level_id": "medium", "board": _board()})
+    run = harness.client.post("/api/v1/game/run", json={"level_id": "medium-1", "board": _board()})
     assert run.status_code == 200
     body = run.json()
     assert body["agent_mode"] == "live"
@@ -181,7 +181,7 @@ def test_levels_expose_agent_profile_and_runs_return_agent_results(harness: Harn
 def test_board_with_retired_blocked_node_is_rejected_with_422(harness: Harness) -> None:
     response = harness.client.post(
         "/api/v1/game/run",
-        json={"level_id": "medium", "board": _board(with_blocked=True)},
+        json={"level_id": "medium-1", "board": _board(with_blocked=True)},
     )
     assert response.status_code == 422
     assert (
