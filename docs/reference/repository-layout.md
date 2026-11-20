@@ -53,7 +53,7 @@ ai-shield/
 │   │   └── tests/
 │   │
 │   └── web/                     # @ai-shield/web: Nuxt 4 + Nuxt UI + Vue Flow client
-│       ├── nuxt.config.ts       # app.head defaults, runtimeConfig.public.{apiBaseUrl,siteUrl}
+│       ├── nuxt.config.ts       # app.head defaults, runtimeConfig.apiProxyTarget, runtimeConfig.public.siteUrl
 │       ├── Dockerfile           # build from repo root
 │       ├── .env.example
 │       ├── public/              # twitter-card.png, twitter-card.svg, favicon.svg, robots.txt, sitemap.xml, llms.txt

@@ -12,6 +12,6 @@ FROM node:24-slim
 WORKDIR /app
 COPY --from=build /repo/apps/web/.output ./.output
 USER node
-ENV PORT=3000 NUXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ENV PORT=3000 NUXT_API_PROXY_TARGET=http://localhost:8000
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]

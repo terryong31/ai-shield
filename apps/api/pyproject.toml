@@ -30,6 +30,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/shield_api"]
 
+# Vercel deploys this directory as a FastAPI function (Root Directory: apps/api).
+[tool.vercel]
+entrypoint = "src.shield_api.main:app"
+
 [tool.uv.sources]
 shield-engine = { workspace = true }
 

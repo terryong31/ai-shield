@@ -48,8 +48,8 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     environment:
-      # Read by the browser, so it must be the API address as seen from the host.
-      NUXT_PUBLIC_API_BASE_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+      # Server-side proxy target (spec 0041); the browser only talks to web.
+      NUXT_API_PROXY_TARGET: http://api:8000
     ports:
       - "3000:3000"
     depends_on:

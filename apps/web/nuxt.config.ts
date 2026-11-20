@@ -27,11 +27,12 @@ export default defineNuxtConfig({
   colorMode: {
     preference: 'dark'
   },
-  // The browser talks only to the gateway API; no database keys live here.
-  // Override at runtime with NUXT_PUBLIC_API_BASE_URL and NUXT_PUBLIC_SITE_URL.
+  // The browser calls same-origin /api/v1; the web server proxies it to the gateway
+  // (spec 0041). Override at runtime with NUXT_API_PROXY_TARGET (server only)
+  // and NUXT_PUBLIC_SITE_URL. No database keys live here.
   runtimeConfig: {
+    apiProxyTarget: 'http://localhost:8000',
     public: {
-      apiBaseUrl: 'http://localhost:8000',
       siteUrl: 'http://localhost:3000'
     }
   },

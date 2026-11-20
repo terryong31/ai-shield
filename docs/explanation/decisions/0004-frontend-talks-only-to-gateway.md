@@ -26,7 +26,11 @@ The web client (`apps/web`) communicates only with the gateway API:
 
 - All backend access goes through `useShieldApi()`; there is no Supabase or
   other database client in the web app, and no secret in `runtimeConfig.public`.
-  The only public setting is the gateway URL (`NUXT_PUBLIC_API_BASE_URL`).
+  The only public setting was the gateway URL (`NUXT_PUBLIC_API_BASE_URL`).
+  *Amended by [spec 0041](../../../specs/0041-same-origin-api-proxy/spec.md):* the
+  browser now calls same-origin `/api/v1`, and the web server proxies it to the
+  gateway at the private `NUXT_API_PROXY_TARGET`, so session cookies stay
+  first-party when web and gateway are on different sites. The boundary is unchanged.
 - The gateway owns persistence behind an `AuditLog` protocol (SQLite or
   Supabase) and exposes `GET /requests`, `GET /stats` and `POST /feedback`.
 - The gateway uses a server-side Supabase key (`SUPABASE_KEY`); the table can
