@@ -113,6 +113,7 @@ Check locally with `mise run spec:check`.
 | 0028 | [Instant leaderboard](0028-instant-leaderboard/spec.md) | API, WEB | Draft |
 | 0026 | [Game-only cleanup](0026-game-only-cleanup/spec.md) | ENG, API, WEB | Draft |
 | 0027 | [Player email confirmation](0027-player-email-confirmation/spec.md) | API, WEB | Draft |
+| 0041 | [Same-origin API proxy](0041-same-origin-api-proxy/spec.md) | WEB | Implemented |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

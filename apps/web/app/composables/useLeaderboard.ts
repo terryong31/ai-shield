@@ -15,7 +15,6 @@ let streamSubscribers = 0
 
 export const useLeaderboard = () => {
   const { getScores, getLeaderboard } = useShieldApi()
-  const config = useRuntimeConfig()
 
   const scores = useState<ScoreRecord[]>('shield_leaderboard_scores', () => [])
   const difficultyLeaderboards = useState<Record<DifficultyCategory, DifficultyLeaderboardEntry[]>>(
@@ -144,8 +143,8 @@ export const useLeaderboard = () => {
     streamSubscribers += 1
     if (streamSource) return
 
-    const baseUrl = String(config.public.apiBaseUrl).replace(/\/$/, '')
-    const source = new EventSource(`${baseUrl}/api/v1/game/scores/stream`)
+    // Same-origin /api/v1/game/scores/stream, proxied to the gateway (spec 0041).
+    const source = new EventSource(LEADERBOARD_STREAM_PATH)
     source.addEventListener('open', () => {
       if (!hasLoaded.value) {
         void refreshScores({ background: true })

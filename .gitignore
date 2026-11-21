@@ -53,3 +53,5 @@ company_document/
 .mypy_cache/
 
 .agents/skills/
+# Vercel build copies the engine here (apps/api/pyproject.toml [tool.vercel.scripts])
+apps/api/shield_engine/

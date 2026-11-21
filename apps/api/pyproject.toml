@@ -30,6 +30,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/shield_api"]
 
+# Vercel deploys this directory as a FastAPI function (Root Directory: apps/api).
+[tool.vercel]
+entrypoint = "index:app"
+
+# Vercel installs the workspace engine as an editable link into packages/engine,
+# which is outside this Root Directory and so missing from the function bundle.
+# Copy the package beside index.py, which Vercel puts on sys.path.
+[tool.vercel.scripts]
+build = "cp -R ../../packages/engine/src/shield_engine ./shield_engine"
+
 [tool.uv.sources]
 shield-engine = { workspace = true }
 

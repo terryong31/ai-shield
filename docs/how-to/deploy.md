@@ -19,8 +19,8 @@ mise run up                              # docker compose up --build
   `/app/var`), so it survives `mise run down` and rebuilds. `docker compose down -v` deletes it.
 - To use the local Supabase stack from the container, set
   `SUPABASE_URL=http://host.docker.internal:54321` in `apps/api/.env`.
-- If the browser reaches the API at another address, set `PUBLIC_API_URL`
-  (and `CORS_ORIGINS` for the web origin) before `docker compose up`.
+- The browser only talks to `web`; it proxies `/api/v1/**` to `api` over the
+  Compose network (`NUXT_API_PROXY_TARGET=http://api:8000`).
 
 The sections below cover building and configuring the images yourself.
 
@@ -47,7 +47,7 @@ Pass configuration as environment variables. The image contains no `.env`
 
 | Variable | Needed for |
 | --- | --- |
-| `CORS_ORIGINS` | **Required in practice.** The web client's public origin(s), comma-separated, e.g. `https://shield.example.com`. The default only allows `http://localhost:3000` |
+| `CORS_ORIGINS` | Optional. The browser calls the web server, which proxies to the gateway server-to-server, so CORS is not exercised. Set it only if a browser calls the gateway directly |
 | `GOOGLE_API_KEY`, `GEMINI_MODEL` | The standard-tier agent (Medium) |
 | `GROQ_API_KEY`, `GAME_MODEL_BUDGET` | The budget-tier agent (Hard), and Medium without Gemini ([how-to](configure-llm-providers.md)) |
 | `SUPABASE_URL`, `SUPABASE_KEY` | Persistent game data ([how-to](persist-game-data.md)) and admin accounts; without them nobody can open the admin console |
@@ -61,7 +61,6 @@ restarts, and run a single replica (SQLite is a single-writer file):
 ```bash
 docker run -d --name shield-api -p 8000:8000 \
   -v shield-data:/app/var \
-  -e CORS_ORIGINS=https://shield.example.com \
   -e GROQ_API_KEY="$GROQ_API_KEY" \
   -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_KEY="$SUPABASE_KEY" \
   ai-shield-api
@@ -71,17 +70,34 @@ docker run -d --name shield-api -p 8000:8000 \
 
 | Variable | Value |
 | --- | --- |
-| `NUXT_PUBLIC_API_BASE_URL` | The gateway's public origin **as seen from the user's browser**, without `/api/v1`, e.g. `https://api.shield.example.com`. Read at runtime; no rebuild needed |
+| `NUXT_API_PROXY_TARGET` | **Required.** The gateway's origin **as seen from the web server**, without `/api/v1`, e.g. `http://shield-api:8000` or `https://ai-shield-api.vercel.app`. Server-only; read at runtime. Unset means `http://localhost:8000`, and a wrong value answers every API call with `502` |
+| `NUXT_PUBLIC_SITE_URL` | The web client's public origin, for canonical and social links |
 | `PORT` | Defaults to `3000` |
 
 ```bash
 docker run -d --name shield-web -p 3000:3000 \
-  -e NUXT_PUBLIC_API_BASE_URL=https://api.shield.example.com \
+  -e NUXT_API_PROXY_TARGET=http://shield-api:8000 \
   ai-shield-web
 ```
 
-The browser calls the gateway directly, so the gateway must be publicly
-reachable at that URL and list the web origin in `CORS_ORIGINS`.
+The browser calls only the web server's own `/api/v1/**`, which proxies to the
+gateway (spec 0041). Session cookies are therefore first-party even when the two
+run on different sites, such as two `*.vercel.app` hosts.
+
+## Deploy on Vercel
+
+Create two Vercel projects from the same repository:
+
+| Project | Root Directory | Notes |
+| --- | --- | --- |
+| API | `apps/api` | FastAPI preset; entrypoint comes from `[tool.vercel]` in `apps/api/pyproject.toml`. Keep "Include files outside the Root Directory" on (the engine and `uv.lock` live outside it) |
+| Web | `apps/web` | Nuxt preset. Set `NUXT_API_PROXY_TARGET` to the API project's production URL and `NUXT_PUBLIC_SITE_URL` to the web URL |
+
+API environment: `SUPABASE_URL` and `SUPABASE_KEY` are **required** (Vercel's
+filesystem is read-only apart from an ephemeral `/tmp`, so SQLite does not
+persist), plus `WEB_BASE_URL` (the web URL), `GOOGLE_API_KEY` / `GROQ_API_KEY`,
+and optionally `REDIS_URL` for live leaderboard updates across instances. Leave
+`APP_ENV` unset.
 
 ## 4. Health check
 
@@ -102,8 +118,9 @@ curl -s https://api.shield.example.com/api/v1/health
 curl -s https://api.shield.example.com/api/v1/game/levels | head -c 200
 ```
 
-Then open the web client and run a wave on Easy; a CORS error in the browser
-console means `CORS_ORIGINS` or `NUXT_PUBLIC_API_BASE_URL` is wrong.
+Then open the web client and run a wave on Easy. `curl https://<web>/api/v1/health`
+should return the same JSON as the gateway; a `502` means `NUXT_API_PROXY_TARGET`
+is wrong or the gateway is down.
 
 ## Production hardening checklist
 

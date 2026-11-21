@@ -34,9 +34,9 @@ import type {
  * fails `nuxt typecheck`.
  */
 export const useShieldApi = () => {
-  const baseURL = `${useRuntimeConfig().public.apiBaseUrl}/api/v1`
-  // Credentials carry the HttpOnly player and admin session cookies (specs 0012, 0016).
-  const api = $fetch.create({ baseURL, credentials: 'include' })
+  // Same origin: the web server proxies to the gateway, so the HttpOnly player and
+  // admin session cookies are first-party (specs 0012, 0016, 0041).
+  const api = $fetch.create({ baseURL: SHIELD_API_PREFIX, credentials: 'include' })
 
   return {
     getClearance: () => api<ClearanceStatus>('/clearance'),

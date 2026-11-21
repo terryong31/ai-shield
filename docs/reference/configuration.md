@@ -32,7 +32,7 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `CLEARANCE_WINDOW_MINUTES` | `10` | Rate-limit window; a failure inside it also yields `DENIED` clearance |
 | `SQLITE_PATH` | `var/shield.db` | Base path for the SQLite domain files used when Supabase is not fully configured: `<stem>.audit.db`, `<stem>.game.db` and `<stem>.players.db`, attached as schemas `audit`, `game` and `players` (spec 0024). The Docker image sets `/app/var/shield.db` |
 | `REDIS_URL` | `None` | Optional Redis connection URL (e.g. `redis://localhost:6379/0`) for `RedisCachedScoreStore` (`ZSET` + `HASH` leaderboard caching) and Redis Pub/Sub SSE notifications (spec 0028). Degrades gracefully to the underlying `ScoreStore` and in-process SSE notifier when unset or unreachable |
-| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000` | Comma-separated list of browser origins allowed to call the API with credentials. `*` is rejected |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000` | Comma-separated list of browser origins allowed to call the API with credentials. `*` is rejected. Not exercised when the browser goes through the web proxy (spec 0041) |
 
 Secrets (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `SUPABASE_KEY`)
 are `SecretStr` and are not printed in logs or reprs.
@@ -43,7 +43,7 @@ What degrades without each provider: [Configure LLM providers](../how-to/configu
 
 | Name | Default | Purpose |
 | --- | --- | --- |
-| `NUXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Gateway origin, without `/api/v1`. Overrides `runtimeConfig.public.apiBaseUrl` in [`nuxt.config.ts`](../../apps/web/nuxt.config.ts) at runtime. The browser calls this URL directly, so it must be reachable from the user's machine |
+| `NUXT_API_PROXY_TARGET` | `http://localhost:8000` | Gateway origin, without `/api/v1`, as reached **from the web server**. Overrides the private `runtimeConfig.apiProxyTarget` in [`nuxt.config.ts`](../../apps/web/nuxt.config.ts) at runtime. The browser calls same-origin `/api/v1/**` and the web server proxies it here (spec 0041); never sent to the browser. Must be `http(s)`; otherwise every API call answers `502` |
 | `NUXT_PUBLIC_SITE_URL` | `http://localhost:3000` | Public origin of the web client. Overrides `runtimeConfig.public.siteUrl` in [`nuxt.config.ts`](../../apps/web/nuxt.config.ts) for canonical, Open Graph, Twitter Card, and JSON-LD URLs |
 | `PORT` | `3000` (Docker image) | Port of the Nuxt production server |
 
