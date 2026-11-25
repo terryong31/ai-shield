@@ -1,6 +1,11 @@
-import type { PlayerSessionStatus } from '~/types/api'
+import type {
+  PlayerConfirmRequest,
+  PlayerConfirmResponse,
+  PlayerResetPasswordRequest,
+  PlayerSessionStatus
+} from '~/types/api'
 import { errorDetail } from '~/utils/account'
-import { isConfirmationSent, loginFailure } from '~/utils/playerAuth'
+import { ensureAuthBrowserCookie, isConfirmationSent, loginFailure } from '~/utils/playerAuth'
 
 export type RegisterOutcome = 'signed_in' | 'confirmation_sent' | 'failed'
 export type SignInOutcome = 'signed_in' | 'unconfirmed' | 'failed'
@@ -29,6 +34,8 @@ export const usePlayerAuth = () => {
     resendConfirmation,
     loginPlayer,
     recoverPlayer,
+    confirmEmail: confirmEmailApi,
+    resetPassword: resetPasswordApi,
     upgradePlayer,
     logoutPlayer
   } = useShieldApi()
@@ -68,7 +75,7 @@ export const usePlayerAuth = () => {
     try {
       session.value = await loginPlayer({
         email: email.trim(),
-        password: password.trim()
+        password
       })
       toast.add({
         title: 'Signed in',
@@ -78,9 +85,9 @@ export const usePlayerAuth = () => {
       })
       return 'signed_in'
     } catch (err) {
-      const failure = loginFailure((err as { statusCode?: number }).statusCode)
-      if (failure === 'unconfirmed') return 'unconfirmed'
       const detail = errorDetail(err, 'Invalid email or password.')
+      const failure = loginFailure((err as { statusCode?: number }).statusCode, detail)
+      if (failure === 'unconfirmed') return 'unconfirmed'
       toast.add({
         title: 'Sign in failed',
         description: detail,
@@ -96,9 +103,10 @@ export const usePlayerAuth = () => {
   const registerAccount = async (email: string, password: string, playerName?: string): Promise<RegisterOutcome> => {
     loadingAuth.value = true
     try {
+      ensureAuthBrowserCookie()
       const result = await registerPlayer({
         email: email.trim(),
-        password: password.trim(),
+        password,
         player_name: playerName?.trim() || null
       })
       if (isConfirmationSent(result)) return 'confirmation_sent'
@@ -127,6 +135,7 @@ export const usePlayerAuth = () => {
   const resendConfirmationEmail = async (email: string) => {
     loadingAuth.value = true
     try {
+      ensureAuthBrowserCookie()
       await resendConfirmation({ email: email.trim() })
       toast.add({
         title: 'Email sent',
@@ -150,6 +159,7 @@ export const usePlayerAuth = () => {
   const recoverPassword = async (email: string): Promise<boolean> => {
     loadingAuth.value = true
     try {
+      ensureAuthBrowserCookie()
       await recoverPlayer({ email: email.trim() })
       toast.add({
         title: 'Recovery email sent',
@@ -163,6 +173,44 @@ export const usePlayerAuth = () => {
       toast.add({
         title: 'Recovery failed',
         description: detail,
+        icon: 'i-lucide-triangle-alert',
+        color: 'neutral'
+      })
+      return false
+    } finally {
+      loadingAuth.value = false
+    }
+  }
+
+  const confirmEmail = async (body: PlayerConfirmRequest): Promise<PlayerConfirmResponse> => {
+    loadingAuth.value = true
+    try {
+      const result = await confirmEmailApi(body)
+      if (result.status === 'signed_in' && result.session) {
+        session.value = result.session
+      }
+      return result
+    } finally {
+      loadingAuth.value = false
+    }
+  }
+
+  const resetPassword = async (body: PlayerResetPasswordRequest): Promise<boolean> => {
+    loadingAuth.value = true
+    try {
+      await resetPasswordApi(body)
+      session.value = { ...DEFAULT_ANONYMOUS_SESSION }
+      toast.add({
+        title: 'Password reset',
+        description: 'Your password has been updated. Sign in with your new password.',
+        icon: 'i-lucide-key-round',
+        color: 'neutral'
+      })
+      return true
+    } catch (err) {
+      toast.add({
+        title: 'Reset failed',
+        description: errorDetail(err, 'This recovery link is invalid or has expired.'),
         icon: 'i-lucide-triangle-alert',
         color: 'neutral'
       })
@@ -224,6 +272,8 @@ export const usePlayerAuth = () => {
     registerAccount,
     resendConfirmationEmail,
     recoverPassword,
+    confirmEmail,
+    resetPassword,
     upgradeToPaid,
     signOutPlayer
   }

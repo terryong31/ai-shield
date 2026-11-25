@@ -67,7 +67,7 @@ describe('run spend and account integrity (spec 0042)', () => {
     const apiSource = readFileSync(join(APP_DIR, 'composables', 'useShieldApi.ts'), 'utf-8')
 
     expect(apiSource).toMatch(/changeEmail:\s*\([^)]*\)\s*=>\s*api<PlayerConfirmationResponse>/)
-    expect(settingsSource).toContain('Check your new inbox to confirm the change.')
+    expect(settingsSource).toContain('Check both your current and new inboxes to confirm the change')
     expect(settingsSource).not.toMatch(/submitEmail[\s\S]*?session\.value\s*=\s*await\s+changeEmail/)
   })
 

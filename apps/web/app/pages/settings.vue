@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { deleteConfirmed, errorDetail, passwordChangeReady } from '~/utils/account'
-import { passwordChangeSchema } from '~/utils/playerAuth'
+import { ensureAuthBrowserCookie, passwordChangeSchema } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
 const runtimeConfig = useRuntimeConfig()
@@ -62,12 +62,18 @@ const run = async (action: () => Promise<void>) => {
 }
 
 const submitEmail = () => run(async () => {
+  ensureAuthBrowserCookie()
   await changeEmail({
     new_email: emailForm.email.trim(),
     current_password: emailForm.password
   })
   openModal.value = null
-  toast.add({ title: 'Confirmation sent', description: 'Check your new inbox to confirm the change.', icon: 'i-lucide-mail-check', color: 'neutral' })
+  toast.add({
+    title: 'Confirmation sent',
+    description: 'Check both your current and new inboxes to confirm the change, then sign in with your new address.',
+    icon: 'i-lucide-mail-check',
+    color: 'neutral'
+  })
 })
 
 const submitPassword = () => run(async () => {

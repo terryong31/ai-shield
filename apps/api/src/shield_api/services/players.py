@@ -509,6 +509,7 @@ class SupabasePlayerStore:
         self, token: str, *, email: str | None, name: str, tier: PlayerTier, ttl: timedelta
     ) -> None:
         now = datetime.now(UTC)
+        self._table(self.SESSIONS_TABLE).delete().lte("expires_at", now.isoformat()).execute()
         self._table(self.SESSIONS_TABLE).insert(
             {
                 "token_hash": _hash_token(token),

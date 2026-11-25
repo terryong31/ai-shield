@@ -40,6 +40,14 @@ export default defineNuxtConfig({
       siteUrl: 'http://localhost:3000'
     }
   },
+  routeRules: {
+    '/auth/**': {
+      headers: {
+        'Referrer-Policy': 'no-referrer',
+        'Cache-Control': 'no-store'
+      }
+    }
+  },
   devServer: {
     host: 'localhost'
   },

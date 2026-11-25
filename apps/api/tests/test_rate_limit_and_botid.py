@@ -732,6 +732,7 @@ def test_production_with_supabase_and_redis_succeeds(monkeypatch: pytest.MonkeyP
         Settings(
             _env_file=None,
             APP_ENV="production",
+            WEB_BASE_URL="https://ai-shield.example",
             SUPABASE_URL="https://example.supabase.co",
             SUPABASE_KEY=SecretStr("service-key"),
             REDIS_URL=SecretStr("redis://localhost:6379/0"),

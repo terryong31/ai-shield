@@ -10,7 +10,6 @@ import {
 
 import { isValidLevelId } from '~/utils/gameBoard'
 
-const { loadAccess } = useAdminAccess()
 const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
 const siteUrl = computed(() => resolveSiteUrl(runtimeConfig.public.siteUrl))
@@ -52,8 +51,6 @@ useHead(() => ({
     }
   ]
 }))
-
-onMounted(loadAccess)
 </script>
 
 <template>

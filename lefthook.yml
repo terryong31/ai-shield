@@ -36,6 +36,14 @@ pre-commit:
       glob: ".github/**/*.{yml,yaml}"
       run: mise run lint:actions
 
+    - name: sast
+      glob: "*.{py,pyi,ts,mts,js,mjs,vue}"
+      exclude:
+        - apps/web/app/types/api.gen.ts
+        - "**/tests/**"
+        - apps/web/test/**
+      run: semgrep scan --error --metrics=off --quiet --config p/python --config p/typescript --config p/owasp-top-ten {staged_files}
+
 commit-msg:
   jobs:
     - name: conventional-commit

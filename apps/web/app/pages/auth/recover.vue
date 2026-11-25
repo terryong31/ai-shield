@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AuthFormField, FormSubmitEvent } from '@nuxt/ui'
+import { recoverSchema, type RecoverSchema } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
 const runtimeConfig = useRuntimeConfig()
@@ -30,9 +31,9 @@ const recoverFields: AuthFormField[] = [
 ]
 
 const onSubmit = async (
-  event: FormSubmitEvent<{ email?: string }>
+  event: FormSubmitEvent<RecoverSchema>
 ) => {
-  const email = event.data.email ?? ''
+  const email = event.data.email
   const succeeded = await recoverPassword(email)
   if (succeeded) {
     await navigateTo('/auth/login')
@@ -63,6 +64,7 @@ onMounted(async () => {
 
       <UPageCard class="w-full max-w-md">
         <UAuthForm
+          :schema="recoverSchema"
           title="Recover password"
           icon="i-lucide-key-round"
           :fields="recoverFields"

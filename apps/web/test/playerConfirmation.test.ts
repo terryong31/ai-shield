@@ -56,7 +56,7 @@ describe('player email confirmation (spec 0027)', () => {
     const page = read('pages', 'auth', 'confirmed.vue')
     expect(page).toMatch(/title="Email confirmed"/)
     expect(page).toMatch(/to: '\/auth\/login'/)
-    expect(page).not.toMatch(/useRoute|location\.hash|window\.location|localStorage|sessionStorage|useCookie/)
+    expect(page).not.toMatch(/localStorage|sessionStorage/)
   })
 
   it('[WEB-AUTH-001] enforces Zod validation and renders the Nuxt UI password strength indicator on register and settings', () => {

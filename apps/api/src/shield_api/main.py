@@ -45,10 +45,16 @@ def create_app(container: Container | None = None, settings: Settings | None = N
             f"{settings.API_PREFIX}/auth/anonymous",
             f"{settings.API_PREFIX}/auth/register",
             f"{settings.API_PREFIX}/auth/login",
+            f"{settings.API_PREFIX}/auth/recover",
+            f"{settings.API_PREFIX}/auth/resend-confirmation",
+            f"{settings.API_PREFIX}/auth/confirm",
+            f"{settings.API_PREFIX}/auth/reset-password",
             f"{settings.API_PREFIX}/game/run",
             f"{settings.API_PREFIX}/game/train",
         }
     )
+    auth_prefix = f"{settings.API_PREFIX}/auth/"
+    clearance_path = f"{settings.API_PREFIX}/clearance"
     proxy_secret = (
         settings.TRUSTED_PROXY_SECRET.get_secret_value().strip()
         if settings.TRUSTED_PROXY_SECRET
@@ -108,7 +114,10 @@ def create_app(container: Container | None = None, settings: Settings | None = N
                 return JSONResponse(
                     {"detail": "Request blocked."}, status_code=status.HTTP_403_FORBIDDEN
                 )
-        return await call_next(request)
+        response = await call_next(request)
+        if request.url.path.startswith(auth_prefix) or request.url.path == clearance_path:
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     app.add_middleware(
         CORSMiddleware,

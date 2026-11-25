@@ -66,7 +66,8 @@ class FakeAuthDirectory:
     sign_ins: list[str] = field(default_factory=list)
     sign_ups: list[dict[str, Any]] = field(default_factory=list)
     resends: list[dict[str, Any]] = field(default_factory=list)
-    reset_passwords: list[str] = field(default_factory=list)
+    reset_passwords: list[Any] = field(default_factory=list)
+    email_change_redirects: list[str] = field(default_factory=list)
     pending_emails: dict[str, str] = field(default_factory=dict)
     open_sessions: int = 0
     fail: bool = False
@@ -214,20 +215,59 @@ class FakeAuth:
             return FakeUserResponse(user)
         return FakeUserResponse(user, self._open_session(user.id))
 
-    def update_user(self, attributes: dict[str, Any]) -> FakeUserResponse:
+    def update_user(
+        self, attributes: dict[str, Any], options: dict[str, Any] | None = None
+    ) -> FakeUserResponse:
         directory = self.directory
         directory.calls.append("update_user")
         if directory.fail:
             raise RuntimeError("auth service down")
         if not self.signed_in or self.current_uid is None:
             raise RuntimeError("not authenticated")
+        if options and options.get("email_redirect_to"):
+            directory.email_change_redirects.append(str(options["email_redirect_to"]))
         if "email" in attributes:
             new_email = str(attributes["email"])
             taken = directory.by_email(new_email)
             if taken is not None and taken.id != self.current_uid:
                 raise FakeAuthError("Email address already registered", "email_exists")
             directory.pending_emails[self.current_uid] = new_email
+        if "password" in attributes:
+            directory.passwords[self.current_uid] = str(attributes["password"])
         return FakeUserResponse(directory.users[self.current_uid])
+
+    def verify_otp(self, params: dict[str, Any]) -> FakeUserResponse:
+        directory = self.directory
+        directory.calls.append("verify_otp")
+        if directory.fail:
+            raise RuntimeError("auth service down")
+        token_hash = str(params.get("token_hash") or "")
+        token_type = str(params.get("type") or "")
+        prefix = f"valid-{token_type}-token-"
+        if not token_hash.startswith(prefix):
+            raise FakeAuthError("Token has expired or is invalid", "otp_expired")
+        email = token_hash[len(prefix) :].strip().lower()
+        user = directory.by_email(email)
+        if user is None:
+            raise FakeAuthError("Token has expired or is invalid", "otp_expired")
+        directory.email_confirmed[user.id] = True
+        return FakeUserResponse(user, self._open_session(user.id))
+
+    def exchange_code_for_session(self, params: dict[str, Any]) -> FakeUserResponse:
+        directory = self.directory
+        directory.calls.append("exchange_code_for_session")
+        if directory.fail:
+            raise RuntimeError("auth service down")
+        auth_code = str(params.get("auth_code") or "")
+        verifier = str(params.get("code_verifier") or "")
+        if not auth_code.startswith("valid-code-") or not verifier:
+            raise FakeAuthError("Invalid grant", "invalid_grant")
+        email = auth_code[len("valid-code-") :].strip().lower()
+        user = directory.by_email(email)
+        if user is None:
+            raise FakeAuthError("Invalid grant", "invalid_grant")
+        directory.email_confirmed[user.id] = True
+        return FakeUserResponse(user, self._open_session(user.id))
 
     def resend(self, credentials: dict[str, Any]) -> object:
         directory = self.directory
@@ -241,9 +281,14 @@ class FakeAuth:
         self.directory.calls.append("sign_in_anonymously")
         return object()
 
-    def reset_password_for_email(self, email: str) -> object:
+    def reset_password_for_email(self, email: str, options: dict[str, Any] | None = None) -> object:
         self.directory.calls.append("reset_password_for_email")
-        self.directory.reset_passwords.append(email)
+        if options and "redirect_to" in options:
+            self.directory.reset_passwords.append(
+                {"email": email, "redirect_to": str(options["redirect_to"])}
+            )
+        else:
+            self.directory.reset_passwords.append(email)
         if self.directory.fail:
             raise RuntimeError("auth service down")
         return object()

@@ -59,16 +59,12 @@ def test_register_sends_a_confirmation_email_and_signs_nobody_in(
     assert response.status_code == 202
     assert response.json() == CONFIRMED
     assert set_cookie(response) == ""
-    assert supabase.auth.sign_ups == [
-        {
-            "email": "new@example.com",
-            "password": PASSWORD,
-            "options": {
-                "data": {"player_name": "Ada"},
-                "email_redirect_to": redirect_to(supabase),
-            },
-        }
-    ]
+    assert len(supabase.auth.sign_ups) == 1
+    signup = supabase.auth.sign_ups[0]
+    assert signup["email"] == "new@example.com"
+    assert signup["password"] == PASSWORD
+    assert signup["options"]["data"] == {"player_name": "Ada"}
+    assert signup["options"]["email_redirect_to"].startswith(f"{redirect_to(supabase)}?flow=")
     session = supabase.client.get("/api/v1/auth/session").json()
     assert session["authenticated"] is False
     store = supabase.container.players
@@ -87,10 +83,12 @@ def test_register_answers_every_email_the_same(make_harness: Callable[..., Harne
     down.auth.fail = True
     failed = register(down, "other@example.com")
 
-    for response in (unconfirmed, confirmed, failed):
+    for response in (unconfirmed, confirmed):
         assert response.status_code == first.status_code == 202
         assert response.content == first.content
         assert set_cookie(response) == ""
+    assert failed.status_code == 503
+    assert set_cookie(failed) == ""
 
 
 @pytest.mark.spec("API-VERIFY-003")
@@ -249,14 +247,13 @@ def test_resend_answers_every_email_the_same(make_harness: Callable[..., Harness
         assert response.status_code == 202
         assert response.json() == CONFIRMED
         assert response.content == known.content
-    assert harness.auth.resends == [
-        {
-            "type": "signup",
-            "email": email,
-            "options": {"email_redirect_to": redirect_to(harness)},
-        }
-        for email in ("new@example.com", "nobody@example.com")
-    ]
+    assert len(harness.auth.resends) == 2
+    for call, expected_email in zip(
+        harness.auth.resends, ("new@example.com", "nobody@example.com"), strict=True
+    ):
+        assert call["type"] == "signup"
+        assert call["email"] == expected_email
+        assert call["options"]["email_redirect_to"].startswith(f"{redirect_to(harness)}?flow=")
 
 
 @pytest.mark.spec("API-VERIFY-006")

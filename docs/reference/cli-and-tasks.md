@@ -48,7 +48,7 @@ into the contract. Prints `wrote <path>`.
 Defined in [`mise.toml`](../../mise.toml). Run from anywhere in the repository
 with `mise run <task>`; list them with `mise tasks`. Tools pinned by mise:
 node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0, lefthook 2.2.2,
-gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
+gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.186.0.
 
 | Task | Runs | Description |
 | --- | --- | --- |
@@ -67,6 +67,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
 | `lint:actions` | `actionlint`; `zizmor --offline --min-severity medium .github` | Lint the GitHub Actions workflows and audit them for security problems |
 | `lint` | depends on `lint:py`, `lint:web`, `lint:actions` | All linters |
 | `secrets:scan` | `gitleaks git --redact --no-banner` | Scan the full git history for secrets. Rules: `.gitleaks.toml`; reviewed false positives: `.gitleaksignore` |
+| `sast` | `semgrep scan --error --metrics=off --config p/python --config p/typescript --config p/dockerfile --config p/owasp-top-ten .` | Run Semgrep SAST over Python, TypeScript/Vue, and Dockerfiles. Ignored paths: `.semgrepignore` |
 | `typecheck:py` | `uv run mypy` | mypy --strict over engine and API |
 | `typecheck:web` | `bun run typecheck` in `apps/web` | vue-tsc via nuxt typecheck |
 | `typecheck` | depends on both typecheck tasks | (no description) |
@@ -76,7 +77,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
 | `spec:check` | `uv run python scripts/check_spec_coverage.py` | Every acceptance criterion in accepted specs has a test |
 | `spec:new` | `uv run python scripts/new_spec.py <slug>` | Scaffold a new spec folder: `mise run spec:new <slug>` |
 | `train` | `uv run shield-engine train --data packages/engine/data/seed/train.jsonl` | Retrain the bundled baseline classifier |
-| `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check`, `secrets:scan` | Everything CI runs. Must pass before pushing |
+| `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check`, `secrets:scan`, `sast` | Everything CI runs. Must pass before pushing |
 | `build:web` | `bun run build` in `apps/web` | Production build of the web client |
 | `sdd:start` | `python3 scripts/sdd.py start` | Start a cycle: `<spec> [IDs…]` or `--refactor "reason"` |
 | `sdd:red` | `python3 scripts/sdd.py red` | Run target tests; advance only if each criterion has a legitimately failing test |
@@ -88,6 +89,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
 | `db:start` | `supabase start` | Start the local Supabase stack (applies migrations + seed on first run) |
 | `db:stop` | `supabase stop` | Stop the local stack; data is kept |
 | `db:status` | `supabase status` | Local URLs and keys |
+| `mailpit` | prints `http://127.0.0.1:54424` and `127.0.0.1:54425` | Show the local Mailpit web UI and SMTP address (provided by local Supabase) |
 | `db:env` | `supabase status -o json` → two lines | Print `SUPABASE_URL=` / `SUPABASE_KEY=` (service_role) for `apps/api/.env` |
 | `db:reset` | `supabase db reset` | Recreate the local database from migrations, then run `supabase/seed.sql` |
 | `db:migration` | `supabase migration new <name>` | Create `supabase/migrations/<timestamp>_<name>.sql` |
@@ -112,6 +114,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
 | `pre-commit` | `whitespace` | `git diff --cached --check` | Staged files, except `*.md` |
 | `pre-commit` | `ruff` | `ruff check --fix`, then `ruff format`; fixes are staged again | Staged `*.py`, `*.pyi` |
 | `pre-commit` | `eslint` | `eslint --fix` in `apps/web`; fixes are staged again | Staged `*.ts`, `*.mts`, `*.js`, `*.mjs`, `*.vue`, except `api.gen.ts` |
+| `pre-commit` | `sast` | `semgrep scan --error --metrics=off --quiet` | Staged `*.py`, `*.pyi`, `*.ts`, `*.mts`, `*.js`, `*.mjs`, `*.vue`, Dockerfiles, except `api.gen.ts` |
 | `pre-commit` | `workflows` | `mise run lint:actions` | Staged files in `.github/` |
 | `commit-msg` | `conventional-commit` | Subject line must be a Conventional Commit (`type(scope): text`). `Merge`, `Revert`, `fixup!`, `squash!` and `amend!` subjects are also accepted | Commit message |
 | `pre-push` | `protect-main` | Stops a push to `refs/heads/main` | Pushed refs |
@@ -121,7 +124,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
 
 | File | Trigger | Jobs |
 | --- | --- | --- |
-| `workflows/ci.yml` | Pull request, push to `main`, merge queue, manual | `Lint`, `Typecheck`, `Test (Python)`, `Test (web)`, `Specs and contract`, `Build (web)`, `Workflow security`, `Secret scan`, `Dependency review` (pull requests only), and `CI OK` |
+| `workflows/ci.yml` | Pull request, push to `main`, merge queue, manual | `Lint`, `Typecheck`, `Test (Python)`, `Test (web)`, `Specs and contract`, `Build (web)`, `Migrations`, `Workflow security`, `Secret scan`, `SAST (Semgrep)`, `Dependency review` (pull requests only), and `CI OK` |
 | `workflows/codeql.yml` | Pull request, push to `main`, weekly (Monday 03:17 UTC), manual | CodeQL `security-extended` queries for `python`, `javascript-typescript` and `actions` |
 | `workflows/pr-title.yml` | Pull request opened, edited, reopened or updated | The PR title must be a Conventional Commit |
 | `actions/setup/action.yml` | Used by the CI jobs | Installs the mise tools, then `uv sync --all-packages --locked` and `bun install --frozen-lockfile`, with caches keyed on `uv.lock` and `bun.lock` |

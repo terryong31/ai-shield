@@ -212,7 +212,13 @@ def test_recover_calls_container_identity_and_auth_router_does_not_import_supaba
         def __getattr__(self, name: str) -> Any:
             return getattr(self._inner, name)
 
-        async def recover(self, email: str) -> None:
+        async def recover(
+            self,
+            email: str,
+            *,
+            redirect_to: str | None = None,
+            verifier_out: list[str] | None = None,
+        ) -> None:
             recorded.append(email)
 
     harness.container.identity = SpyIdentity(harness.container.identity)

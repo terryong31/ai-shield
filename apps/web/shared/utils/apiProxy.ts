@@ -113,7 +113,15 @@ export async function proxyToGateway(
   }
 
   const method = request.method.toUpperCase()
-  const { pathname } = new URL(request.url)
+  const parsedRequestUrl = new URL(request.url)
+  const { pathname } = parsedRequestUrl
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+    const fetchSite = request.headers.get('sec-fetch-site')?.trim().toLowerCase()
+    const originHeader = request.headers.get('origin')?.trim()
+    if (fetchSite === 'cross-site' || (originHeader && originHeader !== parsedRequestUrl.origin)) {
+      return json(403, 'Cross-site request blocked.')
+    }
+  }
   const reqHeaders = forwardableRequestHeaders(request.headers)
 
   if (options.clientIp) {

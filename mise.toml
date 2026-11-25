@@ -7,11 +7,13 @@ bun = "1.4.0"
 uv = "0.12.13"
 python = "3.12"
 supabase = "2.116.0"
+infisical = "0.44.11"
 lefthook = "2.2.2"
 gitleaks = "8.30.1"
 actionlint = "1.7.12"
 zizmor = "1.33.1"
 shellcheck = "0.11.0"
+semgrep = "1.186.0"
 
 [env]
 UV_PYTHON = "3.12"
@@ -28,24 +30,29 @@ run = "lefthook install"
 
 # --- dev servers ---------------------------------------------------------------
 
+[tasks."docker:ensure"]
+description = "Ensure the Docker daemon is running (starts OrbStack if installed and stopped)"
+run = "docker info >/dev/null 2>&1 || (command -v orbctl >/dev/null 2>&1 && orbctl start && docker info >/dev/null 2>&1) || { echo 'Docker is not running. Start OrbStack or Docker Desktop first.' >&2; exit 1; }"
+
 [tasks."infra:up"]
-description = "Ensure local Supabase and Redis are running"
+description = "Ensure Docker, local Supabase, and Redis are running"
+depends = ["docker:ensure"]
 run = [
   "supabase status >/dev/null 2>&1 || supabase start",
   "docker compose up -d redis --wait",
 ]
 
 [tasks."api:dev"]
-description = "Run the gateway API with reload on :8000"
+description = "Run the gateway API with reload on :8000 (Infisical dev /api + local Supabase)"
 dir = "apps/api"
 env = { APP_ENV = "development" }
 depends = ["infra:up"]
-run = "python3 ../../scripts/local_env.py -- uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
+run = "infisical run --env=dev --path=/api -- python3 ../../scripts/local_env.py -- uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
 
 [tasks."web:dev"]
-description = "Run the Nuxt web client on :3000"
+description = "Run the Nuxt web client on :3000 (Infisical dev /web)"
 dir = "apps/web"
-run = "bun run dev"
+run = "infisical run --env=dev --path=/web -- bun run dev"
 
 [tasks.dev]
 description = "Run API and web together"
@@ -96,6 +103,10 @@ depends = ["lint:py", "lint:web", "lint:actions"]
 [tasks."secrets:scan"]
 description = "gitleaks over the full git history"
 run = "gitleaks git --redact --no-banner"
+
+[tasks.sast]
+description = "Semgrep SAST over Python, TypeScript/Vue, and Dockerfiles"
+run = "semgrep scan --error --metrics=off --config p/python --config p/typescript --config p/dockerfile --config p/owasp-top-ten ."
 
 [tasks."typecheck:py"]
 description = "mypy --strict over engine and API"
@@ -170,19 +181,34 @@ run = "uv run python scripts/new_spec.py"
 # --- database (Supabase CLI; needs Docker) ----------------------------------------
 
 [tasks."admin:create"]
-description = "Create or promote a Supabase user to admin (app_metadata.role = admin); prompts for the password"
+description = "Create or promote a local Supabase user to admin (app_metadata.role = admin); prompts for the password"
 dir = "apps/api"
+depends = ["db:start"]
 usage = 'arg "<email>" help="The admin account email"'
-run = 'uv run python -m shield_api.admin_cli create "${usage_email}"'
+run = 'python3 ../../scripts/local_env.py -- uv run python -m shield_api.admin_cli create "${usage_email}"'
 
 [tasks."admin:revoke"]
-description = "Remove the admin role from a Supabase user"
+description = "Remove the admin role from a local Supabase user"
+dir = "apps/api"
+depends = ["db:start"]
+usage = 'arg "<email>" help="The admin account email"'
+run = 'python3 ../../scripts/local_env.py -- uv run python -m shield_api.admin_cli revoke "${usage_email}"'
+
+[tasks."admin:remote:create"]
+description = "Create or promote a Cloud Supabase user to admin (uses Infisical prod /api)"
 dir = "apps/api"
 usage = 'arg "<email>" help="The admin account email"'
-run = 'uv run python -m shield_api.admin_cli revoke "${usage_email}"'
+run = 'infisical run --env=prod --path=/api -- uv run python -m shield_api.admin_cli create "${usage_email}"'
+
+[tasks."admin:remote:revoke"]
+description = "Remove the admin role from a Cloud Supabase user (uses Infisical prod /api)"
+dir = "apps/api"
+usage = 'arg "<email>" help="The admin account email"'
+run = 'infisical run --env=prod --path=/api -- uv run python -m shield_api.admin_cli revoke "${usage_email}"'
 
 [tasks."db:start"]
 description = "Start the local Supabase stack (applies migrations + seed on first run)"
+depends = ["docker:ensure"]
 run = "supabase status >/dev/null 2>&1 || supabase start"
 
 [tasks."db:stop"]
@@ -201,9 +227,18 @@ run = "docker compose stop redis"
 description = "Show local URLs and keys (API URL + service_role key go in apps/api/.env)"
 run = "supabase status"
 
+[tasks.mailpit]
+description = "Open the local Mailpit web UI (:54424) where all local Supabase auth emails land"
+depends = ["db:start"]
+run = "echo 'Mailpit UI: http://127.0.0.1:54424  (SMTP: 127.0.0.1:54425)' && (open http://127.0.0.1:54424 2>/dev/null || xdg-open http://127.0.0.1:54424 2>/dev/null || true)"
+
 [tasks."db:env"]
 description = "Print SUPABASE_URL / SUPABASE_KEY lines for apps/api/.env from the local stack"
 run = "supabase status -o json | python3 -c \"import json,sys; s=json.load(sys.stdin); print('SUPABASE_URL=' + s['API_URL']); print('SUPABASE_KEY=' + (s.get('SERVICE_ROLE_KEY') or s['SECRET_KEY']))\""
+
+[tasks."db:up"]
+description = "Apply pending migrations to the local database without wiping data"
+run = "supabase migration up"
 
 [tasks."db:reset"]
 description = "Recreate the local database from migrations, then run supabase/seed.sql"
@@ -226,22 +261,34 @@ run = [
 
 [tasks."db:lint"]
 description = "Lint the local database schema"
-run = "supabase db lint --schema audit,game,players"
+run = "supabase db lint --local --schema audit,game,players"
 
 [tasks."db:link"]
 description = "Link this repo to a hosted project: mise run db:link --project-ref <ref>"
 run = "supabase link"
 
+[tasks."db:remote:status"]
+description = "Compare local vs. linked Cloud Supabase migration history (read-only)"
+run = "supabase migration list"
+
+[tasks."db:remote:plan"]
+description = "Preview pending migrations against the linked Cloud Supabase project (dry run)"
+run = "supabase db push --dry-run"
+
+[tasks."db:remote:push"]
+description = "Apply pending migrations to the linked Cloud Supabase project (never runs seed)"
+run = "supabase db push"
+
 [tasks."db:push"]
-description = "Apply pending migrations to the linked hosted project (never runs seed)"
+description = "Alias for db:remote:push (applies pending migrations to the linked Cloud project)"
 run = "supabase db push"
 
 # --- docker ------------------------------------------------------------------------
 
 [tasks.up]
-description = "Build and run API + web with Docker Compose"
+description = "Build and run API + web with Docker Compose (Infisical dev /api + local Supabase)"
 depends = ["db:start"]
-run = "python3 scripts/local_env.py --docker -- docker compose up --build"
+run = "infisical run --env=dev --path=/api -- python3 scripts/local_env.py --docker -- docker compose up --build"
 
 [tasks.down]
 description = "Stop the Compose stack"
@@ -257,7 +304,7 @@ run = "uv run shield-engine train --data packages/engine/data/seed/train.jsonl"
 
 [tasks.check]
 description = "Everything CI runs. Must pass before pushing."
-depends = ["lint", "typecheck", "test", "spec:check", "contract:check", "secrets:scan"]
+depends = ["lint", "typecheck", "test", "spec:check", "contract:check", "secrets:scan", "sast"]
 
 [tasks."build:web"]
 description = "Production build of the web client"

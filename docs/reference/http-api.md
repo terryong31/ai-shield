@@ -38,14 +38,16 @@ Specs: [0007](../../specs/0007-gateway-http-api/spec.md) (gateway), [0012](../..
 | DELETE | `/api/v1/clearance` | none | empty | 204 |
 | GET | `/api/v1/auth/session` | none | `PlayerSessionStatus` | 200 |
 | POST | `/api/v1/auth/anonymous` | none | `PlayerSessionStatus` | 200 |
-| POST | `/api/v1/auth/register` | `PlayerRegisterRequest` | `PlayerSessionStatus` or `PlayerConfirmationResponse` | 200, 202, 409, 422 |
-| POST | `/api/v1/auth/login` | `PlayerLoginRequest` | `PlayerSessionStatus` | 200, 401, 403, 422, 503 |
-| POST | `/api/v1/auth/resend-confirmation` | `PlayerResendRequest` | `PlayerConfirmationResponse` | 202, 422 |
+| POST | `/api/v1/auth/register` | `PlayerRegisterRequest` | `PlayerSessionStatus` or `PlayerConfirmationResponse` | 200, 202, 422, 429, 503 |
+| POST | `/api/v1/auth/confirm` | `PlayerConfirmRequest` | `PlayerConfirmResponse` | 200, 400, 403, 422, 503 |
+| POST | `/api/v1/auth/login` | `PlayerLoginRequest` | `PlayerSessionStatus` | 200, 401, 403, 422, 429, 503 |
+| POST | `/api/v1/auth/resend-confirmation` | `PlayerResendRequest` | `PlayerConfirmationResponse` | 202, 403, 422, 429 |
 | POST | `/api/v1/auth/account/password` | `AccountPasswordRequest` | `PlayerSessionStatus` | 200, 401, 403, 422, 429, 503 |
-| POST | `/api/v1/auth/account/email` | `AccountEmailRequest` | `PlayerSessionStatus` | 200, 401, 403, 409, 422, 429, 503 |
+| POST | `/api/v1/auth/account/email` | `AccountEmailRequest` | `PlayerConfirmationResponse` | 202, 401, 403, 409, 422, 429, 503 |
 | POST | `/api/v1/auth/account/reset-progress` | `AccountResetRequest` | `AccountResetResponse` | 200, 401, 403, 422, 429, 503 |
 | DELETE | `/api/v1/auth/account` | `AccountDeleteRequest` | none | 204, 401, 403, 422, 429, 503 |
-| POST | `/api/v1/auth/recover` | `PlayerRecoverRequest` | `PlayerRecoverResponse` | 200, 422 |
+| POST | `/api/v1/auth/recover` | `PlayerRecoverRequest` | `PlayerRecoverResponse` | 200, 403, 422, 429 |
+| POST | `/api/v1/auth/reset-password` | `PlayerResetPasswordRequest` | `PlayerResetPasswordResponse` | 200, 400, 403, 422, 503 |
 | POST | `/api/v1/auth/upgrade` | none | `PlayerSessionStatus` | 200, 403 |
 | POST | `/api/v1/auth/logout` | none | empty | 204 |
 | GET | `/api/v1/game/levels` | none | `GameCatalogResponse` | 200 |

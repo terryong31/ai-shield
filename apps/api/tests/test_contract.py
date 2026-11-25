@@ -17,11 +17,13 @@ def test_only_versioned_routes_are_published() -> None:
         "/api/v1/auth/account/password",
         "/api/v1/auth/account/reset-progress",
         "/api/v1/auth/anonymous",
+        "/api/v1/auth/confirm",  # spec 0047
         "/api/v1/auth/login",
         "/api/v1/auth/logout",
         "/api/v1/auth/recover",
         "/api/v1/auth/register",
         "/api/v1/auth/resend-confirmation",  # spec 0027
+        "/api/v1/auth/reset-password",  # spec 0047
         "/api/v1/auth/session",
         "/api/v1/auth/upgrade",
         "/api/v1/clearance",

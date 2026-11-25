@@ -26,6 +26,8 @@ GAME_RUN_ACTOR_LIMIT = 10
 GAME_RUN_ACTOR_WINDOW = 60
 GAME_TRAIN_EMAIL_LIMIT = 10
 GAME_TRAIN_EMAIL_WINDOW = 60
+ACCOUNT_EMAIL_LIMIT = 5
+ACCOUNT_EMAIL_WINDOW = 900
 
 
 class RateLimitExceededError(Exception):
@@ -135,5 +137,19 @@ class RateLimiter:
             except Exception as exc:
                 logger.warning(
                     "Redis rate limiter write failed; local counter active (%s)",
+                    type(exc).__name__,
+                )
+
+    async def reset(self, bucket: str, raw_key: str, *, window_seconds: int) -> None:
+        win, _, _ = self._window(window_seconds)
+        key = hashed_bucket_key(bucket, raw_key, win)
+        self._counts.pop(key, None)
+        self._expiries.pop(key, None)
+        if self._redis is not None and hasattr(self._redis, "delete"):
+            try:
+                await self._redis.delete(key)
+            except Exception as exc:
+                logger.warning(
+                    "Redis rate limiter reset failed (%s)",
                     type(exc).__name__,
                 )

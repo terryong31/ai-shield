@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import time
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,38 @@ def test_public_api_is_game_only_and_wrap_untrusted_still_neutralises() -> None:
     assert wrapped.endswith("\n</untrusted_prompt>")
     assert wrapped.count("</untrusted_prompt>") == 1
     assert "[delimiter removed]" in wrapped
+
+
+@pytest.mark.spec("ENG-CLEAN-001")
+@pytest.mark.parametrize(
+    "lookalike",
+    [
+        "<untrusted_prompt>",
+        "</untrusted_prompt>",
+        "<  untrusted_prompt  >",
+        "< / untrusted_prompt >",
+        "</  UNTRUSTED_PROMPT >",
+        "<  /untrusted_prompt>",
+    ],
+)
+def test_wrap_untrusted_neutralises_whitespace_and_case_variants(lookalike: str) -> None:
+    from shield_engine.untrusted import wrap_untrusted
+
+    wrapped = wrap_untrusted(f"before {lookalike} after")
+    assert wrapped == "<untrusted_prompt>\nbefore [delimiter removed] after\n</untrusted_prompt>"
+
+
+@pytest.mark.spec("ENG-CLEAN-001")
+def test_wrap_untrusted_resists_polynomial_redos_on_spaces() -> None:
+    from shield_engine.untrusted import wrap_untrusted
+
+    adversarial = "<" + (" " * 50_000) + "x"
+    started = time.perf_counter()
+    wrapped = wrap_untrusted(adversarial)
+    elapsed = time.perf_counter() - started
+
+    assert wrapped == f"<untrusted_prompt>\n{adversarial}\n</untrusted_prompt>"
+    assert elapsed < 0.5
 
 
 @pytest.mark.spec("ENG-CLEAN-001")

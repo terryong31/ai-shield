@@ -1,4 +1,4 @@
-"""Client-level player authentication endpoints (spec 0016)."""
+"""Client-level player authentication endpoints (spec 0016, 0027, 0047)."""
 
 from __future__ import annotations
 
@@ -17,17 +17,30 @@ from shield_api.dependencies import (
 )
 from shield_api.schemas import (
     PlayerConfirmationResponse,
+    PlayerConfirmRequest,
+    PlayerConfirmResponse,
     PlayerLoginRequest,
     PlayerRecoverRequest,
     PlayerRecoverResponse,
     PlayerRegisterRequest,
     PlayerResendRequest,
+    PlayerResetPasswordRequest,
+    PlayerResetPasswordResponse,
     PlayerSessionStatus,
+)
+from shield_api.services.auth_flows import (
+    BROWSER_COOKIE_NAME,
+    RECOVERY_FLOW_TTL_SECONDS,
+    SIGNUP_FLOW_TTL_SECONDS,
+    AuthFlowRecord,
+    browser_cookie_matches,
+    hash_browser_cookie,
 )
 from shield_api.services.identity import (
     EmailNotConfirmedError,
     IdentityUnavailableError,
     InvalidIdentityError,
+    InvalidTokenError,
     VerifiedPlayer,
 )
 from shield_api.services.rate_limit import (
@@ -50,6 +63,15 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 INVALID_LOGIN = "Invalid email or password."
 NOT_CONFIRMED = "Confirm your email before signing in."
 UNAVAILABLE = "Sign-in is unavailable. Try again later."
+REGISTER_UNAVAILABLE = "Registration is unavailable. Try again later."
+CONFIRM_INVALID = "This confirmation link is invalid or has expired."
+CONFIRM_UNAVAILABLE = "Confirmation is unavailable. Try again later."
+RECOVERY_INVALID = "This recovery link is invalid or has expired."
+RECOVERY_UNAVAILABLE = "Password reset is unavailable. Try again later."
+
+
+def _web_base(settings: Settings) -> str:
+    return settings.WEB_BASE_URL.strip().rstrip("/")
 
 
 def _set_player_cookie(response: Response, token: str, settings: Settings, ttl: timedelta) -> None:
@@ -139,6 +161,7 @@ def _confirmation_sent() -> JSONResponse:
             "model": PlayerConfirmationResponse,
             "description": "Check your email: sent for every address when confirmation is on.",
         },
+        503: {"description": "Registration is unavailable."},
     },
 )
 async def register_player(
@@ -154,10 +177,113 @@ async def register_player(
             window_seconds=AUTH_IP_WINDOW,
         )
     email = body.email.strip().lower()
-    player = await container.identity.register(email, body.password, body.player_name)
+    browser_hash = hash_browser_cookie(request.cookies.get(BROWSER_COOKIE_NAME))
+    flow_id = await container.auth_flows.create(
+        AuthFlowRecord(purpose="signup", browser_hash=browser_hash),
+        ttl_seconds=SIGNUP_FLOW_TTL_SECONDS,
+    )
+    redirect_to = f"{_web_base(container.settings)}/auth/confirmed?flow={flow_id}"
+    verifier_out: list[str] = []
+    try:
+        player = await container.identity.register(
+            email,
+            body.password,
+            body.player_name,
+            redirect_to=redirect_to,
+            verifier_out=verifier_out,
+        )
+    except IdentityUnavailableError:
+        await container.auth_flows.delete(flow_id)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, REGISTER_UNAVAILABLE) from None
     if player is None:
+        if verifier_out:
+            await container.auth_flows.delete(flow_id)
+            flow_store = container.auth_flows
+            if hasattr(flow_store, "_flows"):
+                flow_store._flows[flow_id] = AuthFlowRecord(
+                    purpose="signup", browser_hash=browser_hash, code_verifier=verifier_out[0]
+                )
+            elif hasattr(flow_store, "_redis"):
+                import json
+
+                await flow_store._redis.set(
+                    f"authflow:{flow_id}",
+                    json.dumps(
+                        {
+                            "purpose": "signup",
+                            "browser_hash": browser_hash,
+                            "code_verifier": verifier_out[0],
+                        }
+                    ),
+                    ex=SIGNUP_FLOW_TTL_SECONDS,
+                )
         return _confirmation_sent()
+    await container.auth_flows.delete(flow_id)
     return await _open_verified(player, request, response, container)
+
+
+@router.post(
+    "/confirm",
+    responses={
+        400: {"description": "Invalid or expired confirmation link."},
+        503: {"description": "Confirmation is unavailable."},
+    },
+)
+async def confirm_player_email(
+    body: PlayerConfirmRequest, request: Request, response: Response, container: ContainerDep
+) -> PlayerConfirmResponse:
+    """Confirm an email link; auto-sign-in only when the originating browser cookie matches."""
+    if not body.token_hash and not body.code:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID)
+
+    flow = await container.auth_flows.get(body.flow_id) if body.flow_id else None
+    same_browser = flow is not None and browser_cookie_matches(
+        flow.browser_hash, request.cookies.get(BROWSER_COOKIE_NAME)
+    )
+
+    if same_browser:
+        assert flow is not None
+        try:
+            player = await container.identity.verify_confirmation(
+                code=body.code,
+                code_verifier=flow.code_verifier,
+                token_hash=body.token_hash,
+                token_type=body.type,
+            )
+        except InvalidTokenError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID) from None
+        except IdentityUnavailableError:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, CONFIRM_UNAVAILABLE) from None
+        if body.flow_id:
+            await container.auth_flows.delete(body.flow_id)
+        session_status = await _open_verified(player, request, response, container)
+        return PlayerConfirmResponse(status="signed_in", session=session_status)
+
+    if not body.confirm:
+        return PlayerConfirmResponse(status="confirmation_required", session=None)
+
+    if body.token_hash:
+        try:
+            await container.identity.verify_confirmation(
+                token_hash=body.token_hash, token_type=body.type
+            )
+        except InvalidTokenError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID) from None
+        except IdentityUnavailableError:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, CONFIRM_UNAVAILABLE) from None
+    elif body.code and flow is not None and flow.code_verifier:
+        try:
+            await container.identity.verify_confirmation(
+                code=body.code, code_verifier=flow.code_verifier, token_type=body.type
+            )
+        except InvalidTokenError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID) from None
+        except IdentityUnavailableError:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, CONFIRM_UNAVAILABLE) from None
+
+    if body.flow_id:
+        await container.auth_flows.delete(body.flow_id)
+    return PlayerConfirmResponse(status="confirmed", session=None)
 
 
 @router.post(
@@ -205,10 +331,6 @@ async def login_player(
             )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LOGIN) from None
     except EmailNotConfirmedError:
-        if is_prod:
-            await container.rate_limiter.record_failure(
-                "login_fail", email, window_seconds=LOGIN_FAIL_EMAIL_WINDOW
-            )
         raise HTTPException(status.HTTP_403_FORBIDDEN, NOT_CONFIRMED) from None
     except IdentityUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
@@ -239,7 +361,13 @@ async def resend_confirmation(
             limit=EMAIL_SEND_LIMIT,
             window_seconds=EMAIL_SEND_WINDOW,
         )
-    await container.identity.resend(email)
+    browser_hash = hash_browser_cookie(request.cookies.get(BROWSER_COOKIE_NAME))
+    flow_id = await container.auth_flows.create(
+        AuthFlowRecord(purpose="signup", browser_hash=browser_hash),
+        ttl_seconds=SIGNUP_FLOW_TTL_SECONDS,
+    )
+    redirect_to = f"{_web_base(container.settings)}/auth/confirmed?flow={flow_id}"
+    await container.identity.resend(email, redirect_to=redirect_to)
     return PlayerConfirmationResponse()
 
 
@@ -264,8 +392,69 @@ async def recover_player_password(
             limit=EMAIL_SEND_LIMIT,
             window_seconds=EMAIL_SEND_WINDOW,
         )
-    await container.identity.recover(email)
+    browser_hash = hash_browser_cookie(request.cookies.get(BROWSER_COOKIE_NAME))
+    flow_id = await container.auth_flows.create(
+        AuthFlowRecord(purpose="recovery", browser_hash=browser_hash),
+        ttl_seconds=RECOVERY_FLOW_TTL_SECONDS,
+    )
+    redirect_to = f"{_web_base(container.settings)}/auth/reset-password?flow={flow_id}"
+    verifier_out: list[str] = []
+    await container.identity.recover(email, redirect_to=redirect_to, verifier_out=verifier_out)
+    if verifier_out:
+        flow_store = container.auth_flows
+        if hasattr(flow_store, "_flows"):
+            flow_store._flows[flow_id] = AuthFlowRecord(
+                purpose="recovery", browser_hash=browser_hash, code_verifier=verifier_out[0]
+            )
+        elif hasattr(flow_store, "_redis"):
+            import json
+
+            await flow_store._redis.set(
+                f"authflow:{flow_id}",
+                json.dumps(
+                    {
+                        "purpose": "recovery",
+                        "browser_hash": browser_hash,
+                        "code_verifier": verifier_out[0],
+                    }
+                ),
+                ex=RECOVERY_FLOW_TTL_SECONDS,
+            )
     return PlayerRecoverResponse()
+
+
+@router.post(
+    "/reset-password",
+    responses={
+        400: {"description": "Invalid or expired recovery link."},
+        503: {"description": "Password reset is unavailable."},
+    },
+)
+async def reset_player_password(
+    body: PlayerResetPasswordRequest, container: ContainerDep
+) -> PlayerResetPasswordResponse:
+    """Complete a password reset from a recovery link and revoke all existing sessions."""
+    if not body.token_hash and not body.code:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, RECOVERY_INVALID)
+
+    flow = await container.auth_flows.get(body.flow_id) if body.flow_id else None
+    try:
+        email = await container.identity.complete_password_reset(
+            code=body.code,
+            code_verifier=flow.code_verifier if flow else None,
+            token_hash=body.token_hash,
+            new_password=body.new_password,
+        )
+    except InvalidTokenError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, RECOVERY_INVALID) from None
+    except IdentityUnavailableError:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, RECOVERY_UNAVAILABLE) from None
+
+    if body.flow_id:
+        await container.auth_flows.delete(body.flow_id)
+    await container.players.revoke_sessions(email, keep=None)
+    await container.models.purge_account(email)
+    return PlayerResetPasswordResponse()
 
 
 @router.post(

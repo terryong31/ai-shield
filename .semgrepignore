@@ -1,0 +1,18 @@
+# Generated and vendor paths
+.nuxt/
+.output/
+.venv/
+node_modules/
+apps/web/app/types/api.gen.ts
+contracts/
+
+# Binary/model/data assets and documentation
+packages/engine/data/
+docs/
+specs/
+
+# Test fixtures (intentional test passphrases, mocks, and attack payloads)
+packages/engine/tests/
+apps/api/tests/
+apps/web/test/
+scripts/tests/
