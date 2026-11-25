@@ -47,17 +47,21 @@ into the contract. Prints `wrote <path>`.
 
 Defined in [`mise.toml`](../../mise.toml). Run from anywhere in the repository
 with `mise run <task>`; list them with `mise tasks`. Tools pinned by mise:
-node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0, lefthook 2.2.2,
+node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0, infisical 0.44.11, lefthook 2.2.2,
 gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.186.0.
 
 | Task | Runs | Description |
 | --- | --- | --- |
 | `setup` | `mise install`; `uv sync --all-packages`; `bun install`; `lefthook install` | Install tools, all Python and JavaScript dependencies, and the git hooks |
 | `hooks:install` | `lefthook install` | Install the git hooks from `lefthook.yml` |
-| `api:dev` | `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
-| `web:dev` | `bun run dev` in `apps/web` | Run the Nuxt web client on :3000 |
+| `docker:ensure` | `docker info`, or `orbctl start` | Make sure that Docker runs |
+| `api:dev` | `infisical run --env=dev --path=/api`, then `scripts/local_env.py`, then `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development`; depends on `infra:up` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
+| `web:dev` | `infisical run --env=dev --path=/web -- bun run dev` in `apps/web` | Run the Nuxt web client on :3000 |
 | `dev` | depends on `api:dev`, `web:dev` | Run API and web together |
 | `stop` | `kill`, `docker compose stop`, `supabase stop` | Stop the dev servers, Stripe listener, Redis and local Supabase of this repo (data is kept) |
+| `stripe:setup` | `python3 scripts/stripe_setup.py <web URL>` | Ask for the sandbox key, store the Stripe variables in Infisical `dev` and `prod`, and make the production webhook endpoint |
+| `stripe:events` | `scripts/stripe_setup.py <web URL> --events` with Infisical `prod /api` | Update the events of the production webhook endpoint |
+| `stripe:listen` | `stripe listen` with Infisical `dev /api` | Forward Stripe sandbox events to the local API |
 | `test:engine` | `uv run pytest packages/engine --cov=shield_engine --cov-fail-under=90` | Engine unit tests with coverage (fails under 90%) |
 | `test:api` | `uv run pytest apps/api --cov=shield_api --cov-fail-under=85` | Gateway tests with coverage (fails under 85%) |
 | `test:tooling` | `uv run pytest scripts/tests` | Tests for repo tooling (SDD workflow, spec checker) |
@@ -87,7 +91,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `sdd:done` | `python3 scripts/sdd.py done` | Set the spec `Implemented`, append `## Verification`, tick `tasks.md` |
 | `sdd:status` | `python3 scripts/sdd.py status` | Show the active cycle and next step |
 | `sdd:abort` | `python3 scripts/sdd.py abort` | Discard the active cycle |
-| `db:start` | `supabase start` | Start the local Supabase stack (applies migrations + seed on first run) |
+| `db:start` | `supabase start`, if it does not run; depends on `docker:ensure` | Start the local Supabase stack (applies migrations + seed on first run) |
 | `db:stop` | `supabase stop` | Stop the local stack; data is kept |
 | `db:status` | `supabase status` | Local URLs and keys |
 | `mailpit` | prints `http://127.0.0.1:54424` and `127.0.0.1:54425` | Show the local Mailpit web UI and SMTP address (provided by local Supabase) |
@@ -95,13 +99,20 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `db:reset` | `supabase db reset` | Recreate the local database from migrations, then run `supabase/seed.sql` |
 | `db:migration` | `supabase migration new <name>` | Create `supabase/migrations/<timestamp>_<name>.sql` |
 | `db:diff` | `supabase db diff --schema audit,game,players` | Generate SQL for changes made in Studio (`-f <name>` writes a migration) |
+| `db:up` | `supabase migration up` | Apply pending migrations to the local database; data is kept |
+| `db:check` | `supabase db start`; `supabase db lint --local --schema audit,game,players --fail-on error` | CI: apply every migration to a new database |
 | `db:lint` | `supabase db lint --schema audit,game,players` | Lint the local schema |
 | `db:link` | `supabase link` | Link to a hosted project (`--project-ref <ref>`) |
-| `db:push` | `supabase db push` | Apply pending migrations to the linked project; never runs seed |
-| `infra:up` | `mise run db:start && mise run redis:start` | Start the local Supabase stack and Redis container |
-| `admin:create` | `python -m shield_api.admin_cli create <email>` | Create a Supabase user as admin, or promote an existing one (`app_metadata.role = "admin"`); prompts for the password. Needs `SUPABASE_URL` and the service `SUPABASE_KEY` |
-| `admin:revoke` | `python -m shield_api.admin_cli revoke <email>` | Remove the admin role; other `app_metadata` is kept |
-| `up` | `docker compose up --build` | Build and run Redis, API + web containers |
+| `db:remote:status` | `supabase migration list` | Compare local and linked migrations (read-only) |
+| `db:remote:plan` | `supabase db push --dry-run` | Show the pending migrations of the linked project |
+| `db:remote:push` | `supabase db push` | Apply pending migrations to the linked project; never runs seed |
+| `db:push` | `supabase db push` | Alias for `db:remote:push` |
+| `redis:start` / `redis:stop` | `docker compose up -d redis --wait` / `docker compose stop redis` | Start or stop the local Redis container |
+| `infra:up` | `supabase start`, if it does not run; `docker compose up -d redis --wait`; depends on `docker:ensure` | Start local Supabase and Redis |
+| `admin:create` | `scripts/local_env.py`, then `python -m shield_api.admin_cli create <email>` | Create a **local** Supabase user as admin, or promote an existing one (`app_metadata.role = "admin"`); prompts for the password |
+| `admin:revoke` | `python -m shield_api.admin_cli revoke <email>` | Remove the admin role from a **local** user; other `app_metadata` is kept |
+| `admin:remote:create` / `admin:remote:revoke` | The same commands with Infisical `prod /api` | Add or remove an admin in the hosted project |
+| `up` | `docker compose up --build` with Infisical `dev /api` and `scripts/local_env.py --docker` | Build and run Redis, API + web containers |
 | `down` | `docker compose down` | Stop containers |
 
 ## Git hooks (`lefthook.yml`)
@@ -152,6 +163,8 @@ of files mentioning the IDs) as JSON.
 | --- | --- |
 | [`scripts/new_spec.py`](../../scripts/new_spec.py) `<slug>` | Creates `specs/NNNN-<slug>/` with `spec.md`, `plan.md`, `tasks.md` from `specs/_templates/`, using the next free number and today's date. The slug must be kebab-case (`[a-z0-9]+(-[a-z0-9]+)*`); otherwise it prints usage and exits 2 |
 | [`scripts/sdd.py`](../../scripts/sdd.py) `start\|red\|green\|verify\|done\|status\|abort\|hook` | The enforced SDD cycle (spec 0010). State lives in `.sdd/state.json` (git-ignored). `hook pre-tool\|stop\|session-start` reads a Claude Code hook payload on stdin |
+| [`scripts/local_env.py`](../../scripts/local_env.py) `[--docker] -- <command>` | Runs a command with the local Supabase and Redis variables. Values that are already in the environment or in `apps/api/.env` stay. `--docker` changes the Supabase host to `host.docker.internal` |
+| [`scripts/stripe_setup.py`](../../scripts/stripe_setup.py) `<web URL> [--events]` | Stripe setup, see `stripe:setup` and `stripe:events`. Keys go to Infisical through standard input and are never printed |
 | [`scripts/check_spec_coverage.py`](../../scripts/check_spec_coverage.py) | For every `specs/NNNN-*/spec.md` whose `- **Status:**` is `Accepted` or `Implemented`, finds every criterion defined as `- **AREA-COMP-NNN**` and checks that the ID string appears in some file matching `packages/*/tests/**/*.py`, `apps/*/tests/**/*.py`, `apps/*/test/**/*.ts` or `scripts/tests/**/*.py`. Exits 1 and lists missing IDs, otherwise prints `spec coverage OK: N criteria, all traced to tests` |
 
 ## Web package scripts (`apps/web/package.json`)

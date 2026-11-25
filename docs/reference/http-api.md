@@ -147,12 +147,12 @@ Sends the confirmation email again (Supabase `resend`, `type="signup"`). Always 
 
 ### `POST /api/v1/auth/recover`
 
-Triggers a password recovery email via Supabase `reset_password_for_email` when configured and returns `PlayerRecoverResponse` (`{"status": "ok"}`).
+Triggers a password recovery email via Supabase `reset_password_for_email` and returns `PlayerRecoverResponse` (`{"status": "ok"}`).
 
 ### Account settings (`/api/v1/auth/account/*`, spec 0025)
 
-All four need a signed-in, non-anonymous player session (`403` otherwise) and the
-`current_password` (`401` when wrong; after 5 wrong passwords for one account in
+All of these need a signed-in, non-anonymous player session (`403` otherwise). All except
+`PATCH …/profile` need the `current_password` (`401` when wrong; after 5 wrong passwords for one account in
 `CLEARANCE_WINDOW_MINUTES`, `429`). Unknown fields are `422`. Store or Supabase
 failures are `503` with a generic message.
 
@@ -162,8 +162,7 @@ failures are `503` with a generic message.
 - `POST …/reset-progress` `{current_password}`: deletes the account's scores and saved boards; returns `{"scores_removed": n, "boards_removed": m}`.
 - `DELETE /api/v1/auth/account` `{current_password, confirm: "DELETE"}`: deletes saved boards, scores, sessions and the account (and the Supabase user), keeps the day's usage counts, and clears the cookie. `204`.
 
-With Supabase configured, the current password is checked by Supabase Auth and the
-changes go through its admin API (spec 0027); otherwise the local hash is used.
+Supabase Auth checks the current password, and the changes go through its admin API (spec 0027).
 
 Scores recorded for a signed-in player store the player's email, so each account
 keeps its own best score per level. `GET /api/v1/game/scores` never returns it.

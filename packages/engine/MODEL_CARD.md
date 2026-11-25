@@ -1,5 +1,9 @@
 # Model card: `baseline` classifier (the game's ML filter TF-IDF default)
 
+> **Status.** Spec 0038 changed the ML filter: it runs only models that a player trains. The gateway
+> still loads the bundled baseline at startup, but no check uses it. The `Quick screen` check was
+> merged into the ML filter (spec 0035).
+
 | | |
 | --- | --- |
 | **Artifact** | `src/shield_engine/models/baseline/` (`model.joblib`, `vectorizer.joblib`, `metadata.json`) |

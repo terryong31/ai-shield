@@ -17,6 +17,8 @@ supersedes the old one and update the old one's status to
 | [0005](0005-ndjson-event-stream.md) | NDJSON event stream for `/chat` | Superseded by spec 0026 | 2026-09-23 |
 | [0006](0006-hash-verified-model-artifacts.md) | Hash-verified model artifacts | Accepted | 2026-09-23 |
 | [0007](0007-ci-pipeline-and-git-hooks.md) | CI pipeline and git hooks | Accepted | 2026-11-24 |
+| [0008](0008-infisical-for-secrets.md) | Infisical for secrets | Proposed | 2026-11-25 |
+| [0009](0009-one-time-pass-with-stripe.md) | One-time pass with Stripe Checkout | Accepted | 2026-11-25 |
 
 ## Template
 

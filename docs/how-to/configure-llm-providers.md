@@ -1,7 +1,7 @@
 # Configure LLM providers
 
 The game's agent levels run a real model when one is configured. Keys go in
-`apps/api/.env` (or the process environment) and are read once at startup by
+[Infisical](manage-secrets.md) (`dev /api` and `prod /api`) and are read once at startup by
 [`container.py`](../../apps/api/src/shield_api/container.py).
 
 | Level | Agent tier | Model | Needs |
@@ -17,23 +17,14 @@ the game still works and tests need no network.
 ## Enable Gemini (standard tier)
 
 1. Create a Gemini API key in Google AI Studio.
-2. Add it to `apps/api/.env`:
-
-   ```dotenv
-   GOOGLE_API_KEY=...
-   GEMINI_MODEL=gemini-3.5-flash-lite
-   ```
+2. Add `GOOGLE_API_KEY` to Infisical ([how](manage-secrets.md#add-or-change-a-secret)).
+   `GEMINI_MODEL` is optional (default `gemini-3.5-flash-lite`).
 
 ## Enable Groq (budget tier, and standard without Gemini)
 
 1. Create an API key in the Groq console.
-2. Add it to `apps/api/.env`:
-
-   ```dotenv
-   GROQ_API_KEY=gsk_...
-   GAME_MODEL_BUDGET=openai/gpt-oss-20b
-   GROQ_CHAT_MODEL=openai/gpt-oss-120b   # standard tier when there is no Google key
-   ```
+2. Add `GROQ_API_KEY` to Infisical. Optional: `GAME_MODEL_BUDGET` (default `openai/gpt-oss-20b`)
+   and `GROQ_CHAT_MODEL` (default `openai/gpt-oss-120b`, the standard tier without a Google key).
 
 Groq shut down its Llama chat and Llama Guard models for free and developer
 keys on 2026-08-16, and Google no longer serves `gemini-2.x` to new keys. Boards
@@ -42,8 +33,7 @@ and `Safety check` uses `openai/gpt-oss-safeguard-20b`.
 
 ## Check
 
-Restart the gateway (`mise run api:dev` reloads on code changes, not on `.env`
-changes), then:
+Restart the gateway (Infisical values are read only when the process starts), then:
 
 ```bash
 curl -s http://localhost:8000/api/v1/health

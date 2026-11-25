@@ -97,7 +97,7 @@ Check locally with `mise run spec:check`.
 | 0022 | [Custom sandbox (BYOD, BYOK)](0022-game-custom-sandbox/spec.md) | ENG, API, WEB | Implemented |
 | 0023 | [Saved boards](0023-game-saved-boards/spec.md) | API, WEB | Implemented |
 | 0024 | [Domain-scoped database schemas (`audit`, `game`, `players`)](0024-domain-schema-storage/spec.md) | API | Implemented |
-| 0025 | [Account settings](0025-account-settings/spec.md) | API, WEB | Draft |
+| 0025 | [Account settings](0025-account-settings/spec.md) | API, WEB | Implemented |
 | 0029 | [Strict win/lose and tool configuration](0029-strict-win-lose-and-tool-config/spec.md) | ENG, API, WEB | Implemented |
 | 0030 | [Tool refinements and Jev](0030-tool-refinements-and-jev/spec.md) | ENG, API, WEB | Implemented |
 | 0031 | [Live Jev & AI node API keys and real measured latency/cost](0031-live-api-keys-and-real-metrics/spec.md) | ENG, API, WEB | Implemented |
@@ -111,8 +111,8 @@ Check locally with `mise run spec:check`.
 | 0039 | [Campaign levels and difficulty leaderboard](0039-campaign-levels-and-difficulty-leaderboard/spec.md) | ENG, API | Implemented |
 | 0040 | [Minimal monochrome Level Select and in-game briefing UI](0040-campaign-problem-hub-and-briefing-ui/spec.md) | WEB | Implemented |
 | 0028 | [Instant leaderboard](0028-instant-leaderboard/spec.md) | API, WEB | Superseded by 0044 |
-| 0026 | [Game-only cleanup](0026-game-only-cleanup/spec.md) | ENG, API, WEB | Draft |
-| 0027 | [Player email confirmation](0027-player-email-confirmation/spec.md) | API, WEB | Draft |
+| 0026 | [Game-only cleanup](0026-game-only-cleanup/spec.md) | ENG, API, WEB | Implemented |
+| 0027 | [Player email confirmation](0027-player-email-confirmation/spec.md) | API, WEB | Implemented |
 | 0041 | [Same-origin API proxy](0041-same-origin-api-proxy/spec.md) | WEB | Implemented |
 | 0042 | [Run spend and account integrity](0042-run-spend-and-account-integrity/spec.md) | API, WEB | Implemented |
 | 0043 | [Rate limiting, trusted client IP, bot protection and production configuration](0043-rate-limiting-and-client-ip/spec.md) | API, WEB | Implemented |

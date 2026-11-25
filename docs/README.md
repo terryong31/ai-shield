@@ -22,9 +22,11 @@ quadrant that matches what you need right now:
 
 ## How-to guides
 
+- [Manage secrets](how-to/manage-secrets.md): set up Infisical, add a secret, work without access.
+- [Accept payments](how-to/accept-payments.md): set up Stripe, test a payment, find a problem, go live.
 - [Configure LLM providers](how-to/configure-llm-providers.md): enable Groq and Gemini for the game's AI agent tiers.
 - [Persist game data](how-to/persist-game-data.md): run, migrate and deploy the Supabase project in `supabase/`.
-- [Retrain the classifier](how-to/retrain-the-classifier.md): retrain the `Quick screen` baseline, verify digests, update the model card.
+- [Retrain the classifier](how-to/retrain-the-classifier.md): retrain the bundled baseline (no check uses it at this time), verify digests, update the model card.
 - [Change the HTTP contract](how-to/change-the-http-contract.md): edit schemas, regenerate the contract and client types.
 - [Write a spec](how-to/write-a-spec.md): checklist for IDs, status, traceability and review.
 - [Deploy](how-to/deploy.md): build the Docker images, configure them, and harden for production.
@@ -49,5 +51,5 @@ quadrant that matches what you need right now:
 ## Elsewhere in the repository
 
 - [Specifications](../specs/README.md): the spec process and the index of all specs.
-- [Model card](../packages/engine/MODEL_CARD.md): the baseline classifier behind `Quick screen`.
+- [Model card](../packages/engine/MODEL_CARD.md): the bundled baseline classifier.
 - [HTTP contract](../contracts/shield-api.openapi.json): the committed OpenAPI document.

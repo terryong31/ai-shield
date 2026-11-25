@@ -9,7 +9,7 @@ gateway (`shield-api`) and a Nuxt web client (`@ai-shield/web`).
 
 ```
 Input ──▶ [Text cleaner / Word filter / Length limit / Secret scanner / ML filter /
-           Quick screen / Safety check / LLM review / Tool filter] ──▶ Help Desk or Protected Agent
+           Jev / Safety check / LLM review / Tool filter] ──▶ Help Desk or Protected Agent
 ```
 
 ## Repository
@@ -17,7 +17,7 @@ Input ──▶ [Text cleaner / Word filter / Length limit / Secret scanner / ML
 | Path | What | Stack |
 | --- | --- | --- |
 | [`packages/engine`](packages/engine) | **Engine** (`shield-engine`): board interpreter, checks, levels, AI agent, custom sandbox and scoring | Python 3.12, scikit-learn |
-| [`apps/api`](apps/api) | **Gateway** (`shield-api`): players and quotas, runs, saved boards, leaderboard, admin clearance | FastAPI, Supabase |
+| [`apps/api`](apps/api) | **Gateway** (`shield-api`): players and quotas, runs, saved boards, leaderboard, payments, admin clearance | FastAPI, Supabase, Redis, Stripe |
 | [`apps/web`](apps/web) | **Web client** (`@ai-shield/web`): main menu (`/`), defence board (`/game`), plans (`/plans`), settings and the admin console (`/_console`) | Nuxt 4, Nuxt UI, Vue Flow |
 
 The web client talks only to the gateway through a committed [OpenAPI contract](contracts/shield-api.openapi.json). The gateway holds no detection logic; checks, graph evaluation, custom ML training and wave scoring live in `shield-engine`.
@@ -25,18 +25,22 @@ The web client talks only to the gateway through a committed [OpenAPI contract](
 ## Quick start
 
 ```bash
-# prerequisites: mise (https://mise.jdx.dev)
-mise install          # pins Python, uv, Node, bun
+# prerequisites: mise (https://mise.jdx.dev), Docker, and access to the Infisical project
+mise install          # pins Python, uv, Node, bun, Supabase, Infisical and the other tools
 mise run setup        # installs all dependencies and the git hooks
+infisical login       # once per machine; without access see docs/how-to/manage-secrets.md
 mise run dev          # API on :8000 (Swagger at /api/v1/docs), web on :3000
+mise stop             # stops the servers, Redis and local Supabase
 ```
 
 Open http://localhost:3000:
 
-1. **Main menu (`/`):** pick a level (Easy: classify prompts at a Help Desk; Medium: protect a modern AI agent; Hard: protect a budget model), see the leaderboard, open **Plans** to upgrade, and paid players get the **Custom** sandbox (your own agent, dataset and model key).
+1. **Main menu (`/`):** pick a difficulty and one of 23 levels (Easy: classify prompts at a Help Desk; Medium: protect a modern AI agent; Hard: protect a budget model), see the leaderboard, and open **Plans** to buy a 30-day pass. Paid players get all levels and the **Custom** sandbox (your own agent, dataset and model key).
 2. **Defence board (`/game`):** drag checks from **Tools**, wire them between **Input** and the final node, double-click a node to configure it, then **Run wave**. Signed-in players get 5 attempts a day on Medium and Hard (anonymous 1, paid 300) and can **Save** their board.
 3. **Admin console (`/_console`):** for Supabase users with `app_metadata.role = "admin"` (create one with `mise run admin:create <email>`); shows score stats and the leaderboard, and can clear the scoreboard.
 
+- **Secrets:** [Infisical](docs/how-to/manage-secrets.md) (`dev` and `prod`). Do not commit `.env` files.
+- **Payments:** [Stripe](docs/how-to/accept-payments.md) sandbox, USD 5 for 30 days.
 - **Containers:** `mise run up` builds and runs both apps with [`compose.yaml`](compose.yaml).
 - **Storage:** players, saved boards, scores and admin sessions live in Supabase (local stack via `mise run db:start` in development, Supabase Cloud in production). See [persist game data](docs/how-to/persist-game-data.md).
 
@@ -48,7 +52,7 @@ Docs follow the [Diátaxis](https://diataxis.fr) framework. Start at **[docs/](d
 | --- | --- | --- | --- |
 | [Tutorials](docs/tutorials/) | [How-to guides](docs/how-to/) | [Reference](docs/reference/) | [Explanation](docs/explanation/) |
 
-Also see the [model card](packages/engine/MODEL_CARD.md) for the baseline classifier behind the `Quick screen` check.
+Also see the [model card](packages/engine/MODEL_CARD.md) for the bundled baseline classifier.
 
 ## How we build it
 
@@ -56,7 +60,7 @@ Development is **spec-driven and test-driven**:
 
 1. Every behaviour change starts as a spec in [`specs/`](specs/README.md) with acceptance criteria carrying permanent IDs (`ENG-GAME-001`, `WEB-GAME-005`).
 2. Each criterion gets a failing test tagged with its ID before production code is unlocked (`mise run sdd:start` -> `sdd:red` -> `sdd:green` -> `sdd:verify` -> `sdd:done`).
-3. `mise run check` verifies spec coverage (`mise run spec:check`), contract drift (`mise run contract:check`), strict typechecking (`mypy` + `vue-tsc`), linters (`ruff` + `eslint` + `actionlint` + `zizmor`), a secret scan (`gitleaks`), and test suites across engine, API, and web.
+3. `mise run check` verifies spec coverage (`mise run spec:check`), contract drift (`mise run contract:check`), strict typechecking (`mypy` + `vue-tsc`), linters (`ruff` + `eslint` + `actionlint` + `zizmor`), a secret scan (`gitleaks`), static analysis (`semgrep`), and test suites across engine, API, and web.
 4. Git hooks ([`lefthook.yml`](lefthook.yml)) run fast checks before each commit and the full gate before each push. GitHub Actions ([`ci.yml`](.github/workflows/ci.yml), [`codeql.yml`](.github/workflows/codeql.yml)) runs the same tasks on every pull request. See [Work with CI and the git hooks](docs/how-to/work-with-ci-and-git-hooks.md).
 
 See [AGENTS.md](AGENTS.md) and [docs/how-to/work-with-ai-agents.md](docs/how-to/work-with-ai-agents.md).
@@ -70,4 +74,4 @@ See [AGENTS.md](AGENTS.md) and [docs/how-to/work-with-ai-agents.md](docs/how-to/
 
 ## License
 
-No license has been granted yet: all rights reserved by the copyright holder until a `LICENSE` file is added.
+[MIT](LICENSE)

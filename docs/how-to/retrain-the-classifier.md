@@ -1,5 +1,9 @@
 # Retrain the baseline classifier
 
+> **Status.** Spec 0038 changed the ML filter: it runs only models that a player trains. The gateway
+> still loads the bundled baseline at startup, but no check uses it. The `Quick screen` check was
+> merged into the ML filter (spec 0035).
+
 The bundled baseline (`packages/engine/src/shield_engine/models/baseline/`) is
 the model behind the game's **Quick screen** check. Retraining it changes how
 every board with a Quick screen scores, so it needs a spec with before/after

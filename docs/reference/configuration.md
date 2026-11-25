@@ -4,8 +4,10 @@
 
 Read by [`settings.py`](../../apps/api/src/shield_api/settings.py) (pydantic-settings)
 from the process environment and an optional `.env` file in the working directory
-(`apps/api/.env` when started with `mise run api:dev`). Names are case-sensitive.
-Unknown variables are ignored. Every provider is optional. Template:
+(`apps/api/.env` when started with `mise run api:dev`). The mise tasks put the Infisical
+variables into the environment, and they override `.env`
+([Manage secrets](../how-to/manage-secrets.md)). Names are case-sensitive.
+Unknown variables are ignored. Every model provider is optional. Template:
 [`apps/api/.env.example`](../../apps/api/.env.example).
 
 | Name | Default | Purpose |
@@ -26,7 +28,7 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `SUPABASE_KEY` | unset | **Required.** Server-side (service) Supabase key; `mise run admin:create` needs it to set `app_metadata`. Also accepted as `SUPABASE_ANON_KEY` (legacy alias) |
 | `SUPABASE_ANON_KEY` | unset | Alias for `SUPABASE_KEY` |
 | `WEB_BASE_URL` | `http://localhost:3000` | Public origin of the web client. **Required** and must not be `localhost`/`127.0.0.1` when `APP_ENV=production` (spec 0047). Confirmation, email-change, and password-recovery emails link to `<WEB_BASE_URL>/auth/confirmed` and `<WEB_BASE_URL>/auth/reset-password`, which must be listed in the Supabase project's **Redirect URLs** |
-| `SESSION_TTL_MINUTES` | `480` | Lifetime of a clearance session (spec 0012) |
+| `SESSION_TTL_MINUTES` | `480` | Lifetime of player and clearance sessions (specs 0012, 0016) |
 | `SESSION_COOKIE_SECURE` | `true` | Adds `Secure` to the session cookie. Browsers accept it on `http://localhost`; set `false` only for other plain-HTTP hosts (and Safari on localhost) |
 | `ALLOW_SELF_UPGRADE` | `false` | Enables `POST /api/v1/auth/upgrade` and the Paid upgrade button on `/plans` for demos. When `false`, upgrades answer `403` and `/plans` shows `Coming soon` (spec 0042) |
 | `TRUSTED_CLIENT_IP_HEADER` | unset | Header name carrying the real client IP (first comma-separated entry), e.g. `x-shield-client-ip` behind the Nuxt proxy. **Required** when `APP_ENV=production` (`build_container` raises `ConfigurationError` if unset) (spec 0043) |
@@ -39,10 +41,11 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `STRIPE_WEBHOOK_SECRET` | unset | Signing secret of the webhook endpoint (`whsec_`). **Required** when `STRIPE_SECRET_KEY` is set |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000` | Comma-separated list of browser origins allowed to call the API with credentials. `*` is rejected. Not exercised when the browser goes through the web proxy (spec 0041) |
 
-Secrets (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `SUPABASE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+Secrets (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `TYPESAFE_API_KEY`, `SUPABASE_KEY`, `REDIS_URL`, `MODEL_SIGNING_KEY`,
+`TRUSTED_PROXY_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
 are `SecretStr` and are not printed in logs or reprs.
 
-What degrades without each provider: [Configure LLM providers](../how-to/configure-llm-providers.md#what-degrades-without-each-key).
+What degrades without each provider: [Configure LLM providers](../how-to/configure-llm-providers.md#failure-behaviour).
 
 ## Web client (`apps/web`)
 

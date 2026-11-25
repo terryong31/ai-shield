@@ -1,6 +1,6 @@
 # Persist game data (Supabase)
 
-The gateway stores player accounts and sessions, daily run quotas, saved boards,
+The gateway stores player accounts and sessions, daily run quotas, pass purchases, saved boards,
 the leaderboard and admin console sessions in Supabase (`SUPABASE_URL` and
 `SUPABASE_KEY` are required at startup; missing credentials raise
 `ConfigurationError` — [spec 0046](../../specs/README.md)):
@@ -15,7 +15,7 @@ Every table lives in a domain schema; nothing is stored in `public`:
 | --- | --- |
 | `audit` | `clearance_sessions` (admin console sessions; token hashes only) |
 | `game` | `scores` (leaderboard), `saved_boards` (one board per player and level) |
-| `players` | `accounts`, `sessions`, `daily_usage` (run quotas) |
+| `players` | `accounts` (profile, tier, `paid_until`), `sessions`, `daily_usage` (run quotas), `purchases` (Stripe passes) |
 
 The browser never talks directly to Supabase
 ([ADR 0004](../explanation/decisions/0004-frontend-talks-only-to-gateway.md)).
@@ -27,10 +27,8 @@ The browser never talks directly to Supabase
 ```
 supabase/
 ├── config.toml                                   # local stack config (project_id = "ai-shield")
-├── migrations/
-│   ├── 20260922183717_create_requests_table.sql  # the original request log (later dropped)
-│   ├── 20261108120000_domain_schemas.sql         # audit, game, players schemas and tables
-│   └── 20261108213955_drop_audit_requests.sql    # drops the chat request log (spec 0026)
+├── migrations/                                   # applied in filename order
+├── templates/                                    # local auth email templates
 └── seed.sql                                      # local only; the game needs no seed rows
 ```
 
@@ -80,7 +78,7 @@ automatically rewrites `SUPABASE_URL` to `http://host.docker.internal:54421`.
    apply to hosted projects. In the dashboard open **Project Settings → Data API**
    (or **API**), add `audit`, `game` and `players` to **Exposed schemas**, and save.
 3. Store `SUPABASE_URL` and `SUPABASE_KEY` (the service/secret key) in Infisical
-   under `prod` → `/api` and sync to Vercel via Infisical's Vercel integration
+   under `prod` → `/api` ([Manage secrets](manage-secrets.md)) and sync to Vercel via Infisical's Vercel integration
    (never in `apps/api/.env` or the web app).
 
 The key is a server-side credential that bypasses RLS. Keep it in your secret

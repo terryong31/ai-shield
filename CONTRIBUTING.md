@@ -7,8 +7,11 @@ development**. Please read this page before opening a PR.
 
 ```bash
 mise install && mise run setup
-mise run check     # should be green on a fresh clone
+mise run check     # should be green on a fresh clone; needs no secrets
 ```
+
+`mise run dev` reads secrets from Infisical. Without access, see
+[Manage secrets](docs/how-to/manage-secrets.md#work-without-access-to-infisical).
 
 `mise run setup` also installs the git hooks (`lefthook.yml`):
 

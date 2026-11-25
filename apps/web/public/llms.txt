@@ -56,7 +56,7 @@ The campaign has 23 levels. Levels marked `Paid` need a pass.
 - `text_cleanup` (Text cleanup): Normalizes obfuscated text with selectable `strip_zero_width`, `decode_base64`, and `decode_hex_url` transforms before downstream checks (`Free`).
 - `length_limit` (Length limit): Stops prompts longer than the configured character limit (`Free`).
 - `secret_scan` (Secret scanner): Scans prompts using player-configured case-insensitive regular expressions (`Free`).
-- `ml_classifier` (ML filter): Classifies prompts with the bundled `TF-IDF` baseline or custom CSV-trained models (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and splits traffic across `pass` (`safe`) and `unclear` (`suspicious`) handles (`Free`).
+- `ml_classifier` (ML filter): Classifies prompts with models that the player trains from CSV examples (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and splits traffic across `pass` (`safe`) and `unclear` (`suspicious`) handles (`Free`).
 - `jev` (Jev): Evaluates a player-written boolean `noul` question via TypeSafe System One (`12 ms`, `$0.00005`).
 - `safety_check` (Safety check): Dedicated guardrail classifier running GPT-OSS Safeguard 20B, Llama Prompt Guard 2 86M, or Llama Prompt Guard 2 22M, with an optional Thinking switch for GPT-OSS Safeguard (requires player sign-in).
 - `llm_review` (LLM review): General-purpose LLM reviewer (`gemini-3.5-flash-lite`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`) guided by custom review instructions, with an optional Thinking switch (requires player sign-in).

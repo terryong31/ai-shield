@@ -1,5 +1,10 @@
 # Tutorial 3: Your first spec-driven change
 
+> **Status.** Spec 0038 changed the ML filter: it runs only models that a player trains. The gateway
+> still loads the bundled baseline at startup, but no check uses it. The `Quick screen` check was
+> merged into the ML filter (spec 0035).
+> Use this tutorial to learn the workflow. The scores in the game do not change.
+
 In this tutorial you will make a small change to the engine the way this
 project makes every change: spec first, then a failing test, then the code.
 You will teach the baseline classifier behind the game's **Quick screen** check

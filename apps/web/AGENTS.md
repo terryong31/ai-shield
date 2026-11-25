@@ -9,14 +9,17 @@ The game client. Root rules in [../../AGENTS.md](../../AGENTS.md) apply; these a
 | `app/composables/useShieldApi.ts` | The only backend client (auth, game and admin endpoints) |
 | `app/utils/gameBoard.ts` | Pure board graph builder, node catalog, hop trace folding, and console access guard |
 | `app/utils/customSandbox.ts` | Custom sandbox limits, dataset CSV parsing and access rules (spec 0022); never stores the API key |
+| `app/utils/sessionHint.ts`, `app/plugins/sessionHint.client.ts` | Display-only session cookie for the first render; never an authority |
+| `app/utils/billing.ts` | Pass wait and end-date rules (spec 0049) |
 | `app/types/api.gen.ts` | **Generated** from the contract. Never edit; run `mise run contract` |
 | `app/types/api.ts` | Friendly aliases over the generated types |
 | `app/components/workflow/GameNode.vue` | The game board's Vue Flow node |
 | `app/pages/index.vue` | Game main menu, level selector cards, and leaderboard |
-| `app/pages/settings.vue` | Dedicated player settings page (`UColorModeSelect`) |
-| `app/pages/auth/` | Player authentication pages (`/auth/login`, `/auth/register`, `/auth/recover`) |
+| `app/pages/settings.vue` | Player settings: theme, display name, email, password, reset, delete |
+| `app/pages/auth/` | Player authentication pages (`login`, `register`, `recover`, `confirmed`, `reset-password`) |
 | `app/pages/game.vue` | Interactive node-based defence board, double-click node configuration modal, custom ML training |
-| `app/pages/plans.vue` | Free and Paid plans (`UPricingPlans`) |
+| `app/pages/plans.vue` | Free and Paid plans (`UPricingPlans`), pass checkout and sync |
+| `public/` | `llms.txt`, `robots.txt` and `sitemap.xml` use the production URL; update them when pages, levels or the price change (WEB-GAME-017) |
 | `app/pages/console/` | Guarded `/_console` admin console (`UAuthForm` login, score stats, scoreboard reset, settings) |
 
 ## Rules
