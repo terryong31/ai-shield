@@ -8,7 +8,7 @@ COPY apps/web apps/web
 COPY contracts contracts
 RUN cd apps/web && bunx nuxt prepare && bun run build
 
-FROM node:24-slim
+FROM node:25-slim
 WORKDIR /app
 COPY --from=build /repo/apps/web/.output ./.output
 USER node
