@@ -128,6 +128,10 @@ description = "Playwright tests against the local stack (mise run dev) or E2E_BA
 dir = "apps/web"
 run = "bunx playwright test"
 
+[tasks."e2e:gate"]
+description = "Run the Playwright tests against local Supabase; starts and stops the servers when needed"
+run = "python3 scripts/e2e_gate.py"
+
 [tasks.test]
 description = "All tests"
 depends = ["test:engine", "test:api", "test:tooling", "test:web"]

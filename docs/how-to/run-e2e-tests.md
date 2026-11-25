@@ -3,6 +3,20 @@
 Playwright tests in `apps/web/e2e/` drive the real application in a browser. They use
 only free checks, so a run does not call a paid model.
 
+## The local gate
+
+The pre-push hook runs `mise run e2e:gate` when a push changes `apps/`, `packages/`, `supabase/` or
+`contracts/`. You can also run it directly. It:
+
+1. Starts Docker services and local Supabase, and applies pending migrations.
+2. Makes the test account `e2e@example.com` in local Supabase, with a new random password each time.
+3. Uses the dev servers if they run. If not, it starts them without Infisical and without provider or
+   Stripe keys, and stops them at the end. Supabase and Redis stay on: `mise stop` stops them.
+4. Runs all the tests, with the signed-in test.
+
+It refuses a Supabase host that is not local. It does not use cloud Supabase or Vercel. To push without
+Docker, use `LEFTHOOK_EXCLUDE=e2e git push`. CI does not run these tests at this time.
+
 ## Run against the local stack
 
 1. Install the browser: `cd apps/web && bunx playwright install chromium`.

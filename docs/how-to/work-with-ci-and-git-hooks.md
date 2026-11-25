@@ -65,13 +65,15 @@ the message of the last commit, run `git commit --amend`.
 
 ## 4. Fix a failed pre-push hook
 
-The pre-push hook does two things, in this sequence:
+The pre-push hook does three things, in this sequence:
 
 1. It stops a push to `main`. Push a branch and open a pull request.
 2. It runs `mise run check`. To see the failure, run the task that failed, for
    example `mise run test:api`.
+3. It runs the browser tests with `mise run e2e:gate`, if the push changes `apps/`, `packages/`,
+   `supabase/` or `contracts/` ([Run the end-to-end tests](run-e2e-tests.md)). It needs Docker.
 
-The full gate takes approximately 1 to 2 minutes. If nothing new is in the
+The full gate takes approximately 1 to 2 minutes, and the browser tests approximately 1 minute more. If nothing new is in the
 push, lefthook does not run the hook.
 
 ## 5. Skip the hooks in an emergency
@@ -80,7 +82,9 @@ push, lefthook does not run the hook.
 LEFTHOOK=0 git push
 ```
 
-CI runs the same checks. A skipped hook does not let a failure into `main`.
+To skip only the browser tests, use `LEFTHOOK_EXCLUDE=e2e git push`.
+
+CI runs the same checks, **except the browser tests**: only the local hook runs them. A skipped hook does not let a failure of the other checks into `main`.
 Do not skip the hooks to hide a failure.
 
 ## 6. Fix a failed CI job

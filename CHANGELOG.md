@@ -29,7 +29,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - The web client loads Vercel Speed Insights (`@vercel/speed-insights` Nuxt module). Enable Speed Insights on the Vercel project to collect data.
 - Branded Supabase Auth email templates. The confirmation email is also the welcome email. Production changes only after `supabase config push`.
-- Playwright end-to-end tests (`mise run test:e2e`) and an advisory workflow for Vercel preview deployments, off until `E2E_ENABLED` is set ([how-to](docs/how-to/run-e2e-tests.md)).
+- Playwright end-to-end tests (`mise run test:e2e`), a local pre-push gate (`mise run e2e:gate`), and an advisory workflow for Vercel preview deployments, off until `E2E_ENABLED` is set ([how-to](docs/how-to/run-e2e-tests.md)).
 - MIT license (`LICENSE`).
 - Docs: how-to guides for secrets (Infisical) and payments (Stripe), ADRs 0008 and 0009, and a refresh of the README, tutorials, reference, architecture and threat model.
 - `mise stop` stops the dev servers, the Stripe listener, Redis and local Supabase of this repo. Data is kept.

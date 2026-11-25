@@ -84,8 +84,9 @@ protection needs only that one check. The reasons for this design are in
 Git hooks ([`lefthook.yml`](../../lefthook.yml)) find most problems before CI
 does. `pre-commit` scans the staged diff for secrets and fixes lint in the
 staged files. `commit-msg` checks the Conventional Commit subject. `pre-push`
-stops pushes to `main`, then runs `mise run check`. The hooks are a fast
-signal, not the gate: a developer can skip them, but cannot skip CI.
+stops pushes to `main`, then runs `mise run check` and the browser tests. The hooks
+are a fast signal, not the gate: a developer can skip them, but cannot skip CI. The
+browser tests are the exception: CI does not run them yet.
 
 The status lifecycle keeps the check honest without blocking drafting: `Draft`
 specs are not checked, so a spec can be written and reviewed before any test
