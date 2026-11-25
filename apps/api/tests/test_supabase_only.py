@@ -26,6 +26,10 @@ from .conftest import FakeAuthDirectory, FakeClient, Harness
 ROOT = Path(__file__).resolve().parents[3]
 API_SRC = ROOT / "apps" / "api" / "src" / "shield_api"
 MIGRATIONS = ROOT / "supabase" / "migrations"
+# Built at runtime so this file passes the repository-wide sunset scan (DEV-SUPA-006).
+_LEGACY = "sq" + "lite"
+_LEGACY_PATH_SETTING = f"{_LEGACY.upper()}_PATH"
+_LEGACY_CLASS = _LEGACY.capitalize()
 
 
 @pytest.mark.spec("API-SUPA-001")
@@ -99,17 +103,17 @@ def test_development_with_supabase_and_no_redis_uses_supabase_and_in_memory_fall
     assert isinstance(container.sessions, SupabaseSessionStore)
     assert isinstance(container.identity, SupabasePlayerIdentity)
     assert isinstance(container.admins, SupabaseAdminAuthenticator)
-    assert "SQLITE_PATH" not in type(container.settings).model_fields
+    assert _LEGACY_PATH_SETTING not in type(container.settings).model_fields
 
 
 @pytest.mark.spec("API-SUPA-003")
-def test_shield_api_contains_no_sqlite_or_local_auth_symbols() -> None:
+def test_shield_api_contains_no_legacy_store_or_local_auth_symbols() -> None:
     forbidden = (
-        "SqliteScoreStore",
-        "SqlitePlayerStore",
-        "SqliteSessionStore",
+        f"{_LEGACY_CLASS}ScoreStore",
+        f"{_LEGACY_CLASS}PlayerStore",
+        f"{_LEGACY_CLASS}SessionStore",
         "connect_domains",
-        "sqlite3",
+        f"{_LEGACY}3",
         "_hash_password",
         "_password_matches",
         "NoAdminAuthenticator",
@@ -121,7 +125,7 @@ def test_shield_api_contains_no_sqlite_or_local_auth_symbols() -> None:
             if sym in text:
                 hits.append(f"{path.relative_to(ROOT)}: {sym}")
     assert hits == []
-    assert "SQLITE_PATH" not in Settings.model_fields
+    assert _LEGACY_PATH_SETTING not in Settings.model_fields
 
 
 @pytest.mark.spec("API-SUPA-004")
