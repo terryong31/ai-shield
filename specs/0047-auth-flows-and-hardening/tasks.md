@@ -27,7 +27,7 @@ Run as one SDD cycle (or split into 2–3 slices: confirmation, recovery/email-c
 - [x] **WEB-AUTH-007**: write failing test (login/register send untrimmed passwords)
 - [x] **WEB-AUTH-008**: write failing test (`loginFailure` distinguishes BotID `403` from unconfirmed `403`)
 - [x] **WEB-AUTH-009**: write failing test (`botid.client.ts` uses `enforce: 'pre'` and `loadAccess` lives in `dashboard.vue`)
-- [ ] **WEB-AUTH-010**: write failing test (`proxyToGateway` blocks cross-site state-changing requests via `Sec-Fetch-Site` / `Origin`)
+- [x] **WEB-AUTH-010**: write failing test (`proxyToGateway` blocks cross-site state-changing requests via `Sec-Fetch-Site` / `Origin`)
 - [ ] `mise run sdd:red` accepted
 - [ ] Implement; `mise run sdd:green` accepted
 - [ ] Regenerate the API contract (`mise run contract`)

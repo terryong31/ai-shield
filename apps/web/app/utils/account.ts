@@ -1,8 +1,13 @@
 /** Pure rules for the account settings forms (spec 0025, 0036). */
 
+import * as z from 'zod'
 import { isStrongPassword } from './playerAuth'
 
 export const MIN_PASSWORD_LENGTH = 8
+
+export const displayNameSchema = z.object({
+  name: z.string('Display name is required').trim().min(1, 'Display name is required').max(64, 'Use at most 64 characters')
+})
 
 export interface PasswordChangeForm {
   current: string

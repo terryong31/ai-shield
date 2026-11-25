@@ -41,6 +41,7 @@ from shield_api.services.identity import (
     IdentityUnavailableError,
     InvalidIdentityError,
     InvalidTokenError,
+    PasswordRejectedError,
     VerifiedPlayer,
 )
 from shield_api.services.rate_limit import (
@@ -67,6 +68,7 @@ REGISTER_UNAVAILABLE = "Registration is unavailable. Try again later."
 CONFIRM_INVALID = "This confirmation link is invalid or has expired."
 CONFIRM_UNAVAILABLE = "Confirmation is unavailable. Try again later."
 RECOVERY_INVALID = "This recovery link is invalid or has expired."
+RECOVERY_REJECTED = "This password was not accepted. Request a new link and choose a stronger one."
 RECOVERY_UNAVAILABLE = "Password reset is unavailable. Try again later."
 
 
@@ -197,26 +199,13 @@ async def register_player(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, REGISTER_UNAVAILABLE) from None
     if player is None:
         if verifier_out:
-            await container.auth_flows.delete(flow_id)
-            flow_store = container.auth_flows
-            if hasattr(flow_store, "_flows"):
-                flow_store._flows[flow_id] = AuthFlowRecord(
+            await container.auth_flows.save(
+                flow_id,
+                AuthFlowRecord(
                     purpose="signup", browser_hash=browser_hash, code_verifier=verifier_out[0]
-                )
-            elif hasattr(flow_store, "_redis"):
-                import json
-
-                await flow_store._redis.set(
-                    f"authflow:{flow_id}",
-                    json.dumps(
-                        {
-                            "purpose": "signup",
-                            "browser_hash": browser_hash,
-                            "code_verifier": verifier_out[0],
-                        }
-                    ),
-                    ex=SIGNUP_FLOW_TTL_SECONDS,
-                )
+                ),
+                ttl_seconds=SIGNUP_FLOW_TTL_SECONDS,
+            )
         return _confirmation_sent()
     await container.auth_flows.delete(flow_id)
     return await _open_verified(player, request, response, container)
@@ -401,25 +390,13 @@ async def recover_player_password(
     verifier_out: list[str] = []
     await container.identity.recover(email, redirect_to=redirect_to, verifier_out=verifier_out)
     if verifier_out:
-        flow_store = container.auth_flows
-        if hasattr(flow_store, "_flows"):
-            flow_store._flows[flow_id] = AuthFlowRecord(
+        await container.auth_flows.save(
+            flow_id,
+            AuthFlowRecord(
                 purpose="recovery", browser_hash=browser_hash, code_verifier=verifier_out[0]
-            )
-        elif hasattr(flow_store, "_redis"):
-            import json
-
-            await flow_store._redis.set(
-                f"authflow:{flow_id}",
-                json.dumps(
-                    {
-                        "purpose": "recovery",
-                        "browser_hash": browser_hash,
-                        "code_verifier": verifier_out[0],
-                    }
-                ),
-                ex=RECOVERY_FLOW_TTL_SECONDS,
-            )
+            ),
+            ttl_seconds=RECOVERY_FLOW_TTL_SECONDS,
+        )
     return PlayerRecoverResponse()
 
 
@@ -447,6 +424,8 @@ async def reset_player_password(
         )
     except InvalidTokenError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, RECOVERY_INVALID) from None
+    except PasswordRejectedError:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, RECOVERY_REJECTED) from None
     except IdentityUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, RECOVERY_UNAVAILABLE) from None
 

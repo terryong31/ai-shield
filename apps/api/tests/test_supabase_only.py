@@ -255,7 +255,8 @@ async def test_newest_player_migration_drops_password_columns_and_store_omits_th
     newest_player_mig = next(
         p
         for p in reversed(sql_files)
-        if "players.accounts" in p.read_text(encoding="utf-8").lower()
+        if "players.accounts" in (text := p.read_text(encoding="utf-8").lower())
+        and "password_hash" in text
     )
     sql = newest_player_mig.read_text(encoding="utf-8").lower()
     assert "drop column" in sql

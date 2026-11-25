@@ -124,7 +124,7 @@ def create_app(container: Container | None = None, settings: Settings | None = N
         allow_origins=settings.CORS_ORIGINS,
         allow_credentials=True,
         # PUT saves boards (spec 0023, API-SAVE-007).
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
     app.include_router(api_router, prefix=settings.API_PREFIX)

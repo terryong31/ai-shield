@@ -6,9 +6,10 @@ import asyncio
 import hashlib
 import json
 import secrets
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from shield_api.schemas import PlayerSessionStatus, PlayerTier
 
@@ -28,7 +29,31 @@ _MORE_RUNS_HINT: dict[PlayerTier, str] = {
     "free": "Upgrade to a paid plan for 300 wave runs a day.",
     "paid": "Try again tomorrow.",
 }
+PurchaseOutcome = Literal[
+    "fulfilled",
+    "revoked",
+    "restored",
+    "duplicate",
+    "unknown",
+    "mismatch",
+    "orphaned",
+    "no_account",
+]
+RevokedStatus = Literal["refunded", "disputed"]
+# Stripe cannot complete a session this long after it expired.
+EXPIRED_PURCHASE_KEEP = timedelta(days=7)
 AI_AGENT_NODE_KINDS: frozenset[str] = frozenset({"safety_check", "llm_review"})
+
+
+class PurchasePendingError(Exception):
+    """The player already has an open purchase in this mode."""
+
+
+@dataclass(frozen=True)
+class PendingPurchase:
+    id: str
+    session_id: str | None
+    created_at: datetime
 
 
 class QuotaExceededError(ValueError):
@@ -45,6 +70,17 @@ def _new_token() -> str:
 
 def _profile_name(email: str, player_name: str | None) -> str:
     return (player_name or "").strip() or email.split("@")[0]
+
+
+def _parse_time(value: Any) -> datetime | None:
+    return datetime.fromisoformat(str(value)) if value else None
+
+
+def effective_tier(granted: str, paid_until: datetime | None) -> PlayerTier:
+    """A manual grant never expires; a pass does (spec 0049)."""
+    if granted == "paid" or (paid_until is not None and paid_until > datetime.now(UTC)):
+        return "paid"
+    return "free"
 
 
 def _today_utc() -> str:
@@ -119,6 +155,7 @@ def _build_logged_in_status(
     wave_runs_used: int,
     test_runs_used: int,
     train_runs_used: int = 0,
+    paid_until: datetime | None = None,
 ) -> PlayerSessionStatus:
     wave_limit, test_limit = DAILY_LIMITS[tier]
     return PlayerSessionStatus(
@@ -135,6 +172,7 @@ def _build_logged_in_status(
         test_runs_used=test_runs_used,
         daily_train_limit=DAILY_TRAIN_LIMITS[tier],
         train_runs_used=train_runs_used,
+        paid_until=paid_until,
     )
 
 
@@ -191,6 +229,51 @@ class PlayerStore(Protocol):
 
     async def email_taken(self, email: str) -> bool: ...
 
+    async def set_player_name(self, email: str, player_name: str) -> None:
+        """Change the display name on the account and its sessions (spec 0048)."""
+        ...
+
+    async def create_purchase(
+        self, email: str, *, amount_cents: int, currency: str, livemode: bool
+    ) -> str:
+        """Store a pending pass purchase and return its id (spec 0049).
+
+        Raises ``PurchasePendingError`` when one is already open.
+        """
+        ...
+
+    async def pending_purchase(self, email: str, *, livemode: bool) -> PendingPurchase | None: ...
+
+    async def attach_session(self, purchase_id: str, session_id: str) -> None: ...
+
+    async def expire_purchase(self, purchase_id: str) -> None:
+        """Close a pending purchase; a late payment still counts."""
+        ...
+
+    async def fulfil_purchase(
+        self,
+        purchase_id: str,
+        *,
+        payment_intent: str | None,
+        amount_cents: int,
+        currency: str,
+        days: int,
+    ) -> PurchaseOutcome:
+        """Grant an unpaid purchase once, atomically."""
+        ...
+
+    async def revoke_purchase(
+        self, *, purchase_id: str | None, payment_intent: str | None, status: RevokedStatus
+    ) -> PurchaseOutcome:
+        """Remove the unused days of a purchase once, atomically."""
+        ...
+
+    async def restore_purchase(
+        self, payment_intent: str, *, status: RevokedStatus
+    ) -> PurchaseOutcome:
+        """Give removed days back once, atomically."""
+        ...
+
     async def move_email(self, old: str, new: str) -> None:
         """Move boards, usage (keeping the larger count per day), sessions, then the account."""
         ...
@@ -207,6 +290,22 @@ class _AccountRecord:
     email: str
     player_name: str
     tier: PlayerTier
+    paid_until: datetime | None = None
+
+
+@dataclass
+class _PurchaseRecord:
+    email: str | None
+    amount_cents: int
+    currency: str
+    livemode: bool
+    status: Literal["pending", "expired", "paid", "refunded", "disputed"] = "pending"
+    session_id: str | None = None
+    payment_intent: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    removed: timedelta = timedelta()
 
 
 @dataclass
@@ -226,6 +325,7 @@ class InMemoryPlayerStore:
         self._sessions: dict[str, _SessionRecord] = {}
         self._usage: dict[tuple[str, str], tuple[int, int, int]] = {}
         self._boards: dict[tuple[str, str], tuple[dict[str, Any], datetime]] = {}
+        self._purchases: dict[str, _PurchaseRecord] = {}
         self._lock = asyncio.Lock()
 
     async def create_anonymous(self, ttl: timedelta) -> tuple[str, PlayerSessionStatus]:
@@ -253,7 +353,8 @@ class InMemoryPlayerStore:
         return token, _build_logged_in_status(
             email=clean_email,
             player_name=account.player_name,
-            tier=account.tier,
+            tier=effective_tier(account.tier, account.paid_until),
+            paid_until=account.paid_until,
             wave_runs_used=waves,
             test_runs_used=tests,
             train_runs_used=trains,
@@ -287,7 +388,8 @@ class InMemoryPlayerStore:
                 authenticated=True, wave_runs_used=waves, test_runs_used=tests
             )
         account = self._accounts.get(session.email)
-        tier = account.tier if account else session.tier
+        paid_until = account.paid_until if account else None
+        tier = effective_tier(account.tier if account else session.tier, paid_until)
         name = account.player_name if account else session.player_name
         waves, tests, trains = self._usage.get((session.email, _today_utc()), (0, 0, 0))
         return _build_logged_in_status(
@@ -297,6 +399,7 @@ class InMemoryPlayerStore:
             wave_runs_used=waves,
             test_runs_used=tests,
             train_runs_used=trains,
+            paid_until=paid_until,
         )
 
     async def upgrade(self, token: str | None) -> PlayerSessionStatus:
@@ -431,6 +534,12 @@ class InMemoryPlayerStore:
     async def email_taken(self, email: str) -> bool:
         return email in self._accounts
 
+    async def set_player_name(self, email: str, player_name: str) -> None:
+        self._accounts[email].player_name = player_name
+        for session in self._sessions.values():
+            if session.email == email:
+                session.player_name = player_name
+
     async def move_email(self, old: str, new: str) -> None:
         for email, level_id in [key for key in self._boards if key[0] == old]:
             self._boards[(new, level_id)] = self._boards.pop((email, level_id))
@@ -442,6 +551,9 @@ class InMemoryPlayerStore:
                 max(tests, other_tests),
                 max(trains, other_trains),
             )
+        for purchase in self._purchases.values():
+            if purchase.email == old:
+                purchase.email = new
         for session in self._sessions.values():
             if session.email == old:
                 session.email = new
@@ -457,7 +569,126 @@ class InMemoryPlayerStore:
 
     async def delete_account(self, email: str) -> None:
         await self.revoke_sessions(email, keep=None)
+        for purchase in self._purchases.values():
+            if purchase.email == email:
+                purchase.email = None
+                if purchase.status == "pending":
+                    purchase.status = "expired"
         self._accounts.pop(email, None)
+
+    async def create_purchase(
+        self, email: str, *, amount_cents: int, currency: str, livemode: bool
+    ) -> str:
+        if await self.pending_purchase(email, livemode=livemode):
+            raise PurchasePendingError
+        purchase_id = str(uuid.uuid4())
+        self._purchases[purchase_id] = _PurchaseRecord(email, amount_cents, currency, livemode)
+        return purchase_id
+
+    async def pending_purchase(self, email: str, *, livemode: bool) -> PendingPurchase | None:
+        for purchase_id, row in self._purchases.items():
+            if (row.email, row.livemode, row.status) == (email, livemode, "pending"):
+                return PendingPurchase(purchase_id, row.session_id, row.created_at)
+        return None
+
+    async def attach_session(self, purchase_id: str, session_id: str) -> None:
+        self._purchases[purchase_id].session_id = session_id
+
+    async def expire_purchase(self, purchase_id: str) -> None:
+        purchase = self._purchases.get(purchase_id)
+        if purchase is not None and purchase.status == "pending":
+            purchase.status = "expired"
+
+    async def fulfil_purchase(
+        self,
+        purchase_id: str,
+        *,
+        payment_intent: str | None,
+        amount_cents: int,
+        currency: str,
+        days: int,
+    ) -> PurchaseOutcome:
+        purchase = self._purchases.get(purchase_id)
+        if purchase is None:
+            return "unknown"
+        if purchase.status not in {"pending", "expired"}:
+            return "duplicate"
+        if (purchase.amount_cents, purchase.currency) != (amount_cents, currency):
+            return "mismatch"
+        if purchase.email is None:
+            return "orphaned"
+        account = self._accounts.get(purchase.email)
+        if account is None:
+            return "no_account"
+        now = datetime.now(UTC)
+        purchase.starts_at = max(now, account.paid_until or now)
+        purchase.ends_at = purchase.starts_at + timedelta(days=days)
+        purchase.payment_intent = payment_intent
+        purchase.status = "paid"
+        account.paid_until = purchase.ends_at
+        return "fulfilled"
+
+    def _find_purchase(
+        self, purchase_id: str | None, payment_intent: str | None
+    ) -> _PurchaseRecord | None:
+        if purchase_id is not None:
+            return self._purchases.get(purchase_id)
+        return next(
+            (p for p in self._purchases.values() if p.payment_intent == payment_intent), None
+        )
+
+    async def revoke_purchase(
+        self, *, purchase_id: str | None, payment_intent: str | None, status: RevokedStatus
+    ) -> PurchaseOutcome:
+        purchase = self._find_purchase(purchase_id, payment_intent)
+        if purchase is None:
+            return "unknown"
+        if purchase.status in {"refunded", "disputed"}:
+            if status == "refunded":
+                purchase.status = "refunded"
+            return "duplicate"
+        if purchase.status == "paid" and purchase.email and purchase.starts_at and purchase.ends_at:
+            account = self._accounts.get(purchase.email)
+            if account is None:
+                return "no_account"
+            start = max(datetime.now(UTC), purchase.starts_at)
+            purchase.removed = max(timedelta(), purchase.ends_at - start)
+            if account.paid_until is not None:
+                account.paid_until -= purchase.removed
+            for later in self._purchases.values():
+                if (
+                    later is not purchase
+                    and later.email == purchase.email
+                    and later.status == "paid"
+                    and later.starts_at is not None
+                    and later.ends_at is not None
+                    and later.starts_at >= purchase.ends_at
+                ):
+                    later.starts_at -= purchase.removed
+                    later.ends_at -= purchase.removed
+        purchase.status = status
+        return "revoked"
+
+    async def restore_purchase(
+        self, payment_intent: str, *, status: RevokedStatus
+    ) -> PurchaseOutcome:
+        purchase = self._find_purchase(None, payment_intent)
+        if purchase is None:
+            return "unknown"
+        if purchase.status != status:
+            return "duplicate"
+        if purchase.email is None:
+            return "orphaned"
+        account = self._accounts.get(purchase.email)
+        if account is None:
+            return "no_account"
+        now = datetime.now(UTC)
+        purchase.starts_at = max(now, account.paid_until or now)
+        purchase.ends_at = purchase.starts_at + purchase.removed
+        purchase.removed = timedelta()
+        purchase.status = "paid"
+        account.paid_until = purchase.ends_at
+        return "restored"
 
 
 class SupabasePlayerStore:
@@ -471,6 +702,7 @@ class SupabasePlayerStore:
     ACCOUNTS_TABLE = "accounts"
     SESSIONS_TABLE = "sessions"
     USAGE_TABLE = "daily_usage"
+    PURCHASES_TABLE = "purchases"
     BOARDS_SCHEMA = "game"
     BOARDS_TABLE = "saved_boards"
 
@@ -546,7 +778,8 @@ class SupabasePlayerStore:
         email = str(session["email"])
         account = self._account(email)
         raw_tier = str(account["tier"]) if account else str(session["tier"])
-        tier: PlayerTier = "paid" if raw_tier == "paid" else "free"
+        paid_until = _parse_time(account.get("paid_until")) if account else None
+        tier = effective_tier(raw_tier, paid_until)
         name = str(account["player_name"]) if account else str(session["player_name"])
         waves, tests, trains = self._usage(email)
         return _build_logged_in_status(
@@ -556,6 +789,7 @@ class SupabasePlayerStore:
             wave_runs_used=waves,
             test_runs_used=tests,
             train_runs_used=trains,
+            paid_until=paid_until,
         )
 
     async def create_anonymous(self, ttl: timedelta) -> tuple[str, PlayerSessionStatus]:
@@ -818,6 +1052,14 @@ class SupabasePlayerStore:
     async def email_taken(self, email: str) -> bool:
         return await asyncio.to_thread(self._account, email) is not None
 
+    async def set_player_name(self, email: str, player_name: str) -> None:
+        def write() -> None:
+            values = {"player_name": player_name}
+            self._table(self.ACCOUNTS_TABLE).update(values).eq("email", email).execute()
+            self._table(self.SESSIONS_TABLE).update(values).eq("email", email).execute()
+
+        await asyncio.to_thread(write)
+
     async def move_email(self, old: str, new: str) -> None:
         # Separate PostgREST calls with no transaction: dependents first, the account
         # row last, so a failure midway leaves the old login working (spec 0025).
@@ -856,6 +1098,7 @@ class SupabasePlayerStore:
                     on_conflict="email,usage_date",
                 ).execute()
             self._table(self.USAGE_TABLE).delete().eq("email", old).execute()
+            self._table(self.PURCHASES_TABLE).update({"email": new}).eq("email", old).execute()
             self._table(self.SESSIONS_TABLE).update({"email": new}).eq("email", old).execute()
             self._table(self.ACCOUNTS_TABLE).update({"email": new}).eq("email", old).execute()
 
@@ -869,7 +1112,120 @@ class SupabasePlayerStore:
 
     async def delete_account(self, email: str) -> None:
         def write() -> None:
+            purchases = self._table(self.PURCHASES_TABLE)
+            closed = {"email": None, "status": "expired"}
+            purchases.update(closed).eq("email", email).eq("status", "pending").execute()
+            purchases.update({"email": None}).eq("email", email).execute()
             self._table(self.SESSIONS_TABLE).delete().eq("email", email).execute()
             self._table(self.ACCOUNTS_TABLE).delete().eq("email", email).execute()
 
         await asyncio.to_thread(write)
+
+    async def create_purchase(
+        self, email: str, *, amount_cents: int, currency: str, livemode: bool
+    ) -> str:
+        purchase_id = str(uuid.uuid4())
+        row = {
+            "id": purchase_id,
+            "email": email,
+            "amount_cents": amount_cents,
+            "currency": currency,
+            "livemode": livemode,
+            "status": "pending",
+        }
+
+        def write() -> None:
+            # Best effort housekeeping: these sessions can no longer be paid.
+            cutoff = (datetime.now(UTC) - EXPIRED_PURCHASE_KEEP).isoformat()
+            table = self._table(self.PURCHASES_TABLE)
+            table.delete().eq("status", "expired").lte("created_at", cutoff).execute()
+            try:
+                self._table(self.PURCHASES_TABLE).insert(row).execute()
+            except Exception as err:
+                if getattr(err, "code", None) == "23505":
+                    raise PurchasePendingError from None
+                raise
+
+        await asyncio.to_thread(write)
+        return purchase_id
+
+    async def pending_purchase(self, email: str, *, livemode: bool) -> PendingPurchase | None:
+        rows = (
+            await asyncio.to_thread(
+                lambda: (
+                    self._table(self.PURCHASES_TABLE)
+                    .select("*")
+                    .eq("email", email)
+                    .eq("livemode", livemode)
+                    .eq("status", "pending")
+                    .limit(1)
+                    .execute()
+                    .data
+                )
+            )
+            or []
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        created_at = _parse_time(row["created_at"]) or datetime.now(UTC)
+        return PendingPurchase(str(row["id"]), row.get("checkout_session_id"), created_at)
+
+    async def attach_session(self, purchase_id: str, session_id: str) -> None:
+        values = {"checkout_session_id": session_id}
+        await asyncio.to_thread(
+            lambda: self._table(self.PURCHASES_TABLE).update(values).eq("id", purchase_id).execute()
+        )
+
+    async def expire_purchase(self, purchase_id: str) -> None:
+        await asyncio.to_thread(
+            lambda: (
+                self._table(self.PURCHASES_TABLE)
+                .update({"status": "expired"})
+                .eq("id", purchase_id)
+                .eq("status", "pending")
+                .execute()
+            )
+        )
+
+    async def _purchase_rpc(self, name: str, params: dict[str, Any]) -> PurchaseOutcome:
+        response = await asyncio.to_thread(
+            lambda: self._client.schema(self.SCHEMA).rpc(name, params).execute()
+        )
+        outcome: PurchaseOutcome = response.data
+        return outcome
+
+    async def fulfil_purchase(
+        self,
+        purchase_id: str,
+        *,
+        payment_intent: str | None,
+        amount_cents: int,
+        currency: str,
+        days: int,
+    ) -> PurchaseOutcome:
+        return await self._purchase_rpc(
+            "fulfil_purchase",
+            {
+                "p_id": purchase_id,
+                "p_payment_intent": payment_intent,
+                "p_amount": amount_cents,
+                "p_currency": currency,
+                "p_days": days,
+            },
+        )
+
+    async def revoke_purchase(
+        self, *, purchase_id: str | None, payment_intent: str | None, status: RevokedStatus
+    ) -> PurchaseOutcome:
+        return await self._purchase_rpc(
+            "revoke_purchase",
+            {"p_id": purchase_id, "p_payment_intent": payment_intent, "p_status": status},
+        )
+
+    async def restore_purchase(
+        self, payment_intent: str, *, status: RevokedStatus
+    ) -> PurchaseOutcome:
+        return await self._purchase_rpc(
+            "restore_purchase", {"p_payment_intent": payment_intent, "p_status": status}
+        )

@@ -35,9 +35,11 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `CLEARANCE_WINDOW_MINUTES` | `10` | Rate-limit window; a failure inside it also yields `DENIED` clearance |
 | `REDIS_URL` | `None` | Optional in development (`http`/`memory`), **required** in `production`. Redis connection URL (e.g. `redis://localhost:6379/0`) for `RateLimiter` (spec 0043), `LeaderboardService` sorted sets + Lua updates (`lb:v<ver>:*`, spec 0044), and `RedisTrainedModelStore` (`mlmodel:*`, spec 0045). When unset or unreachable in development, reads fall back to the paginated score store with a 10 s in-process cache |
 | `MODEL_SIGNING_KEY` | unset | Server secret for HMAC-SHA256 verification of temporary server-held trained ML models (spec 0045). Unset generates an ephemeral per-process key in development; in `production`, `POST /game/train` answers `503` and an error is logged at startup |
+| `STRIPE_SECRET_KEY` | unset | Stripe key (`sk_test_`, `rk_test_`, `sk_live_` or `rk_live_`) for the 30-day pass (spec 0049). Unset: billing is off and `/plans` shows `Coming soon`. Another prefix stops startup |
+| `STRIPE_WEBHOOK_SECRET` | unset | Signing secret of the webhook endpoint (`whsec_`). **Required** when `STRIPE_SECRET_KEY` is set |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000` | Comma-separated list of browser origins allowed to call the API with credentials. `*` is rejected. Not exercised when the browser goes through the web proxy (spec 0041) |
 
-Secrets (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `SUPABASE_KEY`)
+Secrets (`GROQ_API_KEY`, `GOOGLE_API_KEY`, `SUPABASE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
 are `SecretStr` and are not printed in logs or reprs.
 
 What degrades without each provider: [Configure LLM providers](../how-to/configure-llm-providers.md#what-degrades-without-each-key).

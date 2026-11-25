@@ -19,6 +19,7 @@ from shield_api.container import ConfigurationError, Container, build_container
 from shield_api.main import create_app
 from shield_api.openapi import render
 from shield_api.services.admins import SupabaseAdminAuthenticator
+from shield_api.services.auth_flows import RedisAuthFlowStore
 from shield_api.services.identity import SupabasePlayerIdentity
 from shield_api.services.players import InMemoryPlayerStore, SupabasePlayerStore
 from shield_api.services.rate_limit import RateLimiter
@@ -28,7 +29,7 @@ from shield_api.settings import Settings
 from shield_engine import Verdict
 from shield_engine.testing import StaticClassifier
 
-from .conftest import FakeAuthDirectory, FakeClient, FakeClock, Harness
+from .conftest import FakeAuth, FakeAuthDirectory, FakeClient, FakeClock, Harness
 
 BROWSER_COOKIE = "shield_auth_browser"
 PLAYER_COOKIE = "shield_player_session"
@@ -564,3 +565,95 @@ def test_contract_includes_confirm_and_reset_password_and_auth_responses_are_no_
     harness = make_harness()
     assert harness.client.get("/api/v1/auth/session").headers.get("cache-control") == "no-store"
     assert harness.client.get("/api/v1/clearance").headers.get("cache-control") == "no-store"
+
+
+class _FlakyRedis(FakeRedisForAuth):
+    """Redis double whose second write fails, as in an outage during sign-up."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.writes = 0
+
+    async def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
+        self.writes += 1
+        if self.writes == 2:
+            raise ConnectionError("redis down")
+        return await super().set(key, value, ex=ex)
+
+
+@pytest.mark.spec("API-AUTH-016")
+@pytest.mark.parametrize(
+    ("path", "body", "status"),
+    [
+        (
+            "/api/v1/auth/register",
+            {"email": "new@example.com", "password": PASSWORD, "player_name": "Ada"},
+            202,
+        ),
+        ("/api/v1/auth/recover", {"email": "ada@example.com"}, 200),
+    ],
+)
+async def test_redis_failure_storing_verifier_keeps_the_flow_and_succeeds(
+    make_harness: Callable[..., Harness],
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    body: dict[str, str],
+    status: int,
+) -> None:
+    harness = make_harness(confirm_email=True)
+    harness.container.auth_flows = RedisAuthFlowStore(_FlakyRedis())
+    monkeypatch.setattr(
+        "shield_api.services.identity._extract_pkce_verifier", lambda client: "verifier-123"
+    )
+
+    res = harness.client.post(path, json=body)
+
+    assert res.status_code == status
+    if path.endswith("register"):
+        redirect = harness.auth.sign_ups[0]["options"]["email_redirect_to"]
+    else:
+        redirect = harness.auth.reset_passwords[0]["redirect_to"]
+    record = await harness.container.auth_flows.get(_extract_flow_id(redirect))
+    assert record is not None
+    assert record.code_verifier == "verifier-123"
+
+
+class _UpdateRejected(Exception):
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+@pytest.mark.spec("API-AUTH-017")
+@pytest.mark.parametrize(
+    ("code", "upstream", "expected"),
+    [("same_password", 422, 200), ("weak_password", 422, 422), ("unexpected_failure", 400, 503)],
+)
+def test_reset_password_separates_password_errors_from_link_errors(
+    make_harness: Callable[..., Harness],
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+    upstream: int,
+    expected: int,
+) -> None:
+    harness = make_harness(confirm_email=True)
+    harness.auth.add("ada@example.com", PASSWORD)
+    harness.client.post(
+        "/api/v1/auth/login", json={"email": "ada@example.com", "password": PASSWORD}
+    )
+
+    def reject(self: Any, attributes: dict[str, Any], options: Any = None) -> None:
+        raise _UpdateRejected(code, upstream)
+
+    monkeypatch.setattr(FakeAuth, "update_user", reject)
+    res = harness.client.post(
+        "/api/v1/auth/reset-password",
+        json={"token_hash": "valid-recovery-token-ada@example.com", "new_password": PASSWORD},
+    )
+
+    assert res.status_code == expected
+    assert "expired" not in res.text
+    signed_in = harness.client.get("/api/v1/auth/session").json()["authenticated"]
+    assert signed_in is (expected != 200)
+    assert harness.auth.open_sessions == 0

@@ -16,8 +16,7 @@ export function formatRankLabel(rank: number): string {
 export type OwnRowPlacement
   = | { kind: 'none' }
     | { kind: 'highlight', rank: number, highlightIndex: number }
-    | { kind: 'pin', rank: number, rankLabel: string, playerName: string, totalScore: number }
-    | { kind: 'pin-unranked', message: string }
+    | { kind: 'pin', rank: number | null, rankLabel: string, playerName: string, totalScore: number }
 
 export function ownRowPlacement(
   entries: DifficultyLeaderboardEntry[],
@@ -27,11 +26,9 @@ export function ownRowPlacement(
   if (!session || !session.authenticated || session.is_anonymous) {
     return { kind: 'none' }
   }
-  if (!me || me.rank === null || me.total_score === null) {
-    return {
-      kind: 'pin-unranked',
-      message: 'You\'re not ranked yet. Win a level to join the leaderboard.'
-    }
+  if (!me) return { kind: 'none' }
+  if (me.rank === null || me.total_score === null) {
+    return { kind: 'pin', rank: null, rankLabel: '-', playerName: session.player_name, totalScore: 0 }
   }
   if (me.rank <= entries.length && entries.length > 0) {
     return {

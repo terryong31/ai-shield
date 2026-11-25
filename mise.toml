@@ -58,6 +58,52 @@ run = "infisical run --env=dev --path=/web -- bun run dev"
 description = "Run API and web together"
 depends = ["api:dev", "web:dev"]
 
+[tasks.stop]
+description = "Stop this repo's dev servers, Stripe listener, Redis and local Supabase (data is kept)"
+run = '''
+#!/usr/bin/env bash
+set -u
+# Only processes whose working directory is in this repo: other projects keep running.
+find_pids() {
+  {
+    lsof -nP -t -iTCP:3000 -iTCP:8000 -sTCP:LISTEN
+    pgrep -f 'mise (run )?(dev|api:dev|web:dev|stripe:listen)|uvicorn shield_api|nuxt.* dev|bun run dev|stripe listen|infisical run'
+  } 2>/dev/null | sort -u | while read -r pid; do
+    [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ] && continue
+    cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+    case "$cwd" in
+      "$MISE_PROJECT_ROOT"|"$MISE_PROJECT_ROOT"/apps/*) echo "$pid" ;;
+    esac
+  done
+}
+pids=$(find_pids)
+if [ -n "$pids" ]; then
+  kill -INT $pids 2>/dev/null
+  for _ in 1 2 3 4 5 6 7 8; do
+    sleep 1
+    [ -z "$(find_pids)" ] && break
+  done
+  left=$(find_pids)
+  [ -n "$left" ] && kill -KILL $left 2>/dev/null
+fi
+docker compose stop
+supabase stop
+echo "Stopped."
+'''
+
+[tasks."stripe:setup"]
+description = "Store Stripe sandbox keys in Infisical dev and prod: mise run stripe:setup https://<web URL>"
+run = "python3 scripts/stripe_setup.py"
+
+[tasks."stripe:events"]
+description = "Update the events of the production webhook: mise run stripe:events https://<web URL>"
+run = "infisical run --env=prod --path=/api -- python3 scripts/stripe_setup.py ${usage_url} --events"
+usage = 'arg "<url>"'
+
+[tasks."stripe:listen"]
+description = "Forward Stripe sandbox events to the local API"
+run = "infisical run --env=dev --path=/api -- sh -c 'STRIPE_API_KEY=$STRIPE_SECRET_KEY exec stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired,charge.refunded,refund.failed,refund.updated,charge.dispute.funds_withdrawn,charge.dispute.funds_reinstated --forward-to localhost:8000/api/v1/billing/webhook'"
+
 # --- tests ---------------------------------------------------------------------
 
 [tasks."test:engine"]

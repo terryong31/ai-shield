@@ -247,6 +247,7 @@ const leaderboardTableMeta = computed(() => ({
 }))
 
 const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
+  { id: 'rank', header: 'Rank', meta: { class: { th: 'w-16 pr-0', td: 'w-16 pr-0' } } },
   { accessorKey: 'player_name', header: 'Player' },
   { accessorKey: 'total_score', header: 'Total Score', meta: { class: { th: 'text-right', td: 'text-right' } } }
 ]
@@ -366,15 +367,13 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
           </div>
 
           <div class="overflow-hidden rounded-lg border border-default bg-default/90 shadow-sm backdrop-blur-md">
-            <div
-              v-if="filteredScores.length > 0 || !hasLoaded"
-              class="max-h-96 overflow-y-auto"
-            >
+            <div class="max-h-96 overflow-y-auto">
               <UTable
                 :data="filteredScores"
                 :columns="scoreColumns"
                 :meta="leaderboardTableMeta"
                 :loading="loadingScores && !hasLoaded"
+                :empty="hasLoaded ? 'No scores yet' : 'Loading...'"
                 loading-color="neutral"
                 loading-animation="carousel"
               >
@@ -382,15 +381,16 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
                   <span class="text-sm text-muted">Loading...</span>
                 </template>
 
+                <template #rank-cell="{ row }">
+                  <span class="text-sm tabular-nums text-muted">
+                    {{ formatRankLabel(row.index + 1) }}
+                  </span>
+                </template>
+
                 <template #player_name-cell="{ row }">
-                  <div class="flex items-center gap-2">
-                    <span class="w-10 text-xs tabular-nums text-muted">
-                      {{ formatRankLabel(row.index + 1) }}
-                    </span>
-                    <span class="text-sm text-highlighted">
-                      {{ row.original.player_name }}
-                    </span>
-                  </div>
+                  <span class="text-sm text-highlighted">
+                    {{ row.original.player_name }}
+                  </span>
                 </template>
 
                 <template #total_score-cell="{ row }">
@@ -401,32 +401,17 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
               </UTable>
             </div>
 
-            <UEmpty
-              v-else-if="hasLoaded && !loadingScores && filteredScores.length === 0"
-              icon="i-lucide-trophy"
-              title="No scores yet"
-              description="Sign in and complete a level to record your score on the leaderboard."
-              class="border-0 bg-transparent"
-            />
-
             <div
               v-if="ownPlacement.kind === 'pin'"
               class="flex items-center justify-between border-t border-default bg-elevated px-4 py-2.5 text-sm"
             >
-              <div class="flex items-center gap-2 font-medium text-highlighted">
-                <span class="w-10 text-xs tabular-nums text-muted">{{ ownPlacement.rankLabel }}</span>
+              <div class="flex items-center gap-4 font-medium text-highlighted">
+                <span class="w-12 font-normal tabular-nums text-muted">{{ ownPlacement.rankLabel }}</span>
                 <span>{{ ownPlacement.playerName }}</span>
               </div>
               <span class="font-semibold tabular-nums text-highlighted">
                 {{ ownPlacement.totalScore.toLocaleString() }}
               </span>
-            </div>
-
-            <div
-              v-else-if="ownPlacement.kind === 'pin-unranked'"
-              class="border-t border-default bg-elevated px-4 py-2.5 text-sm text-muted"
-            >
-              {{ ownPlacement.message }}
             </div>
           </div>
         </div>

@@ -101,6 +101,7 @@ Points:
 - **WEB-GAME-014**: Every `Upgrade to Paid` / `Upgrade` button links to `/plans` instead of upgrading at once. `/plans` (`pages/plans.vue`) has a `Back` header (WEB-GAME-015) and a `UPricingPlans` with a `Free` plan (5 wave runs and 20 tests a day, AI agent tools, leaderboard) and a highlighted `Paid` plan (300 wave runs and 1,000 tests a day, plus the custom BYOK sandbox), both priced `$0`. The plan buttons depend on the player: anonymous players get `Sign in` (to `/auth/login`) on both; a free player sees `Current plan` (disabled) on Free and `Upgrade to Paid` on Paid, which calls the upgrade endpoint and returns to the previous page (WEB-GAME-015, else `/`); a paid player sees `Current plan` (disabled) on Paid and no action on Free.
 - **WEB-GAME-015**: Every in-app `Back` or `Return` button, and the redirect after signing in, after registering with immediate sign-in, and after upgrading on `/plans`, returns to the previous page of this app when the browser history has one (for example `/game` → `/plans` → `Back` returns to `/game`), and only otherwise navigates to that page's fallback (`/`, or `/auth/login` for `/auth/recover`); no `Back` button links to a fixed `to`. (Added 2026-11-10.)
 - **WEB-GAME-016**: Every page under `apps/web/app/pages/` configures page-specific SEO metadata via Nuxt's `useSeoMeta` (title, description, Open Graph tags, Twitter card `summary_large_image` pointing to `/twitter-card.png`, a 1200×630 PNG rendered from the code-authored `/twitter-card.svg` because social crawlers do not render SVG images, and `robots` directives with `noindex, nofollow` on `/settings`, `/auth/recover`, `/auth/confirmed`, and `/_console*`); `app.vue` and `nuxt.config.ts` configure global head defaults (`lang="en"`, `titleTemplate`, `/favicon.svg`, and Schema.org `VideoGame` JSON-LD); every public page exposes a semantic `<main>` landmark and `<h1>` heading; and `apps/web/public/` serves `/twitter-card.png`, `/twitter-card.svg`, `/favicon.svg`, `/robots.txt`, `/sitemap.xml`, and `/llms.txt`.
+- **WEB-GAME-017**: `sitemap.xml`, `robots.txt` and `llms.txt` use the production site URL; the sitemap lists each public page and each campaign level; `robots.txt` blocks private pages for every named bot; `llms.txt` lists each campaign level and the current pass price.
 
 ## Security & privacy considerations
 
@@ -248,4 +249,11 @@ None.
 - Criteria: WEB-GAME-015, WEB-GAME-016
 - Red: 2 failing test(s) before implementation (`back navigation (spec 0016) [WEB-GAME-015] defines a catch-all 404 route so unmatched paths resolve without router warnings`, `SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016) [WEB-GAME-016] configures useSeoMeta, Twitter card, JSON-LD, semantic landmarks, sitemap.xml, robots.txt and llms.txt`)
 - Green: 3 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 42212fc (+ uncommitted changes)
+
+- Criteria: WEB-GAME-017
+- Red: 1 failing test(s) before implementation (`SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016) [WEB-GAME-017] sitemap.xml, robots.txt and llms.txt use the production site and match the current pages and levels`)
+- Green: 1 passing test(s)
 - Gate: `mise run check` passed

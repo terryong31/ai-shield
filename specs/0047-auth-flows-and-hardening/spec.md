@@ -72,8 +72,8 @@ Web UI states on `/auth/confirmed`:
 
 | State | UI shown |
 | --- | --- |
-| Loading | Spinner card: "Confirming your email..." |
-| `signed_in` (same browser) | Success card (`i-lucide-badge-check`): "Email confirmed" and "You are signed in as `<player_name>`." (or for `email_change`: "Email updated to `<email>`."), plus a primary **Continue to game** button (`/game`) and a secondary **Account settings** button (`/settings`). `usePlayerAuth().session` is updated immediately. |
+| Loading | Spinner card (animated icon): "Confirming your email..." |
+| `signed_in` (same browser) | Success card (`i-lucide-badge-check`): "Email confirmed" and "You are signed in as `<player_name>`." (or for `email_change`: "Email updated to `<email>`."), plus a primary **Continue** button (`/`, the main menu) and a secondary **Account settings** button (`/settings`). `usePlayerAuth().session` is updated immediately. |
 | `confirmation_required` (different browser or scanner) | Confirmation card (`i-lucide-shield-check`): "Confirm your email" explaining that an extra click protects the link from automated email scanners, with a **Confirm email** button that submits `POST /api/v1/auth/confirm` with `confirm: true`. |
 | `confirmed` (manual confirm succeeded) | Success card (`i-lucide-badge-check`): "Email confirmed" with description "Your email is verified. Sign in to continue." and a **Sign in** button (`/auth/login`). |
 | Error / expired / missing params | Warning card (`i-lucide-mail-warning`): clear error message with **Resend confirmation** (or **Sign in**) action. |
@@ -121,7 +121,7 @@ To prevent Outlook Safe Links from consuming the token before the browser reache
 - **API-AUTH-003**: Given a stored signup flow and a `POST /auth/confirm` request with `confirm: false` carrying a missing or different `shield_auth_browser` cookie (such as an email scanner or another browser), then the gateway does **not** call Supabase verify/exchange, does **not** consume the flow, sets no cookie, and returns `200 {"status": "confirmation_required"}`.
 - **API-AUTH-004**: Given a different browser sending `POST /auth/confirm` with `confirm: true` and a valid `token_hash` (or `code`), then the gateway verifies the token with Supabase (for `token_hash`), signs out the Supabase session, sets **no** `shield_player_session` cookie, and returns `200 {"status": "confirmed"}`.
 - **API-AUTH-005**: Given an invalid or expired `token_hash` or `code` on `POST /auth/confirm`, then the gateway returns `400` with no cookie; given Supabase unavailable, it returns `503`.
-- **WEB-AUTH-001**: Given `/auth/confirmed?code=abc&flow=xyz`, when the page mounts, then it immediately strips sensitive query parameters from the URL via `replace`, sends `POST /auth/confirm` with `confirm: false`, and on `signed_in` updates `usePlayerAuth().session` and shows the signed-in confirmation UI with a link to `/game`.
+- **WEB-AUTH-001**: Given `/auth/confirmed?code=abc&flow=xyz`, when the page mounts, then it immediately strips sensitive query parameters from the URL via `replace`, sends `POST /auth/confirm` with `confirm: false`, and on `signed_in` updates `usePlayerAuth().session` and shows the signed-in confirmation UI with a link to the main menu (`/`).
 - **WEB-AUTH-002**: Given `POST /auth/confirm` returns `confirmation_required`, then `/auth/confirmed` shows a manual confirmation screen with a **Confirm email** button; clicking it sends `POST /auth/confirm` with `confirm: true` and on `confirmed` shows the "Email confirmed" screen with a **Sign in** button.
 - **WEB-AUTH-003**: Given `/auth/confirmed?error=access_denied&error_code=otp_expired` or `/auth/confirmed` with no `code` or `token_hash`, then the page never shows "Email confirmed" and instead shows an error/invalid-link state.
 - **WEB-AUTH-004**: Given a browser without a `shield_auth_browser` cookie, when the client triggers register, resend, recover, or email change, then it sets a valid 32+ character URL-safe `shield_auth_browser` cookie before sending the request.
@@ -145,7 +145,13 @@ To prevent Outlook Safe Links from consuming the token before the browser reache
 - **API-AUTH-013**: Given `SupabasePlayerStore._insert_session`, when a new session is inserted, then expired rows (`expires_at <= now`) in `players.sessions` are deleted.
 - **API-AUTH-014**: Given `APP_ENV="production"` and `WEB_BASE_URL` blank or pointing to `localhost`/`127.0.0.1`, when `build_container` runs, then it raises `ConfigurationError` naming `WEB_BASE_URL`; trailing slashes on `WEB_BASE_URL` are stripped before constructing redirect URLs.
 - **WEB-AUTH-009**: Given `apps/web/app/plugins/botid.client.ts`, then it registers with `enforce: 'pre'`; and `apps/web/app/app.vue` does not call `loadAccess()`, while `apps/web/app/layouts/dashboard.vue` calls `loadAccess()` on mount.
+- **WEB-AUTH-010**: Given `/auth/confirmed` is in the loading state, then the icon is animated (`UEmpty` `loading`).
+- **WEB-AUTH-011**: Given a same-browser confirmation succeeded, then the primary action opens the main menu (`/`) and not `/game` (which opens a default level).
+- **WEB-AUTH-012**: Given a signed-in player, when a page is refreshed, then the first server render uses the last known session from the `shield_session_hint` cookie, and `GET /auth/session` only revalidates it in the background. The hint holds only the player name, tier and feature flags (never the email or quotas). It is display data only: the gateway ignores it, invalid hints are ignored, and it is cleared when the session is anonymous.
 - **API-AUTH-015**: Given the OpenAPI contract, then `POST /api/v1/auth/confirm` and `POST /api/v1/auth/reset-password` and their request/response schemas are present, and `mise run contract` leaves no diff.
+- **API-AUTH-016**: Given Redis fails when register or recover stores the PKCE verifier, then the request still succeeds (`202` or `200`), and the flow with its verifier stays readable from the local fallback, also when Redis recovers with the older record.
+- **API-AUTH-017**: Given a recovery link and the current password as the new password, when Supabase answers `same_password`, then the reset succeeds and the sessions are revoked; given `weak_password`, then `422` with a message that does not say the link expired; given another `update_user` failure, then `503`.
+- **WEB-AUTH-013**: Given a valid `shield_auth_browser` cookie, when the client starts another email flow, then it keeps the token and renews the cookie's `Max-Age`.
 
 ## Security & privacy considerations
 
@@ -175,4 +181,25 @@ None. Defaults proposed for review before accepting:
 - Criteria: API-AUTH-001, API-AUTH-002, API-AUTH-003, API-AUTH-004, API-AUTH-005, WEB-AUTH-001, WEB-AUTH-002, WEB-AUTH-003, WEB-AUTH-004, API-AUTH-006, API-AUTH-007, API-AUTH-008, WEB-AUTH-005, WEB-AUTH-006, WEB-AUTH-007, WEB-AUTH-008, API-AUTH-009, API-AUTH-010, API-AUTH-011, API-AUTH-012, API-AUTH-013, API-AUTH-014, WEB-AUTH-009, API-AUTH-015
 - Red: 24 failing test(s) before implementation (`apps/api/tests/test_auth_flows_and_hardening.py::test_register_binds_browser_cookie_and_flow_id_in_redirect`, `apps/api/tests/test_auth_flows_and_hardening.py::test_confirm_same_browser_verifies_signs_in_and_clears_flow`, `apps/api/tests/test_auth_flows_and_hardening.py::test_confirm_different_or_missing_browser_cookie_requires_manual_confirmation`)
 - Green: 36 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 0390350 (+ uncommitted changes)
+
+- Criteria: WEB-AUTH-001, WEB-AUTH-010, WEB-AUTH-011, WEB-AUTH-012
+- Red: 4 failing test(s) before implementation (`auth flows and hardening (spec 0047) [WEB-AUTH-001] /auth/confirmed strips query params, calls confirm with confirm:false, and shows signed-in state`, `auth flows and hardening (spec 0047) [WEB-AUTH-010] /auth/confirmed animates the loading icon`, `auth flows and hardening (spec 0047) [WEB-AUTH-011] /auth/confirmed continues to the main menu, not a default level`)
+- Green: 5 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 42212fc (+ uncommitted changes)
+
+- Criteria: WEB-AUTH-012
+- Red: 1 failing test(s) before implementation (`auth flows and hardening (spec 0047) [WEB-AUTH-012] restores the last known signed-in session and ignores invalid or anonymous hints`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 42212fc (+ uncommitted changes)
+
+- Criteria: API-AUTH-016, API-AUTH-017, WEB-AUTH-013
+- Red: 6 failing test(s) before implementation (`apps/api/tests/test_auth_flows_and_hardening.py::test_redis_failure_storing_verifier_keeps_the_flow_and_succeeds[/api/v1/auth/register-body0-202]`, `apps/api/tests/test_auth_flows_and_hardening.py::test_redis_failure_storing_verifier_keeps_the_flow_and_succeeds[/api/v1/auth/recover-body1-200]`, `apps/api/tests/test_auth_flows_and_hardening.py::test_reset_password_separates_password_errors_from_link_errors[same_password-422-200]`)
+- Green: 6 passing test(s)
 - Gate: `mise run check` passed

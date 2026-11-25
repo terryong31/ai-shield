@@ -171,6 +171,7 @@ async def list_game_levels(container: ContainerDep) -> GameCatalogResponse:
         jev_key_configured=container.jev_client is not None,
         ai_key_configured=bool(container.game_agent or container.game_agents),
         self_upgrade_enabled=container.settings.ALLOW_SELF_UPGRADE,
+        billing_enabled=container.payments is not None,
     )
 
 

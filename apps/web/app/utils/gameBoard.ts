@@ -11,6 +11,7 @@ import type {
   ScoreRecord,
   WaveScoreSchema
 } from '../types/api'
+import { formatPassEnd } from './billing'
 
 /** A board node's state during and after a wave. */
 export type NodeStatus = 'idle' | 'active' | 'passed' | 'flagged' | 'blocked' | 'skipped'
@@ -811,20 +812,20 @@ export interface PlanCard {
   title: 'Free' | 'Paid'
   description: string
   price: string
-  billingCycle: string
+  billingCycle?: string
   features: string[]
   highlight: boolean
   badge?: string
   terms?: string
   button?: { label: string, to?: string, disabled?: boolean, color: 'neutral', variant: 'solid' | 'outline' }
   /** Set when the button upgrades the player instead of linking somewhere. */
-  action?: 'upgrade'
+  action?: 'upgrade' | 'checkout'
 }
 
 /** Plans shown on /plans (WEB-GAME-014). Limits mirror the gateway's DAILY_LIMITS. */
 export function planCards(
   session: PlayerSessionStatus,
-  options: { selfUpgradeEnabled?: boolean } = {}
+  options: { selfUpgradeEnabled?: boolean, billingEnabled?: boolean } = {}
 ): PlanCard[] {
   const selfUpgradeEnabled = options.selfUpgradeEnabled ?? true
   const anonymous = session.is_anonymous || session.tier === 'anonymous'
@@ -835,7 +836,6 @@ export function planCards(
     title: 'Free',
     description: 'For players who sign in.',
     price: '$0',
-    billingCycle: '/month',
     highlight: false,
     features: ['5 wave runs a day', '20 tests a day', 'AI agent tools', 'Scores on the leaderboard']
   }
@@ -853,8 +853,30 @@ export function planCards(
     ]
   }
 
+  if (options.billingEnabled) {
+    Object.assign(paid, {
+      price: '$5',
+      billingCycle: '/30 days',
+      features: [...paid.features, 'One payment, does not renew']
+    })
+  }
+
   if (anonymous) return [{ ...free, button: signIn }, { ...paid, button: { ...signIn, variant: 'solid' } }]
-  if (session.tier === 'paid') return [free, { ...paid, button: current }]
+  if (session.tier === 'paid') {
+    if (!options.billingEnabled || !session.paid_until) return [free, { ...paid, button: current }]
+    return [free, {
+      ...paid,
+      description: `Your pass ends on ${formatPassEnd(session.paid_until)}.`,
+      button: { label: 'Extend', color: 'neutral', variant: 'solid' },
+      action: 'checkout'
+    }]
+  }
+  if (options.billingEnabled) {
+    return [
+      { ...free, button: current },
+      { ...paid, button: { label: 'Buy 30-day pass', color: 'neutral', variant: 'solid' }, action: 'checkout' }
+    ]
+  }
   return [
     { ...free, button: current },
     selfUpgradeEnabled

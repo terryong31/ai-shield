@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { FALLBACK_CAMPAIGN_LEVELS } from '../app/utils/campaignSelect'
 import { TWITTER_CARD_PATH, buildGameJsonLd, buildPageSeo } from '../app/utils/seo'
 
 const WEB_DIR = join(import.meta.dirname, '..')
@@ -18,6 +19,7 @@ const ALL_PAGES: string[][] = [
   ['pages', 'auth', 'register.vue'],
   ['pages', 'auth', 'recover.vue'],
   ['pages', 'auth', 'confirmed.vue'],
+  ['pages', 'auth', 'reset-password.vue'],
   ['pages', 'console', 'index.vue'],
   ['pages', 'console', 'settings.vue'],
   ['pages', '[...slug].vue']
@@ -27,6 +29,7 @@ const NOINDEX_PAGES: string[][] = [
   ['pages', 'settings.vue'],
   ['pages', 'auth', 'recover.vue'],
   ['pages', 'auth', 'confirmed.vue'],
+  ['pages', 'auth', 'reset-password.vue'],
   ['pages', 'console', 'index.vue'],
   ['pages', 'console', 'settings.vue'],
   ['pages', '[...slug].vue']
@@ -40,6 +43,7 @@ const MAIN_LANDMARK_PAGES: string[][] = [
   ['pages', 'auth', 'register.vue'],
   ['pages', 'auth', 'recover.vue'],
   ['pages', 'auth', 'confirmed.vue'],
+  ['pages', 'auth', 'reset-password.vue'],
   ['pages', '[...slug].vue']
 ]
 
@@ -170,5 +174,35 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
     expect(llms).toContain('## Game Levels')
     expect(llms).toContain('## Defence Tools')
     expect(llms).toContain('## Optional')
+  })
+
+  it('[WEB-GAME-017] sitemap.xml, robots.txt and llms.txt use the production site and match the current pages and levels', () => {
+    const site = 'https://ai-shield-delta.vercel.app'
+    const [sitemap, robots, llms] = ['sitemap.xml', 'robots.txt', 'llms.txt'].map(readPublic) as [string, string, string]
+    for (const file of [sitemap, robots, llms]) expect(file).not.toContain('localhost')
+
+    const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]!)
+    const levelUrls = FALLBACK_CAMPAIGN_LEVELS.map(level => `${site}/game?level=${level.id}`)
+    expect(levelUrls.length).toBeGreaterThan(20)
+    expect(new Set(urls)).toEqual(new Set([
+      ...['/', '/game', '/plans', '/auth/login', '/auth/register'].map(path => `${site}${path}`),
+      ...levelUrls
+    ]))
+
+    for (const path of ['/_console', '/settings', '/auth/recover', '/auth/confirmed', '/auth/reset-password', '/api/']) {
+      expect(robots).toContain(`Disallow: ${path}`)
+    }
+    // A crawler follows only its own group, so every named bot shares the one group of rules.
+    expect(robots.match(/Disallow: \/settings/g)).toHaveLength(1)
+    for (const bot of ['*', 'GPTBot', 'ClaudeBot', 'PerplexityBot', 'Google-Extended']) {
+      expect(robots).toContain(`User-agent: ${bot}`)
+    }
+    expect(robots).toContain(`Sitemap: ${site}/sitemap.xml`)
+
+    for (const level of FALLBACK_CAMPAIGN_LEVELS) {
+      expect(llms).toContain(`[${level.title}](${site}/game?level=${level.id})`)
+    }
+    expect(llms).toContain('$5')
+    expect(llms).toContain('30 days')
   })
 })

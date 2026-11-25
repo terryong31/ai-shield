@@ -19,6 +19,7 @@ from shield_api.schemas import (
     AccountDeleteRequest,
     AccountEmailRequest,
     AccountPasswordRequest,
+    AccountProfileRequest,
     AccountResetRequest,
     AccountResetResponse,
     PlayerConfirmationResponse,
@@ -36,9 +37,12 @@ from shield_api.services.identity import (
     IdentityUnavailableError,
     InvalidIdentityError,
 )
+from shield_api.services.passes import PassDesk
 from shield_api.services.rate_limit import (
     ACCOUNT_EMAIL_LIMIT,
     ACCOUNT_EMAIL_WINDOW,
+    ACCOUNT_NAME_LIMIT,
+    ACCOUNT_NAME_WINDOW,
     RateLimitExceededError,
 )
 
@@ -183,6 +187,33 @@ async def change_email(
     return PlayerConfirmationResponse()
 
 
+@router.patch(
+    "/profile",
+    responses={
+        403: {"description": "Sign in to manage your account."},
+        429: {"description": "Too many requests."},
+        503: {"description": "The change could not be completed."},
+    },
+)
+async def change_profile(
+    body: AccountProfileRequest, request: Request, container: ContainerDep
+) -> PlayerSessionStatus:
+    """Change the display name on the account, its scores and the leaderboard (spec 0048)."""
+    token, email = await _player(request, container)
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "account_name",
+            email,
+            limit=ACCOUNT_NAME_LIMIT,
+            window_seconds=ACCOUNT_NAME_WINDOW,
+        )
+    await _store(container.players.set_player_name(email, body.player_name))
+    await _store(container.scores.rename_scores_player(email, body.player_name))
+    await container.leaderboard.on_display_name_changed(email, body.player_name)
+    return await container.players.lookup(token)
+
+
 @router.post("/reset-progress", responses=_COMMON)
 async def reset_progress(
     body: AccountResetRequest, request: Request, container: ContainerDep
@@ -204,6 +235,8 @@ async def delete_account(
     """Delete the account and everything it owns, except today's run counts."""
     _, email = await _player(request, container)
     user_id = await _reauthenticate(container, email, body.current_password)
+    if container.payments is not None:
+        await PassDesk(container.players, container.payments).close_open_checkout(email)
     # Gateway data first, the Supabase user last, so a failure can be retried.
     await _store(container.players.delete_boards(email))
     scores_removed = await _store(container.scores.delete_scores_for(email))

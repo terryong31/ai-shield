@@ -27,6 +27,7 @@ or `yarn`; Python uses **uv**, JavaScript uses **bun**.
 ```bash
 mise run setup          # install everything
 mise run dev            # API :8000 + web :3000
+mise stop               # stop the dev servers, Redis and local Supabase
 mise run test           # all tests       (test:engine | test:api | test:web)
 mise run lint           # ruff + eslint
 mise run typecheck      # mypy --strict + vue-tsc

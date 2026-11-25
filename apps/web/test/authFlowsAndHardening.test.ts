@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as apiProxy from '../shared/utils/apiProxy'
 import * as playerAuth from '../app/utils/playerAuth'
 
@@ -15,7 +15,7 @@ describe('auth flows and hardening (spec 0047)', () => {
     expect(page).toContain('router.replace')
     expect(page).toContain('confirm: false')
     expect(page).toContain('signed_in')
-    expect(page).toContain('/game')
+    expect(page).toMatch(/label: 'Continue',\s+to: '\/'/)
   })
 
   it('[WEB-AUTH-002] /auth/confirmed shows manual confirmation screen on confirmation_required and submits confirm:true', () => {
@@ -102,5 +102,66 @@ describe('auth flows and hardening (spec 0047)', () => {
     )
     expect(res.status).toBe(403)
     expect(await res.json()).toEqual({ detail: 'Cross-site request blocked.' })
+  })
+
+  it('[WEB-AUTH-010] /auth/confirmed animates the loading icon', () => {
+    const page = readApp('pages', 'auth', 'confirmed.vue')
+    expect(page).toMatch(/v-if="viewState === 'loading'"\s+loading\s/)
+  })
+
+  it('[WEB-AUTH-011] /auth/confirmed continues to the main menu, not a default level', () => {
+    const page = readApp('pages', 'auth', 'confirmed.vue')
+    expect(page).toMatch(/to: '\/'/)
+    expect(page).not.toContain('\'/game\'')
+  })
+
+  it('[WEB-AUTH-012] restores the last known signed-in session and ignores invalid or anonymous hints', async () => {
+    const hintModule = join(APP_DIR, 'utils', 'sessionHint.ts')
+    expect(existsSync(hintModule)).toBe(true)
+    const { DEFAULT_ANONYMOUS_SESSION, sessionFromHint, hintFromSession } = await import('../app/utils/sessionHint')
+    const signedIn = {
+      ...DEFAULT_ANONYMOUS_SESSION,
+      authenticated: true,
+      is_anonymous: false,
+      tier: 'free' as const,
+      email: 'player@example.com',
+      player_name: 'Player'
+    }
+    const hint = hintFromSession(signedIn)
+    expect(JSON.stringify(hint)).not.toContain('player@example.com')
+    expect(sessionFromHint(JSON.parse(JSON.stringify(hint)))).toEqual({ ...signedIn, email: null })
+    expect(sessionFromHint({ ...signedIn, daily_wave_limit: 'many', ai_nodes_allowed: 'yes' }))
+      .toEqual({ ...signedIn, email: null })
+    expect(hintFromSession(DEFAULT_ANONYMOUS_SESSION)).toBeNull()
+    expect(hintFromSession({ ...DEFAULT_ANONYMOUS_SESSION, authenticated: true })).toBeNull()
+    for (const bad of [null, undefined, 'text', 3, [], {}, { ...signedIn, tier: 'admin' }, { ...signedIn, player_name: 1 }, { ...signedIn, tier: 'anonymous' }]) {
+      expect(sessionFromHint(bad)).toEqual(DEFAULT_ANONYMOUS_SESSION)
+    }
+
+    expect(readApp('composables', 'usePlayerAuth.ts')).toContain('sessionFromHint(useCookie')
+    const plugin = readApp('plugins', 'sessionHint.client.ts')
+    expect(plugin).toContain('hintFromSession')
+    expect(plugin).toContain('watch(session')
+  })
+
+  it('[WEB-AUTH-013] renews an existing browser cookie without changing its token', () => {
+    const token = 'b'.repeat(40)
+    const writes: string[] = []
+    vi.stubGlobal('document', {
+      get cookie() {
+        return `other=1; shield_auth_browser=${token}`
+      },
+      set cookie(value: string) {
+        writes.push(value)
+      }
+    })
+    try {
+      expect(playerAuth.ensureAuthBrowserCookie()).toBe(token)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toContain(`shield_auth_browser=${token}`)
+    expect(writes[0]).toContain('Max-Age=3600')
   })
 })

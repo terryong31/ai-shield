@@ -10,6 +10,7 @@ Specs: [0007](../../specs/0007-gateway-http-api/spec.md) (gateway), [0012](../..
 - Base path: `/api/v1` (setting `API_PREFIX`).
 - Interactive docs: `GET /api/v1/docs` (Swagger UI) and `GET /api/v1/openapi.json`, only when `APP_ENV=development` (`mise run api:dev`). In production (the default) both return `404`. ReDoc is always disabled. The committed contract is `contracts/shield-api.openapi.json`.
 - Request bodies are JSON (`Content-Type: application/json`).
+- The web client also keeps a display-only `shield_session_hint` cookie. The gateway ignores it.
 - Players authenticate with the `shield_player_session` cookie (`/auth/*`). The admin
   console uses a separate clearance cookie from `POST /clearance`; see [Clearance](#clearance).
 - CORS: origins from `CORS_ORIGINS` (a `*` is rejected at startup), credentials allowed.
@@ -43,6 +44,7 @@ Specs: [0007](../../specs/0007-gateway-http-api/spec.md) (gateway), [0012](../..
 | POST | `/api/v1/auth/login` | `PlayerLoginRequest` | `PlayerSessionStatus` | 200, 401, 403, 422, 429, 503 |
 | POST | `/api/v1/auth/resend-confirmation` | `PlayerResendRequest` | `PlayerConfirmationResponse` | 202, 403, 422, 429 |
 | POST | `/api/v1/auth/account/password` | `AccountPasswordRequest` | `PlayerSessionStatus` | 200, 401, 403, 422, 429, 503 |
+| PATCH | `/api/v1/auth/account/profile` | `AccountProfileRequest` | `PlayerSessionStatus` | 200, 403, 422, 429, 503 |
 | POST | `/api/v1/auth/account/email` | `AccountEmailRequest` | `PlayerConfirmationResponse` | 202, 401, 403, 409, 422, 429, 503 |
 | POST | `/api/v1/auth/account/reset-progress` | `AccountResetRequest` | `AccountResetResponse` | 200, 401, 403, 422, 429, 503 |
 | DELETE | `/api/v1/auth/account` | `AccountDeleteRequest` | none | 204, 401, 403, 422, 429, 503 |
@@ -50,6 +52,9 @@ Specs: [0007](../../specs/0007-gateway-http-api/spec.md) (gateway), [0012](../..
 | POST | `/api/v1/auth/reset-password` | `PlayerResetPasswordRequest` | `PlayerResetPasswordResponse` | 200, 400, 403, 422, 503 |
 | POST | `/api/v1/auth/upgrade` | none | `PlayerSessionStatus` | 200, 403 |
 | POST | `/api/v1/auth/logout` | none | empty | 204 |
+| POST | `/api/v1/billing/checkout` | none | `BillingCheckoutResponse` | 200, 403, 409, 429, 503 |
+| POST | `/api/v1/billing/sync` | `BillingSyncRequest` | `BillingSyncResponse` | 200, 403, 422, 429, 503 |
+| POST | `/api/v1/billing/webhook` | signed Stripe event | none | 200, 400, 503 |
 | GET | `/api/v1/game/levels` | none | `GameCatalogResponse` | 200 |
 | POST | `/api/v1/game/train` | `GameTrainRequest` | `GameTrainResponse` | 200, 403, 413, 422, 429, 503 |
 | DELETE | `/api/v1/game/models` | none (player cookie) | empty | 204 |
@@ -153,6 +158,7 @@ failures are `503` with a generic message.
 
 - `POST …/password` `{current_password, new_password}` (8 to 512 chars with at least one number, one lowercase letter, and one uppercase letter, different from the current one): sets the new password and ends every other session of the account.
 - `POST …/email` `{new_email, current_password}`: `409` if the address has an account, `422` if unchanged. Starts Supabase Auth's confirm-change email flow (`update_user`) and returns `202 {"status": "confirmation_sent"}`; existing scores, saved boards, usage and sessions stay under the current email until the player confirms the new address and signs in with it (spec 0042). Requires **Confirm email** and **Secure email change** enabled in production Supabase Auth.
+- `PATCH …/profile` `{player_name}` (1 to 64 characters, no control or format characters; no password): changes the display name on the account, its sessions, its scores and the leaderboard (spec 0048). At most 5 changes in 15 minutes in production.
 - `POST …/reset-progress` `{current_password}`: deletes the account's scores and saved boards; returns `{"scores_removed": n, "boards_removed": m}`.
 - `DELETE /api/v1/auth/account` `{current_password, confirm: "DELETE"}`: deletes saved boards, scores, sessions and the account (and the Supabase user), keeps the day's usage counts, and clears the cookie. `204`.
 
@@ -172,12 +178,20 @@ Revokes the active player session and clears `shield_player_session` (`204 No Co
 
 ## `ai-shield` game endpoints
 
+### Billing (`/api/v1/billing/*`, spec 0049)
+
+- `POST …/checkout`: creates a Stripe Checkout Session for one 30-day pass (USD 5, one payment) and returns `{"url"}`. The page expires after 30 minutes and is reused while it is open. `409` when a payment is processing, or when there is nothing to buy. At most 10 in 15 minutes for one account in production.
+- `POST …/sync` `{cancel}`: reads the open checkout from Stripe and grants a paid pass, so a missed webhook or a lost connection is repaired. `cancel: true` expires an unpaid session. Returns `{state, session}`.
+- `POST …/webhook`: verifies `Stripe-Signature` on the raw body. A paid event adds 30 days to `paid_until` once. A full refund or a chargeback removes the unused days once; a failed refund or a won chargeback gives them back. A payment for a deleted account is refunded. `503` makes Stripe send the event again.
+- The session status has `paid_until`. The tier is `paid` while it is in the future, or when the account has a manual grant.
+
 ### `GET /api/v1/game/levels`
 
 Returns `GameCatalogResponse`:
 
 - `levels`: 23 campaign definitions (`easy-1`..`easy-5`, `medium-1`..`medium-10`, `hard-1`..`hard-8`), each with `id`, `title`, `difficulty` (`"Easy" | "Medium" | "Hard"`), `order`, `tier` (`"free" | "paid"`), `tags`, `summary`, `protected_asset`, `max_latency_ms`, `max_cost_usd`, `constraints` (`LevelConstraintsSchema` or `null`), `follow_up` (`FollowUpChallengeSchema` or `null`), `messages` (each with optional `expected_tool` and `forbidden_tools`), `agent` (`objective`, `tools` with `name`/`description`/`allowed`/`dual_use`, `token_budget`; `null` on `easy-1..5`, which run no model), `agent_tier` (`null`, `standard` or `budget`) and `final_node_label` (`Help Desk` on `easy-1..5`, else `Protected Agent`). The per-run canary is never included.
 - `checks`: available tool node definitions (`text_cleanup`, `word_filter`, `length_limit`, `secret_scan`, `ml_classifier`, `jev`, `safety_check`, `llm_review`) with handles, typical latency, and cost. `jev`, `safety_check`, and `llm_review` support the Tool Policy extension (`tool_policy_enabled`, `block_tools`).
+- `billing_enabled`: boolean, true when Stripe checkout is configured (spec 0049).
 - `self_upgrade_enabled`: boolean matching `ALLOW_SELF_UPGRADE`.
 
 ### `POST /api/v1/game/train`

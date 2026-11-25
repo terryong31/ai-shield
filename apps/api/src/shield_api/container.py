@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from urllib.parse import urlparse
 
+from pydantic import SecretStr
+
 from shield_api.providers.byok import build_byok_model
 from shield_api.providers.typesafe import build_jev_client
 from shield_api.services.admins import (
@@ -17,6 +19,12 @@ from shield_api.services.auth_flows import (
     AuthFlowStore,
     InMemoryAuthFlowStore,
     RedisAuthFlowStore,
+)
+from shield_api.services.billing import (
+    LIVE_KEY_PREFIXES,
+    TEST_KEY_PREFIXES,
+    PaymentProvider,
+    StripePayments,
 )
 from shield_api.services.identity import PlayerIdentity, SupabasePlayerIdentity
 from shield_api.services.leaderboard import LeaderboardService
@@ -92,6 +100,8 @@ class Container:
     game_agents: dict[AgentTier, UsageChatModel] = field(default_factory=dict)
     game_agent: UsageChatModel | None = None
     jev_client: JevClient | None = None
+    # Stripe checkout (spec 0049); None means billing is off.
+    payments: PaymentProvider | None = None
     # Builds the player's own model for one custom run (spec 0022); tests swap in a fake.
     byok_factory: Callable[[str, str, str], UsageChatModel] = build_byok_model
     jev_factory: Callable[[str], JevClient] = build_jev_client
@@ -119,6 +129,10 @@ class Container:
         return self.game_agents.get("standard") or self.game_agents.get("budget")
 
 
+def _secret(value: SecretStr | None) -> str:
+    return value.get_secret_value().strip() if value else ""
+
+
 def build_container(settings: Settings) -> Container:
     missing: list[str] = []
     if not settings.SUPABASE_URL.strip():
@@ -142,6 +156,13 @@ def build_container(settings: Settings) -> Container:
             or parsed_web.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
         ):
             missing.append("WEB_BASE_URL")
+    stripe_key = _secret(settings.STRIPE_SECRET_KEY)
+    stripe_webhook = _secret(settings.STRIPE_WEBHOOK_SECRET)
+    if stripe_key:
+        if not stripe_key.startswith(TEST_KEY_PREFIXES + LIVE_KEY_PREFIXES):
+            missing.append("STRIPE_SECRET_KEY")
+        if not stripe_webhook:
+            missing.append("STRIPE_WEBHOOK_SECRET")
     if missing:
         names = ", ".join(missing)
         msg = (
@@ -224,6 +245,7 @@ def build_container(settings: Settings) -> Container:
         identity=identity,
         game_agents=game_agents,
         jev_client=jev_client,
+        payments=StripePayments(stripe_key, stripe_webhook) if stripe_key else None,
         attempts=AttemptLimiter(
             max_attempts=settings.CLEARANCE_MAX_ATTEMPTS,
             window=timedelta(minutes=settings.CLEARANCE_WINDOW_MINUTES),

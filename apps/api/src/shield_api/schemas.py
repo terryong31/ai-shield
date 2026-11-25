@@ -5,6 +5,7 @@ These models are the public contract. Changing them changes
 """
 
 import re
+import unicodedata
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
@@ -153,6 +154,7 @@ class GameCatalogResponse(BaseModel):
     jev_key_configured: bool = False
     ai_key_configured: bool = False
     self_upgrade_enabled: bool = False
+    billing_enabled: bool = False
 
 
 PlayerTier = Literal["anonymous", "free", "paid"]
@@ -230,6 +232,26 @@ class AccountEmailRequest(BaseModel):
 
     new_email: PlayerEmail
     current_password: CurrentPassword
+
+
+def _clean_display_name(value: str) -> str:
+    name = value.strip()
+    if not 1 <= len(name) <= 64:
+        raise ValueError("Use 1 to 64 characters.")
+    # Control, format (bidirectional, zero-width) and line characters allow spoofed names.
+    if any(unicodedata.category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"} for char in name):
+        raise ValueError("The name contains characters that are not allowed.")
+    return name
+
+
+class AccountProfileRequest(BaseModel):
+    """Change the display name (spec 0048)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    player_name: Annotated[
+        str, Field(min_length=1, max_length=256), AfterValidator(_clean_display_name)
+    ]
 
 
 class AccountResetRequest(BaseModel):
@@ -310,6 +332,23 @@ class PlayerSessionStatus(BaseModel):
     test_runs_used: int = 0
     daily_train_limit: int | None = 0
     train_runs_used: int = 0
+    # End of the 30-day pass (spec 0049); null without one.
+    paid_until: datetime | None = None
+
+
+class BillingCheckoutResponse(BaseModel):
+    url: str
+
+
+class BillingSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cancel: bool = False
+
+
+class BillingSyncResponse(BaseModel):
+    state: Literal["none", "open", "processing", "paid"]
+    session: PlayerSessionStatus
 
 
 ProviderId = Literal["openai", "anthropic", "google", "groq", "deepseek", "qwen", "moonshot"]
