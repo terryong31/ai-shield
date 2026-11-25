@@ -1,7 +1,7 @@
 export const SITE_NAME = 'ai-shield'
 export const SITE_URL_DEFAULT = 'http://localhost:3000'
 export const TWITTER_CARD_PATH = '/twitter-card.png'
-export const TWITTER_CARD_ALT = 'ai-shield blocking a prompt injection attempt with Word filter'
+export const TWITTER_CARD_ALT = 'ai-shield defence board with wired checks that block prompt injections'
 export const DEFAULT_DESCRIPTION = 'Wire layered security checks on an interactive node board to protect AI agents from prompt injection waves, jailbreaks, secret leaks, and tool hijacking.'
 
 export interface PageSeoInput {
