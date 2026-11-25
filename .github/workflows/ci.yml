@@ -151,6 +151,21 @@ jobs:
           javascript: "false"
       - run: mise run secrets:scan
 
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: uv python semgrep
+          python: "false"
+          javascript: "false"
+      - run: mise run sast
+
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
@@ -178,6 +193,7 @@ jobs:
       - migrations
       - workflows
       - secrets
+      - sast
       - dependency-review
     runs-on: ubuntu-24.04
     timeout-minutes: 2

@@ -15,12 +15,16 @@ import type {
   LeaderboardRankResponse,
   LevelId,
   PlayerConfirmationResponse,
+  PlayerConfirmRequest,
+  PlayerConfirmResponse,
   PlayerLoginRequest,
   PlayerProgressResponse,
   PlayerRecoverRequest,
   PlayerRecoverResponse,
   PlayerRegisterRequest,
   PlayerResendRequest,
+  PlayerResetPasswordRequest,
+  PlayerResetPasswordResponse,
   PlayerSessionStatus,
   RunLevelId,
   SavedBoardRequest,
@@ -54,6 +58,10 @@ export const useShieldApi = () => {
       api<PlayerSessionStatus>('/auth/login', { method: 'POST', body }),
     recoverPlayer: (body: PlayerRecoverRequest) =>
       api<PlayerRecoverResponse>('/auth/recover', { method: 'POST', body }),
+    confirmEmail: (body: PlayerConfirmRequest) =>
+      api<PlayerConfirmResponse>('/auth/confirm', { method: 'POST', body }),
+    resetPassword: (body: PlayerResetPasswordRequest) =>
+      api<PlayerResetPasswordResponse>('/auth/reset-password', { method: 'POST', body }),
     upgradePlayer: () => api<PlayerSessionStatus>('/auth/upgrade', { method: 'POST' }),
     logoutPlayer: () => api('/auth/logout', { method: 'POST' }),
     // Account settings (spec 0025); each needs the current password.

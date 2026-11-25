@@ -25,7 +25,7 @@ Unknown variables are ignored. Every provider is optional. Template:
 | `SUPABASE_URL` | `""` | **Required.** Supabase project URL. With `SUPABASE_KEY`, admin clearance sessions, players and game data use Supabase schemas `audit`, `game` and `players`, and admins/players sign in with Supabase Auth (spec 0046). Missing or partial config raises `ConfigurationError` at startup |
 | `SUPABASE_KEY` | unset | **Required.** Server-side (service) Supabase key; `mise run admin:create` needs it to set `app_metadata`. Also accepted as `SUPABASE_ANON_KEY` (legacy alias) |
 | `SUPABASE_ANON_KEY` | unset | Alias for `SUPABASE_KEY` |
-| `WEB_BASE_URL` | `http://localhost:3000` | Public origin of the web client. Confirmation emails link to `<WEB_BASE_URL>/auth/confirmed`, which must be listed in the Supabase project's **Redirect URLs** (spec 0027) |
+| `WEB_BASE_URL` | `http://localhost:3000` | Public origin of the web client. **Required** and must not be `localhost`/`127.0.0.1` when `APP_ENV=production` (spec 0047). Confirmation, email-change, and password-recovery emails link to `<WEB_BASE_URL>/auth/confirmed` and `<WEB_BASE_URL>/auth/reset-password`, which must be listed in the Supabase project's **Redirect URLs** |
 | `SESSION_TTL_MINUTES` | `480` | Lifetime of a clearance session (spec 0012) |
 | `SESSION_COOKIE_SECURE` | `true` | Adds `Secure` to the session cookie. Browsers accept it on `http://localhost`; set `false` only for other plain-HTTP hosts (and Safari on localhost) |
 | `ALLOW_SELF_UPGRADE` | `false` | Enables `POST /api/v1/auth/upgrade` and the Paid upgrade button on `/plans` for demos. When `false`, upgrades answer `403` and `/plans` shows `Coming soon` (spec 0042) |

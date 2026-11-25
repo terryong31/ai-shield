@@ -18,7 +18,7 @@ To install only the hooks, run:
 mise run hooks:install
 ```
 
-mise pins the hook tools (lefthook, gitleaks, actionlint, zizmor, shellcheck).
+mise pins the hook tools (lefthook, gitleaks, actionlint, zizmor, shellcheck, semgrep).
 Do not install them with Homebrew or another package manager. A different
 version can give different results from CI.
 
@@ -32,6 +32,7 @@ The pre-commit hook checks only the staged files.
 | `whitespace` | Trailing whitespace or a conflict marker | Remove it, then stage the file again |
 | `ruff` | A lint error that ruff cannot fix | Fix the error that ruff shows, then stage the file again |
 | `eslint` | A lint error that eslint cannot fix | Fix the error that eslint shows, then stage the file again |
+| `sast` | Semgrep found a security issue in the staged files | Fix the issue, or suppress a reviewed false positive with `# nosemgrep: <rule-id>` and a short reason |
 | `workflows` | actionlint or zizmor found a problem in `.github/` | Run `mise run lint:actions` and fix each finding |
 
 The `ruff` and `eslint` jobs fix what they can and stage the fixed files again.
@@ -97,6 +98,7 @@ Each CI job runs a mise task. Run the same task on your computer:
 | `Migrations` | `mise run db:check` |
 | `Workflow security` | `mise run lint:actions` |
 | `Secret scan` | `mise run secrets:scan` |
+| `SAST (Semgrep)` | `mise run sast` |
 
 `Dependency review` has no local command. It fails when a pull request adds a
 dependency with a known vulnerability of high or critical severity. Update the

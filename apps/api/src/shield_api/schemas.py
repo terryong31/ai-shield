@@ -257,11 +257,43 @@ class PlayerConfirmationResponse(BaseModel):
 
 
 class PlayerRecoverRequest(BaseModel):
-    email: Annotated[str, Field(min_length=3, max_length=254)]
+    email: PlayerEmail
 
 
 class PlayerRecoverResponse(BaseModel):
     status: Literal["ok"] = "ok"
+
+
+class PlayerConfirmRequest(BaseModel):
+    """Confirm an email link from /auth/confirmed (spec 0047)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    flow_id: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+    code: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    token_hash: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    type: Literal["signup", "email_change"] = "signup"
+    confirm: bool = False
+
+
+class PlayerConfirmResponse(BaseModel):
+    status: Literal["signed_in", "confirmation_required", "confirmed"]
+    session: "PlayerSessionStatus | None" = None
+
+
+class PlayerResetPasswordRequest(BaseModel):
+    """Set a new password from a recovery link (spec 0047)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    flow_id: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+    code: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    token_hash: Annotated[str, Field(min_length=1, max_length=512)] | None = None
+    new_password: NewPassword
+
+
+class PlayerResetPasswordResponse(BaseModel):
+    status: Literal["password_reset"] = "password_reset"
 
 
 class PlayerSessionStatus(BaseModel):

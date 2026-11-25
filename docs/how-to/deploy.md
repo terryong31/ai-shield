@@ -13,10 +13,10 @@ cp apps/api/.env.example apps/api/.env   # optional; loaded if present
 mise run up                              # docker compose up --build
 ```
 
-- web: http://localhost:3000; api: http://localhost:8000/api/v1/health (Compose runs `APP_ENV=production`, so `/api/v1/docs` is off; start with `APP_ENV=development mise run up` to enable it)
+- web: http://localhost:3000; api: http://localhost:8000/api/v1/health (Compose defaults to `APP_ENV=development`; run `APP_ENV=production mise run up` to test production mode)
 - `web` starts once `api` passes its health check.
-- To use the local Supabase stack from the container, set
-  `SUPABASE_URL=http://host.docker.internal:54321` and `SUPABASE_KEY` in `apps/api/.env`.
+- `mise run up` injects Infisical `dev /api` secrets and automatically rewrites local Supabase to
+  `SUPABASE_URL=http://host.docker.internal:54421` with the local `SUPABASE_KEY`.
 - The browser only talks to `web`; it proxies `/api/v1/**` to `api` over the
   Compose network (`NUXT_API_PROXY_TARGET=http://api:8000`).
 

@@ -104,6 +104,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Player Email
+         * @description Confirm an email link; auto-sign-in only when the originating browser cookie matches.
+         */
+        post: operations["confirm_player_email_api_v1_auth_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -198,6 +218,26 @@ export interface paths {
          * @description Send the confirmation email again. The answer is the same for every address.
          */
         post: operations["resend_confirmation_api_v1_auth_resend_confirmation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Player Password
+         * @description Complete a password reset from a recovery link and revoke all existing sessions.
+         */
+        post: operations["reset_player_password_api_v1_auth_reset_password_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1032,6 +1072,38 @@ export interface components {
             y: number;
         };
         /**
+         * PlayerConfirmRequest
+         * @description Confirm an email link from /auth/confirmed (spec 0047).
+         */
+        PlayerConfirmRequest: {
+            /** Code */
+            code?: string | null;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Flow Id */
+            flow_id?: string | null;
+            /** Token Hash */
+            token_hash?: string | null;
+            /**
+             * Type
+             * @default signup
+             * @enum {string}
+             */
+            type: "signup" | "email_change";
+        };
+        /** PlayerConfirmResponse */
+        PlayerConfirmResponse: {
+            session?: components["schemas"]["PlayerSessionStatus"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "signed_in" | "confirmation_required" | "confirmed";
+        };
+        /**
          * PlayerConfirmationResponse
          * @description Sent for every register or resend that needs email confirmation, whatever the email.
          */
@@ -1084,6 +1156,29 @@ export interface components {
         PlayerResendRequest: {
             /** Email */
             email: string;
+        };
+        /**
+         * PlayerResetPasswordRequest
+         * @description Set a new password from a recovery link (spec 0047).
+         */
+        PlayerResetPasswordRequest: {
+            /** Code */
+            code?: string | null;
+            /** Flow Id */
+            flow_id?: string | null;
+            /** New Password */
+            new_password: string;
+            /** Token Hash */
+            token_hash?: string | null;
+        };
+        /** PlayerResetPasswordResponse */
+        PlayerResetPasswordResponse: {
+            /**
+             * Status
+             * @default password_reset
+             * @constant
+             */
+            status: "password_reset";
         };
         /** PlayerSessionStatus */
         PlayerSessionStatus: {
@@ -1561,6 +1656,53 @@ export interface operations {
             };
         };
     };
+    confirm_player_email_api_v1_auth_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerConfirmResponse"];
+                };
+            };
+            /** @description Invalid or expired confirmation link. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Confirmation is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     login_player_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -1713,6 +1855,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Registration is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     resend_confirmation_api_v1_auth_resend_confirmation_post: {
@@ -1745,6 +1894,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    reset_player_password_api_v1_auth_reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlayerResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerResetPasswordResponse"];
+                };
+            };
+            /** @description Invalid or expired recovery link. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Password reset is unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

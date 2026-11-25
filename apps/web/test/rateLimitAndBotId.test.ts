@@ -83,12 +83,16 @@ describe('rate limiting, client IP and BotID (spec 0043)', () => {
     expect(gameSource).toContain('errorDetail')
   })
 
-  it('[WEB-BOTID-001] defines the 5 BOTID_PROTECTED_ROUTES and passes them to initBotId in botid.client.ts', async () => {
+  it('[WEB-BOTID-001] defines the BOTID_PROTECTED_ROUTES and passes them to initBotId in botid.client.ts', async () => {
     const botidMod = await import('../shared/utils/botid')
     expect(botidMod.BOTID_PROTECTED_ROUTES).toEqual([
       { path: '/api/v1/auth/anonymous', method: 'POST' },
       { path: '/api/v1/auth/register', method: 'POST' },
       { path: '/api/v1/auth/login', method: 'POST' },
+      { path: '/api/v1/auth/recover', method: 'POST' },
+      { path: '/api/v1/auth/resend-confirmation', method: 'POST' },
+      { path: '/api/v1/auth/confirm', method: 'POST' },
+      { path: '/api/v1/auth/reset-password', method: 'POST' },
       { path: '/api/v1/game/run', method: 'POST' },
       { path: '/api/v1/game/train', method: 'POST' }
     ])

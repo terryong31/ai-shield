@@ -45,18 +45,23 @@ The Supabase CLI is pinned in `mise.toml`, so `mise install` provides it. Docker
 
 ## Use Supabase locally
 
+Local Supabase uses the `5442x` port block (defined in `supabase/config.toml`)
+to avoid clashes with other local Supabase projects.
+
 ```bash
-mise run db:start        # starts Postgres, the API gateway, Studio…; applies migrations
-mise run db:env          # prints SUPABASE_URL=… and SUPABASE_KEY=… (service_role)
+mise run db:start        # starts Postgres (:54422), API (:54421), Studio (:54423), Mailpit (:54424)
+mise run dev             # injects Infisical dev /api + local Supabase env automatically
 ```
 
-Paste the two lines into `apps/api/.env`, then restart the API (`mise run api:dev`).
-`curl localhost:8000/api/v1/health` should now report `"storage_backend": "supabase"`.
+Do not put `SUPABASE_URL` or `SUPABASE_KEY` in `apps/api/.env` or Infisical `dev /api`:
+`scripts/local_env.py` reads them from `supabase status -o json` at launch.
+`curl localhost:8000/api/v1/health` should report `"storage_backend": "supabase"`.
 
-Studio runs at http://127.0.0.1:54323. `mise run db:status` shows all URLs.
-`mise run db:stop` stops the stack and keeps the data; `mise run db:reset`
-rebuilds it from the migrations. If the API runs in Docker Compose instead, use
-`SUPABASE_URL=http://host.docker.internal:54321`.
+Studio runs at http://127.0.0.1:54423. `mise run db:status` shows all URLs.
+`mise run db:stop` stops the stack and keeps the data; `mise run db:up` applies
+pending migrations without wiping data; `mise run db:reset` rebuilds it from
+scratch. In Docker Compose (`mise run up`), `scripts/local_env.py --docker`
+automatically rewrites `SUPABASE_URL` to `http://host.docker.internal:54421`.
 
 ## Use a hosted Supabase project
 
@@ -65,19 +70,18 @@ rebuilds it from the migrations. If the API runs in Docker Compose instead, use
    ```bash
    supabase login                                    # once per machine
    mise run db:link --project-ref <your-project-ref> # once per clone; asks for the database password
-   mise run db:push                                  # applies pending migrations only
+   mise run db:remote:status                         # inspect local vs. Cloud migration state
+   mise run db:remote:plan                           # dry-run pending migrations
+   mise run db:remote:push                           # applies pending migrations only
    ```
 
 2. **Expose the schemas to the Data API.** A hosted project only exposes
    `public` and `graphql_public` until you change it, and `config.toml` does not
    apply to hosted projects. In the dashboard open **Project Settings → Data API**
    (or **API**), add `audit`, `game` and `players` to **Exposed schemas**, and save.
-3. Set these on the gateway (never in the web app), then restart it:
-
-   ```env
-   SUPABASE_URL=https://<project-ref>.supabase.co
-   SUPABASE_KEY=<service_role or secret key>
-   ```
+3. Store `SUPABASE_URL` and `SUPABASE_KEY` (the service/secret key) in Infisical
+   under `prod` → `/api` and sync to Vercel via Infisical's Vercel integration
+   (never in `apps/api/.env` or the web app).
 
 The key is a server-side credential that bypasses RLS. Keep it in your secret
 manager. `SUPABASE_ANON_KEY` is still read as a fallback name for older `.env` files.

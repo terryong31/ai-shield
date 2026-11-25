@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { AuthFormField, FormSubmitEvent, NavigationMenuItem } from '@nuxt/ui'
 
-const { granted, signIn, signOut } = useAdminAccess()
+const { granted, loadAccess, signIn, signOut } = useAdminAccess()
+
+onMounted(loadAccess)
 
 const open = ref(false)
 const signingIn = ref(false)

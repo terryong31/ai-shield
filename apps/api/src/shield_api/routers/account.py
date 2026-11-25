@@ -14,7 +14,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from shield_api.container import Container
-from shield_api.dependencies import PLAYER_SESSION_COOKIE, ContainerDep
+from shield_api.dependencies import PLAYER_SESSION_COOKIE, ContainerDep, enforce_rate_limit
 from shield_api.schemas import (
     AccountDeleteRequest,
     AccountEmailRequest,
@@ -24,11 +24,22 @@ from shield_api.schemas import (
     PlayerConfirmationResponse,
     PlayerSessionStatus,
 )
+from shield_api.services.auth_flows import (
+    BROWSER_COOKIE_NAME,
+    SIGNUP_FLOW_TTL_SECONDS,
+    AuthFlowRecord,
+    hash_browser_cookie,
+)
 from shield_api.services.identity import (
     EmailNotConfirmedError,
     IdentityConflictError,
     IdentityUnavailableError,
     InvalidIdentityError,
+)
+from shield_api.services.rate_limit import (
+    ACCOUNT_EMAIL_LIMIT,
+    ACCOUNT_EMAIL_WINDOW,
+    RateLimitExceededError,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,6 +71,19 @@ async def _player(request: Request, container: Container) -> tuple[str, str]:
 async def _reauthenticate(container: Container, email: str, password: str) -> str:
     """Check the current password via Supabase Auth and return the user id."""
     key = f"account:{email}"
+    window_seconds = container.settings.CLEARANCE_WINDOW_MINUTES * 60
+    max_attempts = container.settings.CLEARANCE_MAX_ATTEMPTS
+    if container.rate_limiter._redis is not None:
+        try:
+            await container.rate_limiter.check_only(
+                "account_reauth", email, limit=max_attempts, window_seconds=window_seconds
+            )
+        except RateLimitExceededError as err:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                TOO_MANY,
+                headers={"Retry-After": str(err.retry_after)},
+            ) from None
     retry_after = container.attempts.retry_after(key)
     if retry_after is not None:
         raise HTTPException(
@@ -74,8 +98,14 @@ async def _reauthenticate(container: Container, email: str, password: str) -> st
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
     if user_id is None:
         container.attempts.record_failure(key)
+        if container.rate_limiter._redis is not None:
+            await container.rate_limiter.record_failure(
+                "account_reauth", email, window_seconds=window_seconds
+            )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, WRONG_PASSWORD)
     container.attempts.reset(key)
+    if container.rate_limiter._redis is not None:
+        await container.rate_limiter.reset("account_reauth", email, window_seconds=window_seconds)
     return user_id
 
 
@@ -121,15 +151,34 @@ async def change_email(
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "The new email is the same as the current one."
         )
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "account_email",
+            email,
+            limit=ACCOUNT_EMAIL_LIMIT,
+            window_seconds=ACCOUNT_EMAIL_WINDOW,
+        )
     await _reauthenticate(container, email, body.current_password)
     if await _store(container.players.email_taken(new_email)):
         raise HTTPException(status.HTTP_409_CONFLICT, EMAIL_TAKEN)
 
+    browser_hash = hash_browser_cookie(request.cookies.get(BROWSER_COOKIE_NAME))
+    flow_id = await container.auth_flows.create(
+        AuthFlowRecord(purpose="email_change", browser_hash=browser_hash),
+        ttl_seconds=SIGNUP_FLOW_TTL_SECONDS,
+    )
+    web_base = container.settings.WEB_BASE_URL.strip().rstrip("/")
+    redirect_to = f"{web_base}/auth/confirmed?flow={flow_id}&intent=email_change"
     try:
-        await container.identity.request_email_change(email, body.current_password, new_email)
+        await container.identity.request_email_change(
+            email, body.current_password, new_email, redirect_to=redirect_to
+        )
     except IdentityConflictError:
+        await container.auth_flows.delete(flow_id)
         raise HTTPException(status.HTTP_409_CONFLICT, EMAIL_TAKEN) from None
     except IdentityUnavailableError:
+        await container.auth_flows.delete(flow_id)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
     return PlayerConfirmationResponse()
 

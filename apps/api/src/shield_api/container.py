@@ -5,12 +5,18 @@ import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from shield_api.providers.byok import build_byok_model
 from shield_api.providers.typesafe import build_jev_client
 from shield_api.services.admins import (
     AdminAuthenticator,
     SupabaseAdminAuthenticator,
+)
+from shield_api.services.auth_flows import (
+    AuthFlowStore,
+    InMemoryAuthFlowStore,
+    RedisAuthFlowStore,
 )
 from shield_api.services.identity import PlayerIdentity, SupabasePlayerIdentity
 from shield_api.services.leaderboard import LeaderboardService
@@ -80,6 +86,7 @@ class Container:
     train_worker: TrainWorkerRunner = field(default_factory=TrainWorkerRunner)
     attempts: AttemptLimiter = field(default_factory=AttemptLimiter)
     rate_limiter: RateLimiter = field(default_factory=RateLimiter)
+    auth_flows: AuthFlowStore = field(default_factory=InMemoryAuthFlowStore)
     # The game's AI Agent model per tier (spec 0021). A tier missing here falls back to
     # ``game_agent``, and with neither the level runs the offline stand-in.
     game_agents: dict[AgentTier, UsageChatModel] = field(default_factory=dict)
@@ -128,6 +135,13 @@ def build_container(settings: Settings) -> Container:
             and settings.TRUSTED_PROXY_SECRET.get_secret_value().strip()
         ):
             missing.append("TRUSTED_PROXY_SECRET")
+        parsed_web = urlparse(settings.WEB_BASE_URL.strip())
+        if (
+            parsed_web.scheme not in {"http", "https"}
+            or not parsed_web.hostname
+            or parsed_web.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+        ):
+            missing.append("WEB_BASE_URL")
     if missing:
         names = ", ".join(missing)
         msg = (
@@ -173,13 +187,15 @@ def build_container(settings: Settings) -> Container:
     sessions: SessionStore = SupabaseSessionStore(client)
     players: PlayerStore = SupabasePlayerStore(client)
     admins: AdminAuthenticator = SupabaseAdminAuthenticator(lambda: create_client(url, key))
+    web_base = settings.WEB_BASE_URL.strip().rstrip("/")
     identity: PlayerIdentity = SupabasePlayerIdentity(
-        lambda: create_client(url, key), redirect_to=f"{settings.WEB_BASE_URL}/auth/confirmed"
+        lambda: create_client(url, key), redirect_to=f"{web_base}/auth/confirmed"
     )
 
     leaderboard = LeaderboardService(scores)
     models: TrainedModelStore = InMemoryTrainedModelStore()
     rate_limiter = RateLimiter()
+    auth_flows: AuthFlowStore = InMemoryAuthFlowStore()
     if settings.REDIS_URL and settings.REDIS_URL.get_secret_value().strip():
         try:
             import redis.asyncio as aioredis
@@ -190,6 +206,7 @@ def build_container(settings: Settings) -> Container:
             leaderboard = LeaderboardService(scores, redis_client)
             models = RedisTrainedModelStore(redis_client)
             rate_limiter = RateLimiter(redis_client=redis_client)
+            auth_flows = RedisAuthFlowStore(redis_client)
             logger.info("Redis leaderboard service and rate limiter enabled")
         except Exception as exc:
             logger.warning("Redis unavailable; falling back to %s: %s", scores.backend, exc)
@@ -212,4 +229,5 @@ def build_container(settings: Settings) -> Container:
             window=timedelta(minutes=settings.CLEARANCE_WINDOW_MINUTES),
         ),
         rate_limiter=rate_limiter,
+        auth_flows=auth_flows,
     )

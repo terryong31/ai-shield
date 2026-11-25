@@ -1,4 +1,4 @@
-"""Who a player is, when Supabase Auth owns their password (spec 0027).
+"""Who a player is, when Supabase Auth owns their password (spec 0027, 0047).
 
 Supabase checks the password and the email confirmation; the gateway keeps its
 own session cookie, profile, quotas and saves. Every call uses a throwaway
@@ -10,9 +10,21 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 logger = logging.getLogger(__name__)
+
+_EXISTING_ACCOUNT_CODES = frozenset({"user_already_exists", "email_exists"})
+_INVALID_TOKEN_CODES = frozenset(
+    {
+        "otp_expired",
+        "invalid_grant",
+        "bad_code_verifier",
+        "token_not_found",
+        "invalid_credentials",
+        "validation_failed",
+    }
+)
 
 
 class EmailNotConfirmedError(Exception):
@@ -31,6 +43,10 @@ class IdentityConflictError(Exception):
     """Another Supabase user already has this email."""
 
 
+class InvalidTokenError(Exception):
+    """Confirmation or recovery token/code is invalid or expired."""
+
+
 @dataclass(frozen=True)
 class VerifiedPlayer:
     email: str
@@ -44,7 +60,13 @@ class VerifiedPlayer:
 
 class PlayerIdentity(Protocol):
     async def register(
-        self, email: str, password: str, player_name: str | None
+        self,
+        email: str,
+        password: str,
+        player_name: str | None,
+        *,
+        redirect_to: str | None = None,
+        verifier_out: list[str] | None = None,
     ) -> VerifiedPlayer | None:
         """Start sign-up. ``None`` means a confirmation email may have been sent."""
         ...
@@ -53,11 +75,39 @@ class PlayerIdentity(Protocol):
         """Check the credentials, or raise one of this module's errors."""
         ...
 
-    async def resend(self, email: str) -> None:
+    async def verify_confirmation(
+        self,
+        *,
+        code: str | None = None,
+        code_verifier: str | None = None,
+        token_hash: str | None = None,
+        token_type: Literal["signup", "email_change"] = "signup",  # noqa: S107
+    ) -> VerifiedPlayer:
+        """Verify an email confirmation token or PKCE code and return the player."""
+        ...
+
+    async def complete_password_reset(
+        self,
+        *,
+        code: str | None = None,
+        code_verifier: str | None = None,
+        token_hash: str | None = None,
+        new_password: str,
+    ) -> str:
+        """Verify a recovery token or PKCE code, set the new password, and return the email."""
+        ...
+
+    async def resend(self, email: str, *, redirect_to: str | None = None) -> None:
         """Send the confirmation email again. Never raises."""
         ...
 
-    async def recover(self, email: str) -> None:
+    async def recover(
+        self,
+        email: str,
+        *,
+        redirect_to: str | None = None,
+        verifier_out: list[str] | None = None,
+    ) -> None:
         """Send a password recovery email. Never raises."""
         ...
 
@@ -65,7 +115,14 @@ class PlayerIdentity(Protocol):
         """Raises ``IdentityUnavailableError``."""
         ...
 
-    async def request_email_change(self, current_email: str, password: str, new_email: str) -> None:
+    async def request_email_change(
+        self,
+        current_email: str,
+        password: str,
+        new_email: str,
+        *,
+        redirect_to: str | None = None,
+    ) -> None:
         """Start confirmed email change via the player's own Supabase session.
 
         Raises ``IdentityConflictError`` or ``IdentityUnavailableError``.
@@ -125,20 +182,73 @@ def _sign_out(client: Any) -> None:
         logger.debug("best-effort Supabase sign-out failed")
 
 
+def _extract_pkce_verifier(client: Any) -> str | None:
+    """Read the PKCE code verifier stored by supabase-py's throwaway client, if any."""
+    auth = getattr(client, "auth", None)
+    storage = getattr(auth, "_storage", None)
+    if storage is None:
+        return None
+    raw_map = getattr(storage, "storage", None)
+    if isinstance(raw_map, dict):
+        for key, value in raw_map.items():
+            if "code-verifier" in str(key) and isinstance(value, str) and value.strip():
+                return value.strip()
+    storage_key = getattr(auth, "_storage_key", None)
+    getter = getattr(storage, "get_item", None)
+    if isinstance(storage_key, str) and callable(getter):
+        val = getter(f"{storage_key}-code-verifier")
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return None
+
+
+def _is_invalid_token_error(err: Exception) -> bool:
+    code = getattr(err, "code", None)
+    if isinstance(code, str) and code in _INVALID_TOKEN_CODES:
+        return True
+    status = getattr(err, "status", None)
+    return isinstance(status, int) and 400 <= status < 500
+
+
+def _verified_from_user(user: Any, fallback_email: str = "") -> VerifiedPlayer:
+    email = str(getattr(user, "email", None) or fallback_email).strip().lower()
+    return VerifiedPlayer(
+        email=email,
+        player_name=_player_name(user),
+        user_id=str(user.id),
+        profile_email=_profile_email(user),
+        app_metadata=_app_metadata(user),
+    )
+
+
 class SupabasePlayerIdentity:
     def __init__(self, client_factory: Callable[[], Any], *, redirect_to: str) -> None:
         self._client_factory = client_factory
         self._redirect_to = redirect_to
 
     async def register(
-        self, email: str, password: str, player_name: str | None
+        self,
+        email: str,
+        password: str,
+        player_name: str | None,
+        *,
+        redirect_to: str | None = None,
+        verifier_out: list[str] | None = None,
     ) -> VerifiedPlayer | None:
-        return await asyncio.to_thread(self._register, email, password, player_name)
+        return await asyncio.to_thread(
+            self._register, email, password, player_name, redirect_to, verifier_out
+        )
 
     def _register(
-        self, email: str, password: str, player_name: str | None
+        self,
+        email: str,
+        password: str,
+        player_name: str | None,
+        redirect_to: str | None,
+        verifier_out: list[str] | None,
     ) -> VerifiedPlayer | None:
         client = self._client_factory()
+        target_redirect = redirect_to or self._redirect_to
         try:
             response = client.auth.sign_up(
                 {
@@ -146,14 +256,18 @@ class SupabasePlayerIdentity:
                     "password": password,
                     "options": {
                         "data": {"player_name": player_name or ""},
-                        "email_redirect_to": self._redirect_to,
+                        "email_redirect_to": target_redirect,
                     },
                 }
             )
         except Exception as err:
-            # Same answer for taken emails and outages, so register reveals nothing.
+            code = getattr(err, "code", None)
+            if isinstance(code, str) and code in _EXISTING_ACCOUNT_CODES:
+                return None
             logger.warning("Supabase sign-up failed (%s)%s", _describe(err), _email_hint(err))
-            return None
+            raise IdentityUnavailableError from None
+        if verifier_out is not None and (verifier := _extract_pkce_verifier(client)):
+            verifier_out.append(verifier)
         if getattr(response, "session", None) is None:
             return None
         # The project has email confirmation off: sign the player in straight away.
@@ -185,14 +299,100 @@ class SupabasePlayerIdentity:
             user = getattr(response, "user", None)
             if user is None:
                 raise IdentityUnavailableError
-            confirmed_email = str(getattr(user, "email", None) or email).strip().lower()
-            return VerifiedPlayer(
-                email=confirmed_email,
-                player_name=_player_name(user),
-                user_id=str(user.id),
-                profile_email=_profile_email(user),
-                app_metadata=_app_metadata(user),
-            )
+            return _verified_from_user(user, email)
+        finally:
+            _sign_out(client)
+
+    async def verify_confirmation(
+        self,
+        *,
+        code: str | None = None,
+        code_verifier: str | None = None,
+        token_hash: str | None = None,
+        token_type: Literal["signup", "email_change"] = "signup",  # noqa: S107
+    ) -> VerifiedPlayer:
+        return await asyncio.to_thread(
+            self._verify_confirmation, code, code_verifier, token_hash, token_type
+        )
+
+    def _verify_confirmation(
+        self,
+        code: str | None,
+        code_verifier: str | None,
+        token_hash: str | None,
+        token_type: Literal["signup", "email_change"],
+    ) -> VerifiedPlayer:
+        client = self._client_factory()
+        try:
+            if token_hash:
+                response = client.auth.verify_otp({"token_hash": token_hash, "type": token_type})
+            elif code and code_verifier:
+                response = client.auth.exchange_code_for_session(
+                    {"auth_code": code, "code_verifier": code_verifier}
+                )
+            else:
+                raise InvalidTokenError
+        except InvalidTokenError:
+            raise
+        except Exception as err:
+            if _is_invalid_token_error(err):
+                raise InvalidTokenError from None
+            logger.warning("Supabase confirmation failed (%s)", _describe(err))
+            raise IdentityUnavailableError from None
+        try:
+            user = getattr(response, "user", None)
+            if user is None:
+                raise InvalidTokenError
+            return _verified_from_user(user)
+        finally:
+            _sign_out(client)
+
+    async def complete_password_reset(
+        self,
+        *,
+        code: str | None = None,
+        code_verifier: str | None = None,
+        token_hash: str | None = None,
+        new_password: str,
+    ) -> str:
+        return await asyncio.to_thread(
+            self._complete_password_reset, code, code_verifier, token_hash, new_password
+        )
+
+    def _complete_password_reset(
+        self,
+        code: str | None,
+        code_verifier: str | None,
+        token_hash: str | None,
+        new_password: str,
+    ) -> str:
+        client = self._client_factory()
+        try:
+            if token_hash:
+                response = client.auth.verify_otp({"token_hash": token_hash, "type": "recovery"})
+            elif code and code_verifier:
+                response = client.auth.exchange_code_for_session(
+                    {"auth_code": code, "code_verifier": code_verifier}
+                )
+            else:
+                raise InvalidTokenError
+            user = getattr(response, "user", None)
+            if user is None:
+                raise InvalidTokenError
+            client.auth.update_user({"password": new_password})
+            email = str(getattr(user, "email", "") or "").strip().lower()
+            if not email:
+                raise IdentityUnavailableError
+            return email
+        except (InvalidTokenError, IdentityUnavailableError):
+            raise
+        except Exception as err:
+            if _is_invalid_token_error(err):
+                raise InvalidTokenError from None
+            # _describe(err) logs only the exception type/code, never credentials.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure # noqa: E501
+            logger.warning("Supabase password reset failed (%s)", _describe(err))
+            raise IdentityUnavailableError from None
         finally:
             _sign_out(client)
 
@@ -212,14 +412,32 @@ class SupabasePlayerIdentity:
             lambda admin: admin.update_user_by_id(user_id, {"password": password}),
         )
 
-    async def request_email_change(self, current_email: str, password: str, new_email: str) -> None:
-        await asyncio.to_thread(self._request_email_change, current_email, password, new_email)
+    async def request_email_change(
+        self,
+        current_email: str,
+        password: str,
+        new_email: str,
+        *,
+        redirect_to: str | None = None,
+    ) -> None:
+        await asyncio.to_thread(
+            self._request_email_change, current_email, password, new_email, redirect_to
+        )
 
-    def _request_email_change(self, current_email: str, password: str, new_email: str) -> None:
+    def _request_email_change(
+        self,
+        current_email: str,
+        password: str,
+        new_email: str,
+        redirect_to: str | None,
+    ) -> None:
         client = self._client_factory()
         try:
             client.auth.sign_in_with_password({"email": current_email, "password": password})
-            client.auth.update_user({"email": new_email})
+            if redirect_to:
+                client.auth.update_user({"email": new_email}, {"email_redirect_to": redirect_to})
+            else:
+                client.auth.update_user({"email": new_email})
         except Exception as err:
             code = getattr(err, "code", None)
             if code == "email_exists":
@@ -245,28 +463,39 @@ class SupabasePlayerIdentity:
             self._admin, "user delete", lambda admin: admin.delete_user(user_id)
         )
 
-    async def resend(self, email: str) -> None:
-        await asyncio.to_thread(self._resend, email)
+    async def resend(self, email: str, *, redirect_to: str | None = None) -> None:
+        await asyncio.to_thread(self._resend, email, redirect_to)
 
-    def _resend(self, email: str) -> None:
+    def _resend(self, email: str, redirect_to: str | None) -> None:
         client = self._client_factory()
         try:
             client.auth.resend(
                 {
                     "type": "signup",
                     "email": email,
-                    "options": {"email_redirect_to": self._redirect_to},
+                    "options": {"email_redirect_to": redirect_to or self._redirect_to},
                 }
             )
         except Exception as err:
             logger.warning("Supabase resend failed (%s)%s", _describe(err), _email_hint(err))
 
-    async def recover(self, email: str) -> None:
-        await asyncio.to_thread(self._recover, email)
+    async def recover(
+        self,
+        email: str,
+        *,
+        redirect_to: str | None = None,
+        verifier_out: list[str] | None = None,
+    ) -> None:
+        await asyncio.to_thread(self._recover, email, redirect_to, verifier_out)
 
-    def _recover(self, email: str) -> None:
+    def _recover(self, email: str, redirect_to: str | None, verifier_out: list[str] | None) -> None:
         client = self._client_factory()
         try:
-            client.auth.reset_password_for_email(email)
+            if redirect_to:
+                client.auth.reset_password_for_email(email, {"redirect_to": redirect_to})
+            else:
+                client.auth.reset_password_for_email(email)
+            if verifier_out is not None and (verifier := _extract_pkce_verifier(client)):
+                verifier_out.append(verifier)
         except Exception:
             logger.debug("Supabase reset_password_for_email skipped or unavailable")

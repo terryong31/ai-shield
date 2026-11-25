@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-_DELIMITER_LOOKALIKE = re.compile(r"<\s*/?\s*untrusted_prompt\s*>", re.IGNORECASE)
+_DELIMITER_LOOKALIKE = re.compile(r"<\s*(?:/\s*)?untrusted_prompt\s*>", re.IGNORECASE)
 
 
 def _neutralise(text: str) -> str:
