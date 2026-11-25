@@ -50,6 +50,8 @@ it is not part of `CI OK`.
    `E2E_PASSWORD`. Do not use a real inbox: screenshots can show the address.
 7. Set the repository variable `E2E_ENABLED` to `true`.
 
+A pull request that does not change the web client makes no web preview, so these tests do not run.
+
 GitHub runs `deployment_status` workflows only after the file is on the default branch.
 
 A failed run uploads traces and screenshots. `scripts/redact_traces.py` first removes

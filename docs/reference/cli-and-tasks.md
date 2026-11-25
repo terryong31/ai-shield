@@ -138,12 +138,15 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 
 | File | Trigger | Jobs |
 | --- | --- | --- |
-| `workflows/ci.yml` | Pull request, push to `main`, merge queue, manual | `Lint`, `Typecheck`, `Test (Python)`, `Test (web)`, `Specs and contract`, `Build (web)`, `Migrations`, `Workflow security`, `Secret scan`, `SAST (Semgrep)`, `Dependency review` (pull requests only), and `CI OK` |
+| `workflows/ci.yml` | Pull request, push to `main`, merge queue, manual | `Detect changes`, `Lint`, `Typecheck`, `Test (Python)`, `Test (web)`, `Specs and contract`, `Build (web)`, `Migrations`, `Workflow security`, `Secret scan`, `SAST (Semgrep)`, `Dependency review` (pull requests only), and `CI OK` |
 | `workflows/codeql.yml` | Pull request, push to `main`, weekly (Monday 03:17 UTC), manual | CodeQL `security-extended` queries for `python`, `javascript-typescript` and `actions` |
 | `workflows/pr-title.yml` | Pull request opened, edited, reopened or updated | The PR title must be a Conventional Commit |
 | `actions/setup/action.yml` | Used by the CI jobs | Installs the mise tools, then `uv sync --all-packages --locked` and `bun install --frozen-lockfile`, with caches keyed on `uv.lock` and `bun.lock` |
-| Vercel Git integration (not a workflow) | Push to any branch; push to `main` | Deploys the web client (`ai-shield`) and the gateway (`ai-shield-backend`) to a preview URL for each push, and to production for each push to `main`. Reports each deploy as a commit status |
+| Vercel Git integration (not a workflow) | Push to any branch; push to `main` | Deploys the web client (`ai-shield`) and the gateway (`ai-shield-backend`) to a preview URL for each push, and to production for each push to `main`. `scripts/vercel_ignore.sh` skips a project that did not change. Reports each deploy as a commit status |
 | `dependabot.yml` | Weekly (monthly for actions) | Grouped updates for uv, bun, Docker base images and actions, with a 7-day cooldown |
+
+`scripts/affected.sh` holds the paths of each part. On a pull request, `Detect changes` uses it
+to skip the jobs of the parts that did not change. Other events run all jobs.
 
 Each CI job runs the same mise task as a local run. CI does not build the
 Docker images; `mise run up` builds them locally. `CI OK` fails if a job

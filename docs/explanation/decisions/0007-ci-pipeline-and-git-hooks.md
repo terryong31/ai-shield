@@ -50,6 +50,10 @@ Alternatives considered:
 - A push takes approximately 1 to 2 minutes longer, because pre-push runs the
   full gate. `LEFTHOOK=0` skips the hooks, but CI still runs every check.
 - Dependabot must update the SHA pins. Without it, the pins become old.
+- A pull request runs only the jobs of the parts that it changes, and Vercel builds only
+  the projects that changed (updated 2026-11-25). Both use `scripts/affected.sh`. Native
+  `paths:` filters leave the required check pending. Vercel's built-in skip reads only
+  JavaScript workspaces, so it cannot see the Python gateway.
 - GitHub Actions checks code only. The Vercel Git integration deploys: a
   preview for each push and production for each push to `main`. Vercel does not
   wait for CI, so branch protection on `main` is the control that stops

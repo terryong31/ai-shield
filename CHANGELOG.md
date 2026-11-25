@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- CI on a pull request runs only the jobs of the parts that changed, and Vercel builds only the changed project (`scripts/affected.sh`, `scripts/vercel_ignore.sh`). Docs-only changes deploy nothing.
+- New README, based on Best-README-Template.
+- New Twitter card: a close-up of the defence board. The image alt text matches it.
+
 ### Fixed
 - `llms.txt`, `robots.txt` and `sitemap.xml` use the production site URL and list the current 23 levels, pass price and private pages; named AI crawlers get the same blocked paths as all others (WEB-GAME-017).
 - Auth: a resent link keeps auto sign-in (the browser cookie is renewed), a Redis outage no longer fails registration or recovery after the email is sent, and password reset no longer reports a reused or weak password as an expired link (API-AUTH-016, API-AUTH-017, WEB-AUTH-013).
