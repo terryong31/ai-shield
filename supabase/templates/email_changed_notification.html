@@ -1,7 +1,32 @@
-<html>
-  <body>
-    <h2>Your email address was changed</h2>
-    <p>The email address for your ai-shield account was recently changed.</p>
-    <p>If you did not make this change, reset your password immediately.</p>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Your email address was changed</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f5f5f5;">
+    <div style="display:none;max-height:0;overflow:hidden;">The email address of your ai-shield account was changed.</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f5f5f5">
+      <tr>
+        <td align="center" style="padding:32px 16px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background-color:#ffffff;border:1px solid #e5e5e5;border-radius:8px;">
+            <tr>
+              <td style="padding:24px 32px;border-bottom:1px solid #e5e5e5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:18px;font-weight:700;color:#0b0b0b;">ai-shield</td>
+            </tr>
+            <tr>
+              <td style="padding:32px 32px 16px;">
+                <h1 style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:22px;line-height:28px;font-weight:700;color:#0b0b0b;">Your email address was changed</h1>
+                <p style="margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:24px;color:#404040;">The email address of your ai-shield account was changed from {{ .OldEmail }} to {{ .Email }}. If you made this change, no action is necessary.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px 24px;border-top:1px solid #e5e5e5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;line-height:20px;color:#737373;">If you did not make this change, secure this inbox and reset your ai-shield password immediately.</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>

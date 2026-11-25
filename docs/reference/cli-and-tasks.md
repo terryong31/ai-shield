@@ -66,6 +66,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `test:api` | `uv run pytest apps/api --cov=shield_api --cov-fail-under=85` | Gateway tests with coverage (fails under 85%) |
 | `test:tooling` | `uv run pytest scripts/tests` | Tests for repo tooling (SDD workflow, spec checker) |
 | `test:web` | `bun run test` (Vitest) in `apps/web` | Web unit tests |
+| `test:e2e` | `bunx playwright test` in `apps/web` | Browser tests against the local stack or `E2E_BASE_URL` ([how-to](../how-to/run-e2e-tests.md)) |
 | `test` | depends on the three test tasks | All tests |
 | `lint:py` | `uv run ruff check .`; `uv run ruff format --check .` | Ruff lint + format check |
 | `lint:web` | `bun run lint` in `apps/web` | ESLint |
@@ -164,6 +165,7 @@ of files mentioning the IDs) as JSON.
 | [`scripts/new_spec.py`](../../scripts/new_spec.py) `<slug>` | Creates `specs/NNNN-<slug>/` with `spec.md`, `plan.md`, `tasks.md` from `specs/_templates/`, using the next free number and today's date. The slug must be kebab-case (`[a-z0-9]+(-[a-z0-9]+)*`); otherwise it prints usage and exits 2 |
 | [`scripts/sdd.py`](../../scripts/sdd.py) `start\|red\|green\|verify\|done\|status\|abort\|hook` | The enforced SDD cycle (spec 0010). State lives in `.sdd/state.json` (git-ignored). `hook pre-tool\|stop\|session-start` reads a Claude Code hook payload on stdin |
 | [`scripts/local_env.py`](../../scripts/local_env.py) `[--docker] -- <command>` | Runs a command with the local Supabase and Redis variables. Values that are already in the environment or in `apps/api/.env` stay. `--docker` changes the Supabase host to `host.docker.internal` |
+| [`scripts/redact_traces.py`](../../scripts/redact_traces.py) `<directory>` | Removes credentials from Playwright traces before CI uploads them |
 | [`scripts/stripe_setup.py`](../../scripts/stripe_setup.py) `<web URL> [--events]` | Stripe setup, see `stripe:setup` and `stripe:events`. Keys go to Infisical through standard input and are never printed |
 | [`scripts/check_spec_coverage.py`](../../scripts/check_spec_coverage.py) | For every `specs/NNNN-*/spec.md` whose `- **Status:**` is `Accepted` or `Implemented`, finds every criterion defined as `- **AREA-COMP-NNN**` and checks that the ID string appears in some file matching `packages/*/tests/**/*.py`, `apps/*/tests/**/*.py`, `apps/*/test/**/*.ts` or `scripts/tests/**/*.py`. Exits 1 and lists missing IDs, otherwise prints `spec coverage OK: N criteria, all traced to tests` |
 

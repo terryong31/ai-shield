@@ -132,6 +132,9 @@ Before exposing the game beyond a trusted network:
       long unique password. Remove access with `mise run admin:remote:revoke <email>`.
 - [ ] **Set up custom SMTP in Supabase** (Authentication → Emails → SMTP), or
       confirmation emails reach only your project team.
+- [ ] **Push the auth email templates** in `supabase/templates/`. Compare
+      `[remotes.production]` in `supabase/config.toml` with the hosted settings, then run
+      `supabase config push`. It changes the other hosted settings too, so read its diff first.
 - [ ] **Leave `APP_ENV` unset** (production), so the API docs and schema are not served.
 - [ ] **Terminate TLS** at a reverse proxy or load balancer. `--proxy-headers`
       is enabled, so run the gateway only behind a proxy you control.

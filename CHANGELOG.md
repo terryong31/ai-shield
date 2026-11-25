@@ -27,6 +27,9 @@ All notable changes to this project are documented here. The format follows
 - `LLM review`, `Safety check` and the AI Agent returned 503 on every run: Google retired `gemini-2.x` for new keys, and Groq shut down its Llama chat and Llama Guard models. Defaults are now `gemini-3.5-flash-lite`, the only Gemini model offered (`gemini-3.8-flash` and `gemini-3.6-flash` answered mostly 503 "high demand", so saved boards using any Gemini model map to Flash-Lite), `openai/gpt-oss-120b`/`openai/gpt-oss-20b` and `openai/gpt-oss-safeguard-20b`; retired IDs on saved boards map to their replacements; Groq reasoning models run with low reasoning so answers fit the token budget; check costs use current published prices (ENG-CHECK-003..005, API-CHECK-001, WEB-CHECK-002).
 
 ### Added
+- The web client loads Vercel Speed Insights (`@vercel/speed-insights` Nuxt module). Enable Speed Insights on the Vercel project to collect data.
+- Branded Supabase Auth email templates. The confirmation email is also the welcome email. Production changes only after `supabase config push`.
+- Playwright end-to-end tests (`mise run test:e2e`) and an advisory workflow for Vercel preview deployments, off until `E2E_ENABLED` is set ([how-to](docs/how-to/run-e2e-tests.md)).
 - MIT license (`LICENSE`).
 - Docs: how-to guides for secrets (Infisical) and payments (Stripe), ADRs 0008 and 0009, and a refresh of the README, tutorials, reference, architecture and threat model.
 - `mise stop` stops the dev servers, the Stripe listener, Redis and local Supabase of this repo. Data is kept.

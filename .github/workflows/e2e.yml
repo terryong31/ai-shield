@@ -1,0 +1,64 @@
+# Browser tests against each Vercel preview deployment of the web project (issue 8).
+# Advisory: not part of "CI OK". Set the repository variable E2E_ENABLED to "true"
+# after the preview environment is ready (docs/how-to/run-e2e-tests.md).
+name: E2E
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  e2e:
+    name: E2E (preview)
+    if: >-
+      vars.E2E_ENABLED == 'true' &&
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.environment == 'Preview – ai-shield' &&
+      github.event.deployment_status.creator.login == 'vercel[bot]'
+    # On the job: a skipped event (for example "pending") must not cancel a run.
+    concurrency:
+      group: e2e-${{ github.event.deployment.sha }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.deployment.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          python: "false"
+      - name: Install Chromium
+        working-directory: apps/web
+        run: bunx playwright install --with-deps chromium
+      - name: Run the tests
+        env:
+          E2E_BASE_URL: ${{ github.event.deployment_status.target_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: mise run test:e2e
+      - name: Remove credentials from the traces
+        id: redact
+        if: failure()
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+        run: python3 scripts/redact_traces.py apps/web/test-results
+      # Screenshots can show the test account's email, so it must not be a real inbox.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() && steps.redact.outcome == 'success'
+        with:
+          name: e2e-traces
+          path: apps/web/test-results/
+          include-hidden-files: false
+          if-no-files-found: ignore
+          retention-days: 7

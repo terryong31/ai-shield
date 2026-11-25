@@ -6,7 +6,9 @@ export default defineNuxtConfig({
     '@nuxt/ui',
     '@vueuse/nuxt',
     // Vercel Web Analytics: the script only reports on Vercel deployments
-    '@vercel/analytics'
+    '@vercel/analytics',
+    // Vercel Speed Insights: sends Core Web Vitals, only on Vercel deployments
+    '@vercel/speed-insights'
   ],
   app: {
     head: {

@@ -123,6 +123,11 @@ description = "Web unit tests (Vitest)"
 dir = "apps/web"
 run = "bun run test"
 
+[tasks."test:e2e"]
+description = "Playwright tests against the local stack (mise run dev) or E2E_BASE_URL"
+dir = "apps/web"
+run = "bunx playwright test"
+
 [tasks.test]
 description = "All tests"
 depends = ["test:engine", "test:api", "test:tooling", "test:web"]

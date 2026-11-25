@@ -245,25 +245,25 @@ otp_expiry = 3600
 # sender_name = "Admin"
 
 [auth.email.template.confirmation]
-subject = "Confirm your email address"
+subject = "Welcome to ai-shield: confirm your email address"
 content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.recovery]
-subject = "Reset your password"
+subject = "Reset your ai-shield password"
 content_path = "./supabase/templates/recovery.html"
 
 [auth.email.template.email_change]
-subject = "Confirm your new email address"
+subject = "Confirm your new ai-shield email address"
 content_path = "./supabase/templates/email_change.html"
 
 [auth.email.notification.password_changed]
 enabled = true
-subject = "Your password was changed"
+subject = "Your ai-shield password was changed"
 content_path = "./supabase/templates/password_changed_notification.html"
 
 [auth.email.notification.email_changed]
 enabled = true
-subject = "Your email address was changed"
+subject = "Your ai-shield email address was changed"
 content_path = "./supabase/templates/email_changed_notification.html"
 
 [auth.sms]
@@ -455,23 +455,23 @@ max_frequency = "1m0s"
 otp_length = 8
 
 [remotes.production.auth.email.template.confirmation]
-subject = "Confirm your email address"
+subject = "Welcome to ai-shield: confirm your email address"
 content_path = "./supabase/templates/confirmation.html"
 
 [remotes.production.auth.email.template.recovery]
-subject = "Reset your password"
+subject = "Reset your ai-shield password"
 content_path = "./supabase/templates/recovery.html"
 
 [remotes.production.auth.email.template.email_change]
-subject = "Confirm your new email address"
+subject = "Confirm your new ai-shield email address"
 content_path = "./supabase/templates/email_change.html"
 
 [remotes.production.auth.email.notification.password_changed]
 enabled = true
-subject = "Your password was changed"
+subject = "Your ai-shield password was changed"
 content_path = "./supabase/templates/password_changed_notification.html"
 
 [remotes.production.auth.email.notification.email_changed]
 enabled = true
-subject = "Your email address was changed"
+subject = "Your ai-shield email address was changed"
 content_path = "./supabase/templates/email_changed_notification.html"

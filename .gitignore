@@ -9,6 +9,10 @@ dist/
 build/
 *.tsbuildinfo
 
+# Playwright
+apps/web/test-results/
+apps/web/.e2e-auth/
+
 # python caches
 __pycache__/
 .pytest_cache/

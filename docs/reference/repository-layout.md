@@ -76,7 +76,7 @@ ai-shield/
 ├── supabase/                    # `supabase init` project: config.toml, migrations/, templates/, seed.sql
 ├── compose.yaml                 # Docker Compose: redis, api, web
 ├── specs/                       # spec-driven development: README, _templates/, NNNN-slug/spec.md
-├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, local_env.py, stripe_setup.py
+├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, local_env.py, redact_traces.py, stripe_setup.py
 └── docs/                        # this documentation (Diátaxis)
 ```
 
