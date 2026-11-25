@@ -212,7 +212,7 @@ and post-run refetch, and decides with a pure function
 | Anonymous or signed out | `none`: no pinned row, no highlight |
 | Signed in, ranked, rank ≤ rows shown | `highlight`: their row in the list is highlighted (Nuxt UI semantic tokens, e.g. `bg-elevated` + `ring-primary`) and nothing is pinned |
 | Signed in, ranked, rank > rows shown | `pin`: a row pinned at the bottom of the leaderboard card, always visible without scrolling, styled like a list row but visually distinct (`bg-elevated`, top border `border-default`), showing rank, name and total score |
-| Signed in, unranked (`rank: null`) | `pin-unranked`: the pinned row says "You're not ranked yet. Win a level to join the leaderboard." |
+| Signed in, unranked (`rank: null`) | `pin`: the pinned row shows `-`, the player name and a total score of 0 |
 
 Rank labels come from a pure `formatRankLabel(rank)`: exact below 1,000
 (`"#999"`), compact above (`"1K+"` for 1,000–1,999, `"2K+"`, …, `"10K+"`).
@@ -278,10 +278,12 @@ The pinned row follows the active tab and refreshes with it.
 - **WEB-LBOARD-008**: Given a tab whose data is older than 20 s, when the user switches to it, then it is fetched once; switching to a tab fetched less than 20 s ago makes no request.
 - **WEB-LBOARD-009**: Given leaderboard data in `sessionStorage`, when the home page mounts, then the cached rows render on the first frame with no "No scores yet" flash.
 - **WEB-LBOARD-011**: Given `formatRankLabel`, then `1` → `"#1"`, `999` → `"#999"`, `1000` → `"1K+"`, `1999` → `"1K+"`, `2500` → `"2K+"`, `10000` → `"10K+"`.
-- **WEB-LBOARD-012**: Given `ownRowPlacement` with the 25 shown entries, then: anonymous or signed out → `none`; signed in with `rank` 7 → `highlight` (row 7); `rank` 40 → `pin` with label `"#40"`; `rank: null` → `pin-unranked`.
+- **WEB-LBOARD-012**: Given `ownRowPlacement` with the 25 shown entries, then: anonymous or signed out → `none`; signed in with `rank` 7 → `highlight` (row 7); `rank` 40 → `pin` with label `"#40"`; `rank: null` → `pin` with label `"-"` and score 0; own rank not loaded yet → `none`.
 - **WEB-LBOARD-013**: Given the leaderboard card with `pin` placement and 25 rows, when it renders, then the pinned row is outside the scrolling list (always visible), shows rank label, player name and total score, and the list has no highlighted row; with `highlight`, no pinned row renders and exactly one list row carries the highlight class.
-- **WEB-LBOARD-014**: Given `pin-unranked`, then the pinned row shows "You're not ranked yet. Win a level to join the leaderboard."
+- **WEB-LBOARD-014**: Given a signed-in player with no rank (also with no plays), then the pinned row shows `-`, the player name and a total score of 0.
 - **WEB-LBOARD-015**: Given a signed-in player, when the active tab changes, after each 20 s poll, and right after their own run records a score, then `/game/leaderboard/me` is fetched for the active difficulty only; for anonymous players it is never fetched.
+- **WEB-LBOARD-016**: Given the leaderboard table, then the rank is its own column before `Player`, player names align with the `Player` header, and the pinned row uses the same alignment.
+- **WEB-LBOARD-017**: Given a difficulty with no scores, then the leaderboard table stays visible with its column headers and shows `No scores yet` in the `UTable` empty state (no `UEmpty`); before the first load it does not show `No scores yet`.
 - **WEB-LBOARD-010**: Given the web sources, then nothing under `apps/web/app` or `apps/web/shared` creates an `EventSource` or references `/game/scores/stream` or `LEADERBOARD_STREAM_PATH`, and `useLeaderboard` exposes no `refreshRawScores`.
 
 ### Retired IDs (never implemented)
@@ -359,4 +361,25 @@ accepted; CDN caching on `/game/leaderboard` is kept on top of Upstash.
 - Criteria: API-LBOARD-033, API-LBOARD-034
 - Red: 2 failing test(s) before implementation (`apps/api/tests/test_leaderboard_scaling.py::test_get_player_rank_pairs_members_accurately_when_hash_record_incomplete`, `apps/api/tests/test_leaderboard_scaling.py::test_massive_tie_at_cutoff_caps_zrangebyscore_and_hmget_reads`)
 - Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 42212fc (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-016
+- Red: 1 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-016] index.vue puts the rank in its own column before the player name`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 42212fc (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-012, WEB-LBOARD-014
+- Red: 2 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-012] ownRowPlacement chooses none, highlight, or pin`, `leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-014] index.vue renders pinned row outside table and highlights in-list row`)
+- Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 42212fc (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-017
+- Red: 1 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-017] index.vue keeps the table and uses its own empty state`)
+- Green: 1 passing test(s)
 - Gate: `mise run check` passed

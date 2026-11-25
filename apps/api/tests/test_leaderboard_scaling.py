@@ -405,6 +405,18 @@ class FakeLeaderboardRedis:
                     h[f"{new_m}:{suf}"] = val
             return 1
 
+        if "-- op:set_name" in script:
+            z_key, h_key, ready_key, lock_key, dirty_key = keys
+            member, name = args
+            if lock_key in self.strings:
+                self.strings[dirty_key] = "1"
+                return 0
+            if ready_key not in self.strings:
+                return 0
+            if member in self.zsets.get(z_key, {}):
+                self.hashes.setdefault(h_key, {})[f"{member}:name"] = name
+            return 1
+
         if "-- op:unlock" in script:
             (lock_key,) = keys
             (token,) = args

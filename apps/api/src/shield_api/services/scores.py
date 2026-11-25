@@ -106,6 +106,8 @@ class ScoreStore(Protocol):
 
     async def rename_scores_email(self, old: str, new: str) -> None: ...
 
+    async def rename_scores_player(self, email: str, player_name: str) -> None: ...
+
     async def list_all_current_scores(self) -> list[tuple[str | None, ScoreRecord]]: ...
 
     async def list_scores_for_owner(self, email: str) -> list[ScoreRecord]: ...
@@ -198,6 +200,11 @@ class InMemoryScoreStore:
         for row in self._scores:
             if row.email == old:
                 row.email = new
+
+    async def rename_scores_player(self, email: str, player_name: str) -> None:
+        for row in self._scores:
+            if row.email == email:
+                row.record = row.record.model_copy(update={"player_name": player_name})
 
     async def list_all_current_scores(self) -> list[tuple[str | None, ScoreRecord]]:
         return [(row.email, row.record) for row in self._scores]
@@ -372,6 +379,11 @@ class SupabaseScoreStore:
     async def rename_scores_email(self, old: str, new: str) -> None:
         await asyncio.to_thread(
             lambda: self._scores().update({"email": new}).eq("email", old).execute()
+        )
+
+    async def rename_scores_player(self, email: str, player_name: str) -> None:
+        await asyncio.to_thread(
+            lambda: self._scores().update({"player_name": player_name}).eq("email", email).execute()
         )
 
     async def list_all_current_scores(self) -> list[tuple[str | None, ScoreRecord]]:

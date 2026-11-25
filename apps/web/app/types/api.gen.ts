@@ -64,6 +64,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/account/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change Profile
+         * @description Change the display name on the account, its scores and the leaderboard (spec 0048).
+         */
+        patch: operations["change_profile_api_v1_auth_account_profile_patch"];
+        trace?: never;
+    };
     "/api/v1/auth/account/reset-progress": {
         parameters: {
             query?: never;
@@ -278,6 +298,66 @@ export interface paths {
          * @description Upgrade the currently signed-in player from the free tier to the paid tier.
          */
         post: operations["upgrade_player_plan_api_v1_auth_upgrade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Checkout
+         * @description Return the Stripe page for one 30-day pass; one open page for each player.
+         */
+        post: operations["start_checkout_api_v1_billing_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Checkout
+         * @description Settle the open checkout with Stripe; ``cancel`` expires it when it is not paid.
+         */
+        post: operations["sync_checkout_api_v1_billing_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stripe Webhook
+         * @description Apply a signed Stripe event.
+         */
+        post: operations["stripe_webhook_api_v1_billing_webhook_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -570,6 +650,14 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /**
+         * AccountProfileRequest
+         * @description Change the display name (spec 0048).
+         */
+        AccountProfileRequest: {
+            /** Player Name */
+            player_name: string;
+        };
         /** AccountResetRequest */
         AccountResetRequest: {
             /** Current Password */
@@ -628,6 +716,28 @@ export interface components {
             dual_use: boolean;
             /** Name */
             name: string;
+        };
+        /** BillingCheckoutResponse */
+        BillingCheckoutResponse: {
+            /** Url */
+            url: string;
+        };
+        /** BillingSyncRequest */
+        BillingSyncRequest: {
+            /**
+             * Cancel
+             * @default false
+             */
+            cancel: boolean;
+        };
+        /** BillingSyncResponse */
+        BillingSyncResponse: {
+            session: components["schemas"]["PlayerSessionStatus"];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "none" | "open" | "processing" | "paid";
         };
         /** BoardEdgeSchema */
         BoardEdgeSchema: {
@@ -824,6 +934,11 @@ export interface components {
              * @default false
              */
             ai_key_configured: boolean;
+            /**
+             * Billing Enabled
+             * @default false
+             */
+            billing_enabled: boolean;
             /** Checks */
             checks: components["schemas"]["CheckDefinitionSchema"][];
             /**
@@ -1201,6 +1316,8 @@ export interface components {
             email?: string | null;
             /** Is Anonymous */
             is_anonymous: boolean;
+            /** Paid Until */
+            paid_until?: string | null;
             /** Player Name */
             player_name: string;
             /**
@@ -1560,6 +1677,60 @@ export interface operations {
                 };
             };
             /** @description Too many wrong passwords for this account. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The change could not be completed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    change_profile_api_v1_auth_account_profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                };
+            };
+            /** @description Sign in to manage your account. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many requests. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -1984,6 +2155,142 @@ export interface operations {
             };
             /** @description Paid plans are disabled or sign-in is required. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    start_checkout_api_v1_billing_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingCheckoutResponse"];
+                };
+            };
+            /** @description Sign in to buy a pass. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description There is nothing to buy right now. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payments are unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sync_checkout_api_v1_billing_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSyncResponse"];
+                };
+            };
+            /** @description Sign in to buy a pass. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payments are unavailable. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    stripe_webhook_api_v1_billing_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description The signature or the event is not valid. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The event could not be applied; Stripe retries. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

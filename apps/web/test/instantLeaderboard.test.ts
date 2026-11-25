@@ -18,7 +18,7 @@ describe('instant leaderboard (spec 0028 / 0044)', () => {
     expect(indexPage).toContain('Promise.all')
     expect(indexPage).toContain(':loading="loadingScores && !hasLoaded"')
     expect(indexPage).not.toContain('Loading leaderboard...')
-    expect(indexPage).toMatch(/hasLoaded\s*&&\s*!loadingScores\s*&&\s*filteredScores\.length\s*===\s*0/)
+    expect(indexPage).toContain(':empty="hasLoaded ? \'No scores yet\' : \'Loading...\'"')
   })
 
   it('[WEB-SCORE-001] fetches only the active difficulty tab via getLeaderboard and persists a sessionStorage cache', () => {

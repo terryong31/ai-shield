@@ -113,7 +113,7 @@ onMounted(async () => {
       <UPageCard class="w-full max-w-md">
         <UEmpty
           v-if="viewState === 'loading'"
-          icon="i-lucide-loader-circle"
+          loading
           title="Confirming your email..."
           description="Please wait while we verify your confirmation link."
           variant="naked"
@@ -129,8 +129,8 @@ onMounted(async () => {
           variant="naked"
           :actions="[
             {
-              label: 'Continue to game',
-              to: '/game',
+              label: 'Continue',
+              to: '/',
               color: 'neutral',
               variant: 'solid'
             },

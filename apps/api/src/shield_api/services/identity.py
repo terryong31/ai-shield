@@ -47,6 +47,10 @@ class InvalidTokenError(Exception):
     """Confirmation or recovery token/code is invalid or expired."""
 
 
+class PasswordRejectedError(Exception):
+    """Supabase refused the new password, for example as too weak."""
+
+
 @dataclass(frozen=True)
 class VerifiedPlayer:
     email: str
@@ -379,12 +383,12 @@ class SupabasePlayerIdentity:
             user = getattr(response, "user", None)
             if user is None:
                 raise InvalidTokenError
-            client.auth.update_user({"password": new_password})
+            self._set_recovered_password(client, new_password)
             email = str(getattr(user, "email", "") or "").strip().lower()
             if not email:
                 raise IdentityUnavailableError
             return email
-        except (InvalidTokenError, IdentityUnavailableError):
+        except (InvalidTokenError, IdentityUnavailableError, PasswordRejectedError):
             raise
         except Exception as err:
             if _is_invalid_token_error(err):
@@ -395,6 +399,21 @@ class SupabasePlayerIdentity:
             raise IdentityUnavailableError from None
         finally:
             _sign_out(client)
+
+    @staticmethod
+    def _set_recovered_password(client: Any, new_password: str) -> None:
+        try:
+            client.auth.update_user({"password": new_password})
+        except Exception as err:
+            code = getattr(err, "code", None)
+            if code == "same_password":
+                return
+            if code == "weak_password":
+                raise PasswordRejectedError from None
+            # _describe(err) logs only the exception type/code, never credentials.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure # noqa: E501
+            logger.warning("Supabase recovery update failed (%s)", _describe(err))
+            raise IdentityUnavailableError from None
 
     def _admin(self, action: str, call: Callable[[Any], Any]) -> None:
         try:

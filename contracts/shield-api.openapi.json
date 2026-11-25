@@ -71,6 +71,23 @@
         "title": "AccountPasswordRequest",
         "type": "object"
       },
+      "AccountProfileRequest": {
+        "additionalProperties": false,
+        "description": "Change the display name (spec 0048).",
+        "properties": {
+          "player_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Player Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_name"
+        ],
+        "title": "AccountProfileRequest",
+        "type": "object"
+      },
       "AccountResetRequest": {
         "additionalProperties": false,
         "properties": {
@@ -219,6 +236,54 @@
           "allowed"
         ],
         "title": "AgentToolSchema",
+        "type": "object"
+      },
+      "BillingCheckoutResponse": {
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "BillingCheckoutResponse",
+        "type": "object"
+      },
+      "BillingSyncRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "cancel": {
+            "default": false,
+            "title": "Cancel",
+            "type": "boolean"
+          }
+        },
+        "title": "BillingSyncRequest",
+        "type": "object"
+      },
+      "BillingSyncResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/PlayerSessionStatus"
+          },
+          "state": {
+            "enum": [
+              "none",
+              "open",
+              "processing",
+              "paid"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "session"
+        ],
+        "title": "BillingSyncResponse",
         "type": "object"
       },
       "BoardEdgeSchema": {
@@ -792,6 +857,11 @@
           "ai_key_configured": {
             "default": false,
             "title": "Ai Key Configured",
+            "type": "boolean"
+          },
+          "billing_enabled": {
+            "default": false,
+            "title": "Billing Enabled",
             "type": "boolean"
           },
           "checks": {
@@ -1973,6 +2043,18 @@
             "title": "Is Anonymous",
             "type": "boolean"
           },
+          "paid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid Until"
+          },
           "player_name": {
             "title": "Player Name",
             "type": "string"
@@ -2590,6 +2672,57 @@
         ]
       }
     },
+    "/api/v1/auth/account/profile": {
+      "patch": {
+        "description": "Change the display name on the account, its scores and the leaderboard (spec 0048).",
+        "operationId": "change_profile_api_v1_auth_account_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in to manage your account."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many requests."
+          },
+          "503": {
+            "description": "The change could not be completed."
+          }
+        },
+        "summary": "Change Profile",
+        "tags": [
+          "Account"
+        ]
+      }
+    },
     "/api/v1/auth/account/reset-progress": {
       "post": {
         "description": "Delete this account's leaderboard scores and saved boards. The account stays.",
@@ -3014,6 +3147,117 @@
         "summary": "Upgrade Player Plan",
         "tags": [
           "Auth"
+        ]
+      }
+    },
+    "/api/v1/billing/checkout": {
+      "post": {
+        "description": "Return the Stripe page for one 30-day pass; one open page for each player.",
+        "operationId": "start_checkout_api_v1_billing_checkout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingCheckoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in to buy a pass."
+          },
+          "409": {
+            "description": "There is nothing to buy right now."
+          },
+          "429": {
+            "description": "Too many requests."
+          },
+          "503": {
+            "description": "Payments are unavailable."
+          }
+        },
+        "summary": "Start Checkout",
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/api/v1/billing/sync": {
+      "post": {
+        "description": "Settle the open checkout with Stripe; ``cancel`` expires it when it is not paid.",
+        "operationId": "sync_checkout_api_v1_billing_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingSyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in to buy a pass."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many requests."
+          },
+          "503": {
+            "description": "Payments are unavailable."
+          }
+        },
+        "summary": "Sync Checkout",
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/api/v1/billing/webhook": {
+      "post": {
+        "description": "Apply a signed Stripe event.",
+        "operationId": "stripe_webhook_api_v1_billing_webhook_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signature or the event is not valid."
+          },
+          "503": {
+            "description": "The event could not be applied; Stripe retries."
+          }
+        },
+        "summary": "Stripe Webhook",
+        "tags": [
+          "Billing"
         ]
       }
     },

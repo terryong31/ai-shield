@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { deleteConfirmed, errorDetail, passwordChangeReady } from '~/utils/account'
+import { deleteConfirmed, displayNameSchema, errorDetail, passwordChangeReady } from '~/utils/account'
 import { ensureAuthBrowserCookie, passwordChangeSchema } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
@@ -16,14 +16,15 @@ const goBack = useGoBack()
 const toast = useToast()
 const { session, isLoggedIn, refreshSession, continueAnonymously } = usePlayerAuth()
 const { refreshScores } = useLeaderboard()
-const { changePassword, changeEmail, resetProgress, deleteAccount } = useShieldApi()
+const { changeDisplayName, changePassword, changeEmail, resetProgress, deleteAccount } = useShieldApi()
 
-// Account settings (spec 0025). Every action asks for the current password.
-type AccountModal = 'email' | 'password' | 'reset' | 'delete'
+// Account settings (spec 0025). Every action except the display name asks for the current password.
+type AccountModal = 'name' | 'email' | 'password' | 'reset' | 'delete'
 const openModal = ref<AccountModal | null>(null)
 const busy = ref(false)
 const formError = ref('')
 
+const nameForm = reactive({ name: '' })
 const emailForm = reactive({ email: '', password: '' })
 const passwordForm = reactive({ current: '', next: '', confirm: '' })
 const resetForm = reactive({ password: '' })
@@ -35,12 +36,14 @@ const modalOpen = (name: AccountModal) => computed({
     openModal.value = open ? name : null
   }
 })
+const isNameOpen = modalOpen('name')
 const isEmailOpen = modalOpen('email')
 const isPasswordOpen = modalOpen('password')
 const isResetOpen = modalOpen('reset')
 const isDeleteOpen = modalOpen('delete')
 
 const open = (name: AccountModal) => {
+  Object.assign(nameForm, { name: session.value.player_name })
   Object.assign(emailForm, { email: '', password: '' })
   Object.assign(passwordForm, { current: '', next: '', confirm: '' })
   Object.assign(resetForm, { password: '' })
@@ -60,6 +63,13 @@ const run = async (action: () => Promise<void>) => {
     busy.value = false
   }
 }
+
+const submitName = () => run(async () => {
+  session.value = await changeDisplayName({ player_name: nameForm.name.trim() })
+  void refreshScores({ background: true })
+  openModal.value = null
+  toast.add({ title: 'Display name changed', icon: 'i-lucide-user-check', color: 'neutral' })
+})
 
 const submitEmail = () => run(async () => {
   ensureAuthBrowserCookie()
@@ -149,6 +159,22 @@ onMounted(() => {
             <div class="flex items-center justify-between gap-4 py-3 first:pt-0">
               <div class="min-w-0">
                 <p class="text-base font-medium text-highlighted">
+                  Display name
+                </p>
+                <p class="truncate text-sm text-muted">
+                  {{ session.player_name }}
+                </p>
+              </div>
+              <UButton
+                label="Change"
+                color="neutral"
+                variant="outline"
+                @click="open('name')"
+              />
+            </div>
+            <div class="flex items-center justify-between gap-4 py-3">
+              <div class="min-w-0">
+                <p class="text-base font-medium text-highlighted">
                   Email
                 </p>
                 <p class="truncate text-sm text-muted">
@@ -225,6 +251,48 @@ onMounted(() => {
         </UPageCard>
       </div>
     </div>
+
+    <UModal
+      v-model:open="isNameOpen"
+      title="Change display name"
+      description="This name shows on the leaderboard."
+    >
+      <template #body>
+        <UForm
+          :schema="displayNameSchema"
+          :state="nameForm"
+          class="space-y-4"
+          @submit="submitName"
+        >
+          <UFormField
+            label="Display name"
+            name="name"
+            required
+          >
+            <UInput
+              v-model="nameForm.name"
+              autocomplete="nickname"
+              :maxlength="64"
+              class="w-full"
+            />
+          </UFormField>
+          <UAlert
+            v-if="formError"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-triangle-alert"
+            :description="formError"
+          />
+          <UButton
+            type="submit"
+            label="Save"
+            color="neutral"
+            block
+            :loading="busy"
+          />
+        </UForm>
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="isEmailOpen"
@@ -394,7 +462,7 @@ onMounted(() => {
     <UModal
       v-model:open="isDeleteOpen"
       title="Delete account"
-      description="This removes your account, leaderboard scores, saved boards and sessions. It cannot be undone."
+      description="This removes your account, leaderboard scores, saved boards, sessions and any days left on your pass. It cannot be undone."
     >
       <template #body>
         <UForm

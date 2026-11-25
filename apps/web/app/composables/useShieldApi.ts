@@ -2,8 +2,11 @@ import type {
   AccountDeleteRequest,
   AccountEmailRequest,
   AccountPasswordRequest,
+  AccountProfileRequest,
   AccountResetRequest,
   AccountResetResponse,
+  BillingCheckoutResponse,
+  BillingSyncResponse,
   ClearanceStatus,
   DifficultyCategory,
   DifficultyLeaderboardEntry,
@@ -63,8 +66,13 @@ export const useShieldApi = () => {
     resetPassword: (body: PlayerResetPasswordRequest) =>
       api<PlayerResetPasswordResponse>('/auth/reset-password', { method: 'POST', body }),
     upgradePlayer: () => api<PlayerSessionStatus>('/auth/upgrade', { method: 'POST' }),
+    startCheckout: () => api<BillingCheckoutResponse>('/billing/checkout', { method: 'POST' }),
+    syncBilling: (cancel = false) =>
+      api<BillingSyncResponse>('/billing/sync', { method: 'POST', body: { cancel } }),
     logoutPlayer: () => api('/auth/logout', { method: 'POST' }),
     // Account settings (spec 0025); each needs the current password.
+    changeDisplayName: (body: AccountProfileRequest) =>
+      api<PlayerSessionStatus>('/auth/account/profile', { method: 'PATCH', body }),
     changePassword: (body: AccountPasswordRequest) =>
       api<PlayerSessionStatus>('/auth/account/password', { method: 'POST', body }),
     changeEmail: (body: AccountEmailRequest) =>

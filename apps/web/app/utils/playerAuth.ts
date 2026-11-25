@@ -30,10 +30,8 @@ export function ensureAuthBrowserCookie(existing?: string): string {
       .split('; ')
       .find(part => part.startsWith(`${AUTH_BROWSER_COOKIE}=`))
     const current = match?.slice(AUTH_BROWSER_COOKIE.length + 1)
-    if (current && BROWSER_TOKEN_PATTERN.test(current)) {
-      return current
-    }
-    const token = randomBrowserToken()
+    // Rewriting a valid token renews Max-Age, so it outlives the flow about to start.
+    const token = current && BROWSER_TOKEN_PATTERN.test(current) ? current : randomBrowserToken()
     const secure = typeof window !== 'undefined' && window.location.protocol === 'https:'
       ? '; Secure'
       : ''

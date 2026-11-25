@@ -35,7 +35,7 @@ DOMAIN_TABLES: dict[str, tuple[str, ...]] = {
     # audit.requests (the chat request log) was dropped by spec 0026.
     "audit": ("clearance_sessions",),
     "game": ("scores", "saved_boards"),
-    "players": ("accounts", "sessions", "daily_usage"),
+    "players": ("accounts", "sessions", "daily_usage", "purchases"),
 }
 TTL = timedelta(hours=1)
 

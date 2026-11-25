@@ -57,6 +57,7 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `api:dev` | `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
 | `web:dev` | `bun run dev` in `apps/web` | Run the Nuxt web client on :3000 |
 | `dev` | depends on `api:dev`, `web:dev` | Run API and web together |
+| `stop` | `kill`, `docker compose stop`, `supabase stop` | Stop the dev servers, Stripe listener, Redis and local Supabase of this repo (data is kept) |
 | `test:engine` | `uv run pytest packages/engine --cov=shield_engine --cov-fail-under=90` | Engine unit tests with coverage (fails under 90%) |
 | `test:api` | `uv run pytest apps/api --cov=shield_api --cov-fail-under=85` | Gateway tests with coverage (fails under 85%) |
 | `test:tooling` | `uv run pytest scripts/tests` | Tests for repo tooling (SDD workflow, spec checker) |

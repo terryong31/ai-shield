@@ -6,25 +6,10 @@ import type {
 } from '~/types/api'
 import { errorDetail } from '~/utils/account'
 import { ensureAuthBrowserCookie, isConfirmationSent, loginFailure } from '~/utils/playerAuth'
+import { DEFAULT_ANONYMOUS_SESSION, SESSION_HINT_COOKIE, sessionFromHint } from '~/utils/sessionHint'
 
 export type RegisterOutcome = 'signed_in' | 'confirmation_sent' | 'failed'
 export type SignInOutcome = 'signed_in' | 'unconfirmed' | 'failed'
-
-const DEFAULT_ANONYMOUS_SESSION: PlayerSessionStatus = {
-  authenticated: false,
-  is_anonymous: true,
-  tier: 'anonymous',
-  email: null,
-  player_name: 'Anonymous',
-  ai_nodes_allowed: false,
-  can_record_scores: false,
-  daily_wave_limit: null,
-  wave_runs_used: 0,
-  daily_test_limit: null,
-  test_runs_used: 0,
-  daily_train_limit: 0,
-  train_runs_used: 0
-}
 
 export const usePlayerAuth = () => {
   const {
@@ -43,7 +28,7 @@ export const usePlayerAuth = () => {
 
   const session = useState<PlayerSessionStatus>(
     'shield_player_session',
-    () => ({ ...DEFAULT_ANONYMOUS_SESSION })
+    () => sessionFromHint(useCookie<unknown>(SESSION_HINT_COOKIE, { readonly: true }).value)
   )
   const loadingAuth = useState<boolean>('shield_player_auth_loading', () => false)
 

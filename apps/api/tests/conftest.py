@@ -549,6 +549,8 @@ class FakeRpcQuery:
     def execute(self) -> Result:
         client = self.schema.client
         client.rpc_calls.append((self.schema.name, self.fn))
+        if self.fn in client.rpc_results:
+            return Result(data=client.rpc_results[self.fn])
         table = self.schema.table("daily_usage")
         if table.fail:
             raise RuntimeError("network down")
@@ -629,6 +631,8 @@ class FakeClient:
     tables: dict[tuple[str, str], FakeTable] = field(default_factory=dict)
     accessed: list[tuple[str, str]] = field(default_factory=list)
     rpc_calls: list[tuple[str, str]] = field(default_factory=list)
+    # Canned scalar results by function name.
+    rpc_results: dict[str, Any] = field(default_factory=dict)
     _rpc_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def schema(self, name: str) -> FakeSchema:

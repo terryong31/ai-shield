@@ -132,6 +132,26 @@ redis.call(
 return 1
 """
 
+_LUA_SET_NAME = """-- op:set_name
+local z_key = KEYS[1]
+local h_key = KEYS[2]
+local ready_key = KEYS[3]
+local lock_key = KEYS[4]
+local dirty_key = KEYS[5]
+
+if redis.call("EXISTS", lock_key) == 1 then
+  redis.call("SET", dirty_key, "1")
+  return 0
+end
+if redis.call("EXISTS", ready_key) == 0 then
+  return 0
+end
+if redis.call("ZSCORE", z_key, ARGV[1]) then
+  redis.call("HSET", h_key, ARGV[1] .. ":name", ARGV[2])
+end
+return 1
+"""
+
 _LUA_RENAME_MEMBER = """-- op:rename_member
 local z_key = KEYS[1]
 local h_key = KEYS[2]
@@ -695,6 +715,31 @@ class LeaderboardService:
                 )
             except Exception as exc:
                 logger.warning("Redis leaderboard delete failed for %s: %s", board, exc)
+                with contextlib.suppress(Exception):
+                    await self._redis.delete(ready_key)
+
+    async def on_display_name_changed(self, email: str, player_name: str) -> None:
+        """Show the new name on every board without changing rank (spec 0048)."""
+        self._invalidate_fallback_cache()
+        if self._redis is None:
+            return
+        member = owner_member_hash("", email)
+        for board in ALL_BOARDS:
+            z_key, d_key, ready_key, lock_key, dirty_key = self._keys(board)
+            try:
+                await self._eval_script(
+                    _LUA_SET_NAME,
+                    5,
+                    z_key,
+                    d_key,
+                    ready_key,
+                    lock_key,
+                    dirty_key,
+                    member,
+                    player_name,
+                )
+            except Exception as exc:
+                logger.warning("Redis display name update failed for %s: %s", board, exc)
                 with contextlib.suppress(Exception):
                     await self._redis.delete(ready_key)
 

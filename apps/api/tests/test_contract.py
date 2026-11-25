@@ -15,6 +15,7 @@ def test_only_versioned_routes_are_published() -> None:
         "/api/v1/auth/account",  # spec 0025
         "/api/v1/auth/account/email",
         "/api/v1/auth/account/password",
+        "/api/v1/auth/account/profile",  # spec 0048
         "/api/v1/auth/account/reset-progress",
         "/api/v1/auth/anonymous",
         "/api/v1/auth/confirm",  # spec 0047
@@ -26,6 +27,9 @@ def test_only_versioned_routes_are_published() -> None:
         "/api/v1/auth/reset-password",  # spec 0047
         "/api/v1/auth/session",
         "/api/v1/auth/upgrade",
+        "/api/v1/billing/checkout",  # spec 0049
+        "/api/v1/billing/sync",
+        "/api/v1/billing/webhook",
         "/api/v1/clearance",
         "/api/v1/game/leaderboard",
         "/api/v1/game/leaderboard/me",

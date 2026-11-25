@@ -52,6 +52,12 @@ class AuthFlowStore(Protocol):
         self, record: AuthFlowRecord, *, ttl_seconds: int = SIGNUP_FLOW_TTL_SECONDS
     ) -> str: ...
 
+    async def save(
+        self, flow_id: str, record: AuthFlowRecord, *, ttl_seconds: int = SIGNUP_FLOW_TTL_SECONDS
+    ) -> None:
+        """Write or replace the record of ``flow_id``. Never raises on a store outage."""
+        ...
+
     async def get(self, flow_id: str) -> AuthFlowRecord | None: ...
 
     async def delete(self, flow_id: str) -> None: ...
@@ -75,11 +81,16 @@ class InMemoryAuthFlowStore:
     async def create(
         self, record: AuthFlowRecord, *, ttl_seconds: int = SIGNUP_FLOW_TTL_SECONDS
     ) -> str:
-        self._prune()
         flow_id = secrets.token_urlsafe(24)
+        await self.save(flow_id, record, ttl_seconds=ttl_seconds)
+        return flow_id
+
+    async def save(
+        self, flow_id: str, record: AuthFlowRecord, *, ttl_seconds: int = SIGNUP_FLOW_TTL_SECONDS
+    ) -> None:
+        self._prune()
         self._flows[flow_id] = record
         self._expiries[flow_id] = self._clock() + ttl_seconds
-        return flow_id
 
     async def get(self, flow_id: str) -> AuthFlowRecord | None:
         self._prune()
@@ -105,6 +116,12 @@ class RedisAuthFlowStore:
         self, record: AuthFlowRecord, *, ttl_seconds: int = SIGNUP_FLOW_TTL_SECONDS
     ) -> str:
         flow_id = secrets.token_urlsafe(24)
+        await self.save(flow_id, record, ttl_seconds=ttl_seconds)
+        return flow_id
+
+    async def save(
+        self, flow_id: str, record: AuthFlowRecord, *, ttl_seconds: int = SIGNUP_FLOW_TTL_SECONDS
+    ) -> None:
         payload = json.dumps(
             {
                 "purpose": record.purpose,
@@ -114,16 +131,17 @@ class RedisAuthFlowStore:
         )
         try:
             await self._redis.set(self._key(flow_id), payload, ex=ttl_seconds)
-            return flow_id
+            await self._fallback.delete(flow_id)
         except Exception as exc:
             logger.warning(
                 "Redis auth flow write failed (%s); using local store", type(exc).__name__
             )
-            self._fallback._flows[flow_id] = record
-            self._fallback._expiries[flow_id] = self._fallback._clock() + ttl_seconds
-            return flow_id
+            await self._fallback.save(flow_id, record, ttl_seconds=ttl_seconds)
 
     async def get(self, flow_id: str) -> AuthFlowRecord | None:
+        # A local record exists only after a failed Redis write, so it is the newer one.
+        if (local := await self._fallback.get(flow_id)) is not None:
+            return local
         try:
             raw = await self._redis.get(self._key(flow_id))
             if raw is not None:
@@ -134,10 +152,8 @@ class RedisAuthFlowStore:
                     code_verifier=data.get("code_verifier"),
                 )
         except Exception as exc:
-            logger.warning(
-                "Redis auth flow read failed (%s); checking local store", type(exc).__name__
-            )
-        return await self._fallback.get(flow_id)
+            logger.warning("Redis auth flow read failed (%s); no local record", type(exc).__name__)
+        return None
 
     async def delete(self, flow_id: str) -> None:
         await self._fallback.delete(flow_id)

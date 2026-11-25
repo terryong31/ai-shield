@@ -89,6 +89,12 @@ Create two Vercel projects from the same repository:
 
 API environment: `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, and `TRUSTED_PROXY_SECRET` are **required** in production, along with `TRUSTED_CLIENT_IP_HEADER=x-shield-client-ip`, `WEB_BASE_URL` (the web URL), and `GOOGLE_API_KEY` / `GROQ_API_KEY`. On Web Vercel, set `NUXT_API_PROXY_SECRET` to match the API secret, confirm `NUXT_CLIENT_IP_HEADER=x-vercel-forwarded-for` (also the Nuxt default; production fails closed without a resolved header IP), and keep Vercel BotID enabled on the project (spec 0043). Leave `APP_ENV` unset (`production`).
 
+Stripe passes (spec 0049): push the migration before you deploy the API. Then run
+`mise run stripe:setup https://<web URL>` and type the sandbox key. The command stores
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in Infisical `dev` and `prod` `/api` and creates the
+production webhook endpoint. When the list of events changes, run `mise run stripe:events https://<web URL>`. To go live, replace both values in `prod` with the live key and the
+secret of a live endpoint. For local tests, run `mise run stripe:listen` beside `mise run dev`.
+
 ## 4. Health check
 
 ```

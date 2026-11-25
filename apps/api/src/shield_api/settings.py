@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Server secret for HMAC-signing temporary trained ML models (spec 0045);
     # required in production for POST /game/train.
     MODEL_SIGNING_KEY: SecretStr | None = None
+    # Stripe pass checkout (spec 0049). Unset: billing is off. Sandbox and live keys
+    # both work; the webhook secret is required with the key.
+    STRIPE_SECRET_KEY: SecretStr | None = None
+    STRIPE_WEBHOOK_SECRET: SecretStr | None = None
     # Comma-separated in the environment. Includes IPv4/IPv6 loopback variants
     # that local dev servers (e.g. `nuxt dev` under Bun) may print.
     CORS_ORIGINS: Annotated[list[str], NoDecode] = [

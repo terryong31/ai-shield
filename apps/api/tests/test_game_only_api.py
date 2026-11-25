@@ -56,7 +56,13 @@ def test_removed_routes_return_404(harness: Harness, method: str, path: str) -> 
 @pytest.mark.spec("API-CLEAN-001")
 def test_contract_lists_only_game_auth_clearance_and_health_paths() -> None:
     paths = json.loads(render())["paths"]
-    allowed = ("/api/v1/health", "/api/v1/auth/", "/api/v1/game/", "/api/v1/clearance")
+    allowed = (
+        "/api/v1/health",
+        "/api/v1/auth/",
+        "/api/v1/billing/",  # spec 0049
+        "/api/v1/game/",
+        "/api/v1/clearance",
+    )
     assert paths
     assert all(p.startswith(allowed) for p in paths), sorted(paths)
 
