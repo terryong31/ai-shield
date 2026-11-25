@@ -7,7 +7,7 @@ The game's check library. Root rules in [../../AGENTS.md](../../AGENTS.md) apply
 | Module | Responsibility | Spec |
 | --- | --- | --- |
 | `game/` | Board interpreter, check nodes, levels, AI Agent, custom sandbox, scoring | 0016, 0020–0022 |
-| `detectors/classifier.py` | Baseline TF-IDF + SGD classifier with a sensitive-topic floor (`Quick screen`) | 0002 |
+| `detectors/classifier.py` | Baseline TF-IDF + SGD classifier with a sensitive-topic floor (no check uses it since spec 0038) | 0002 |
 | `untrusted.py` | `wrap_untrusted()`: prompts reach an LLM only as inert, delimited data | 0026 |
 | `models/` | Bundled, hash-verified baseline artifacts | 0002 |
 | `training.py`, `dataset.py`, `cli.py` | Retrain the baseline (`mise run train`) | 0002 |

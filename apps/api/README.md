@@ -9,7 +9,8 @@ or scoring logic**. Its job is to:
 3. keep saved boards and the leaderboard,
 4. guard the admin console with a clearance session for Supabase users whose
    `app_metadata.role` is `"admin"` (`/api/v1/clearance`, `mise run admin:create`),
-5. wire the agent models (Gemini standard tier, Groq budget tier) and persistence
+5. sell the 30-day pass with Stripe (`/api/v1/billing/*`),
+6. wire the agent models (Gemini standard tier, Groq budget tier) and persistence
    in Supabase (`SUPABASE_URL` and `SUPABASE_KEY`). The schema lives in
    [`supabase/migrations`](../../supabase/migrations).
 
@@ -19,15 +20,15 @@ src/shield_api/
 ├── container.py     # composition root: wires adapters from Settings
 ├── settings.py      # environment configuration
 ├── schemas.py       # HTTP models (the public contract)
-├── routers/         # health, auth, game, clearance
-├── services/        # players, scores, sessions, clearance, identity, admins
-└── providers/       # Gemini adapter, BYOK provider allowlist
+├── routers/         # health, auth, account, billing, game, clearance
+├── services/        # players, scores, leaderboard, identity, billing, passes, rate_limit, …
+└── providers/       # Gemini and TypeSafe adapters, BYOK provider allowlist
 ```
 
 ## Run
 
 ```bash
-cp .env.example .env        # optional
+infisical login             # once per machine; see docs/how-to/manage-secrets.md
 mise run api:dev            # from the repo root → http://localhost:8000/api/v1/docs
 ```
 

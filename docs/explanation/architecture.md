@@ -7,7 +7,7 @@
 | Part | Role | Talks to |
 | --- | --- | --- |
 | `packages/engine` (`shield-engine`) | The game's check library: board interpreter, check nodes, levels, the AI agent, the custom sandbox and scoring, plus the bundled baseline classifier | Nothing directly; everything external comes in through ports |
-| `apps/api` (`shield-api`) | Gateway: puts the game on HTTP, owns players, quotas, saved boards, the leaderboard and admin clearance, and wires the model providers | Engine (in-process), Gemini, Groq, the player's BYOK provider, Supabase |
+| `apps/api` (`shield-api`) | Gateway: puts the game on HTTP, owns players, quotas, saved boards, the leaderboard, payments and admin clearance, and wires the model providers | Engine (in-process), Gemini, Groq, TypeSafe, the player's BYOK provider, Supabase, Redis, Stripe |
 | `apps/web` (`@ai-shield/web`) | Web client: main menu (`/`), defence board (`/game`), plans, settings, and the admin console (`/_console`) | The gateway only, over the published HTTP contract |
 
 The engine stays free of FastAPI, database drivers and environment variables, so
@@ -25,7 +25,7 @@ review and one CI run ([ADR 0001](decisions/0001-monorepo-with-uv-and-bun-worksp
                 ┌──────────────────────── shield_engine ────────────────────────┐
  board ───────▶ │ run_wave / evaluate_message                                    │
  level_id ────▶ │   ├── check nodes (word filter, length limit, secret scan …)   │
-                │   ├── Quick screen ──▶ Classifier port ◀── ClassifierDetector  │
+                │   ├── Jev ──▶ JevClient port                                   │
                 │   ├── ML filter (player-trained scikit-learn model)            │
                 │   └── final node ──▶ UsageChatModel port ─────────────────────┼──▶ Gemini / Groq / BYOK adapter
  WaveResult ◀── │ score_traces ──▶ WaveScore                                     │
@@ -54,6 +54,8 @@ is the only place that reads provider settings. It builds:
 - the baseline classifier via `load_baseline()` (hash-verified artifacts)
 - the agent model per tier: `standard` on Gemini with `GOOGLE_API_KEY` (else Groq), `budget` on Groq with `GROQ_API_KEY`
 - the BYOK factory for the custom sandbox (fixed provider allowlist, no URL field)
+- `StripePayments` with `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (else billing is off)
+- the Redis leaderboard, rate limiter, auth flows and trained models with `REDIS_URL` (required in production)
 - `SupabaseScoreStore`, `SupabaseSessionStore` and `SupabasePlayerStore` backed by Supabase (`SUPABASE_URL` + `SUPABASE_KEY` are required)
 
 The `Container` is stored on `app.state` and injected into routes through
@@ -64,9 +66,9 @@ The `Container` is stored on `app.state` and injected into routes through
 
 | Layer | Modules | Rule |
 | --- | --- | --- |
-| Routers | `routers/health.py`, `auth.py`, `game.py`, `clearance.py` | HTTP mapping only |
-| Services | `services/players.py`, `scores.py`, `sessions.py`, `clearance.py`, `identity.py`, `admins.py` | Accounts and quotas, the leaderboard, admin sessions, persistence |
-| Providers | `providers/gemini.py`, `byok.py` | Model adapters behind `UsageChatModel` |
+| Routers | `routers/health.py`, `auth.py`, `account.py`, `billing.py`, `game.py`, `clearance.py` | HTTP mapping only |
+| Services | `services/players.py`, `scores.py`, `leaderboard.py`, `sessions.py`, `clearance.py`, `identity.py`, `auth_flows.py`, `admins.py`, `rate_limit.py`, `models.py`, `train_worker.py`, `billing.py`, `passes.py` | Accounts and quotas, the leaderboard, admin sessions, email links, rate limits, trained models, payments, persistence |
+| Providers | `providers/gemini.py`, `byok.py`, `typesafe.py` | Model adapters behind `UsageChatModel` and `JevClient` |
 | Contract | `schemas.py` | Pydantic models exported to `contracts/shield-api.openapi.json` |
 
 Credentials stop at the gateway. An admin's email and password are checked
@@ -109,6 +111,33 @@ sequenceDiagram
 The browser animates the returned traces and shows the score; it computes
 nothing that counts.
 
+## Life of a payment
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser (/plans)
+    participant G as billing router
+    participant D as Pass desk
+    participant S as Stripe
+    participant P as Player store
+
+    B->>G: POST /billing/checkout + player cookie
+    G->>D: start (one open checkout for each player)
+    D->>P: create_purchase (pending)
+    D->>S: create Checkout Session (server price, expires in about 30 minutes)
+    G-->>B: Stripe page URL
+    B->>S: pay
+    S->>G: signed webhook
+    G->>D: handle event
+    D->>P: fulfil_purchase (row lock, one time)
+    B->>G: POST /billing/sync (on return to /plans)
+    G->>S: read the session, if the purchase is still pending
+```
+
+The webhook grants the pass without the browser. `sync` repairs a missed webhook. The browser never
+sends a price and never grants a pass. Details: [Accept payments](../how-to/accept-payments.md).
+
 ## Inside the web client
 
 The browser talks only to the gateway
@@ -119,6 +148,9 @@ OpenAPI contract. Board logic worth testing (graph building, traces, scoring
 display, saves, plans, console stats) lives as pure functions in
 [`gameBoard.ts`](../../apps/web/app/utils/gameBoard.ts) and
 [`customSandbox.ts`](../../apps/web/app/utils/customSandbox.ts).
+
+The first server render uses `shield_session_hint`, a display-only cookie with the player name, tier and
+feature flags. `GET /auth/session` corrects it in the background. The gateway ignores the cookie.
 
 ## Related
 

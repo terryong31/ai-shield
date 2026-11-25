@@ -9,14 +9,16 @@ workspace lockfiles and, for the gateway, the engine package.
 For a single host, `compose.yaml` at the repo root runs both images:
 
 ```bash
-cp apps/api/.env.example apps/api/.env   # optional; loaded if present
+infisical login                          # once per machine
 mise run up                              # docker compose up --build
 ```
 
 - web: http://localhost:3000; api: http://localhost:8000/api/v1/health (Compose defaults to `APP_ENV=development`; run `APP_ENV=production mise run up` to test production mode)
 - `web` starts once `api` passes its health check.
-- `mise run up` injects Infisical `dev /api` secrets and automatically rewrites local Supabase to
-  `SUPABASE_URL=http://host.docker.internal:54421` with the local `SUPABASE_KEY`.
+- `mise run up` runs Compose with Infisical `dev /api` ([Manage secrets](manage-secrets.md)) and rewrites
+  local Supabase to `SUPABASE_URL=http://host.docker.internal:54421` with the local `SUPABASE_KEY`.
+  `compose.yaml` gives the `api` container only `APP_ENV`, `CORS_ORIGINS`, `REDIS_URL`, `SUPABASE_URL` and
+  `SUPABASE_KEY`. Put other variables (provider and Stripe keys) in `apps/api/.env`.
 - The browser only talks to `web`; it proxies `/api/v1/**` to `api` over the
   Compose network (`NUXT_API_PROXY_TARGET=http://api:8000`).
 
@@ -32,7 +34,7 @@ docker build -f apps/web/Dockerfile -t ai-shield-web .
 | Image | Base | Contents | Runs as | Port |
 | --- | --- | --- | --- | --- |
 | `ai-shield-api` | `python:3.12-slim-bookworm` | `.venv` with `shield-api` and `shield-engine` (non-editable, no dev deps) | `shield` (uid 10001) | 8000 |
-| `ai-shield-web` | `node:24-slim` | Nuxt `.output` | `node` | 3000 |
+| `ai-shield-web` | `node:25-slim` | Nuxt `.output` | `node` | 3000 |
 
 The gateway starts
 `uvicorn shield_api.main:app --host 0.0.0.0 --port 8000 --proxy-headers`.
@@ -49,8 +51,11 @@ Pass configuration as environment variables. The image contains no `.env`
 | `GOOGLE_API_KEY`, `GEMINI_MODEL` | The standard-tier agent (Medium) |
 | `GROQ_API_KEY`, `GAME_MODEL_BUDGET` | The budget-tier agent (Hard), and Medium without Gemini ([how-to](configure-llm-providers.md)) |
 | `SUPABASE_URL`, `SUPABASE_KEY` | **Required.** Persistent game data ([how-to](persist-game-data.md)), player accounts, and admin clearance |
-| `WEB_BASE_URL` | The web client's public origin, for the email confirmation link (add `<WEB_BASE_URL>/auth/confirmed` to Supabase **Redirect URLs**) |
+| `WEB_BASE_URL` | The web client's public origin, for the email confirmation link (add `<WEB_BASE_URL>/auth/confirmed` and `<WEB_BASE_URL>/auth/reset-password` to Supabase **Redirect URLs**) |
 | `APP_ENV` | Leave unset (`production`) so Swagger UI and `/openapi.json` stay off |
+| `REDIS_URL`, `TRUSTED_CLIENT_IP_HEADER`, `TRUSTED_PROXY_SECRET` | **Required** in production (spec 0043) |
+| `MODEL_SIGNING_KEY` | `POST /game/train` in production (spec 0045) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | The 30-day pass ([how-to](accept-payments.md)) |
 | `LOG_LEVEL` | Optional |
 
 ```bash
@@ -80,7 +85,11 @@ run on different sites, such as two `*.vercel.app` hosts.
 
 ## Deploy on Vercel
 
-Create two Vercel projects from the same repository:
+Create two Vercel projects from the same repository. Keep the secrets in Infisical `prod` (`/api` and
+`/web`) and bring them to the Vercel projects ([Manage secrets](manage-secrets.md)).
+
+**Apply database migrations before you merge to `main`** (`mise run db:remote:plan`, then
+`mise run db:remote:push`). Vercel deploys `main` immediately.
 
 | Project | Root Directory | Notes |
 | --- | --- | --- |
@@ -89,11 +98,7 @@ Create two Vercel projects from the same repository:
 
 API environment: `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, and `TRUSTED_PROXY_SECRET` are **required** in production, along with `TRUSTED_CLIENT_IP_HEADER=x-shield-client-ip`, `WEB_BASE_URL` (the web URL), and `GOOGLE_API_KEY` / `GROQ_API_KEY`. On Web Vercel, set `NUXT_API_PROXY_SECRET` to match the API secret, confirm `NUXT_CLIENT_IP_HEADER=x-vercel-forwarded-for` (also the Nuxt default; production fails closed without a resolved header IP), and keep Vercel BotID enabled on the project (spec 0043). Leave `APP_ENV` unset (`production`).
 
-Stripe passes (spec 0049): push the migration before you deploy the API. Then run
-`mise run stripe:setup https://<web URL>` and type the sandbox key. The command stores
-`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in Infisical `dev` and `prod` `/api` and creates the
-production webhook endpoint. When the list of events changes, run `mise run stripe:events https://<web URL>`. To go live, replace both values in `prod` with the live key and the
-secret of a live endpoint. For local tests, run `mise run stripe:listen` beside `mise run dev`.
+To sell passes, do [Accept payments](accept-payments.md).
 
 ## 4. Health check
 
@@ -122,18 +127,21 @@ is wrong or the gateway is down.
 
 Before exposing the game beyond a trusted network:
 
-- [ ] **Create the admin accounts** with `mise run admin:create <email>` (it
+- [ ] **Create the admin accounts** with `mise run admin:remote:create <email>` (it
       prompts for the password and sets `app_metadata.role = "admin"`), using a
-      long unique password. Remove access with `mise run admin:revoke <email>`.
+      long unique password. Remove access with `mise run admin:remote:revoke <email>`.
 - [ ] **Set up custom SMTP in Supabase** (Authentication → Emails → SMTP), or
       confirmation emails reach only your project team.
+- [ ] **Push the auth email templates** in `supabase/templates/`. Compare
+      `[remotes.production]` in `supabase/config.toml` with the hosted settings, then run
+      `supabase config push`. It changes the other hosted settings too, so read its diff first.
 - [ ] **Leave `APP_ENV` unset** (production), so the API docs and schema are not served.
 - [ ] **Terminate TLS** at a reverse proxy or load balancer. `--proxy-headers`
       is enabled, so run the gateway only behind a proxy you control.
-- [ ] **Rate-limit `POST /api/v1/auth/*` and `POST /api/v1/game/run`** per client
-      at the proxy. Daily quotas cap runs per session, but anonymous sessions are
-      cheap to create, and login is not throttled by the gateway.
+- [ ] **Set `REDIS_URL`.** The gateway rate limits (sign-in, anonymous sessions, runs,
+      training, email, checkout) need it to work across instances
+      ([Configuration](../reference/configuration.md), `APP_ENV`).
 - [ ] **Expose the Supabase domain schemas** (`audit`, `game`, `players`) in Data API settings ([persist game data](persist-game-data.md)).
-- [ ] Store secrets in your platform's secret manager, not in image layers or
-      committed files.
+- [ ] Keep secrets in Infisical, not in image layers or committed files.
+- [ ] **Before real payments**, do the steps in [Go live](accept-payments.md#go-live).
 - [ ] Review [Threat model](../explanation/threat-model.md) known gaps.

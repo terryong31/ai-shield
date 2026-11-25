@@ -85,7 +85,7 @@ flowchart LR
 ```
 
 1. **Request.** Describe the problem, not the solution: "Prompts asking for
-   passwords pass Quick screen as safe. They should be flagged suspicious."
+   passwords pass the baseline classifier as safe. They should be flagged suspicious."
 2. **Draft.** Run `/new-spec`. The agent scaffolds the spec, fills it from the
    code and runs `spec-reviewer`. It cannot mark the spec accepted.
 3. **Accept.** Read the spec, answer its open questions, and change

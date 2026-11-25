@@ -9,12 +9,18 @@ The game gateway. Root rules in [../../AGENTS.md](../../AGENTS.md) apply; these 
 | `routers/` | HTTP mapping only: parse, call a service/engine, shape the response |
 | `routers/game.py` | Levels, runs (quota, custom sandbox), saves, scores, ML training |
 | `routers/auth.py` | Player sessions: anonymous, register, login, recover, upgrade, logout |
+| `routers/account.py` | Account settings: display name, password, email, reset, delete |
+| `routers/billing.py` | Pass checkout, sync and the Stripe webhook (spec 0049) |
 | `routers/clearance.py` | `POST/GET/DELETE /clearance`: the only route that sees an admin's password |
 | `services/admins.py` | Admin check: Supabase Auth sign-in plus `app_metadata.role == "admin"` |
-| `admin_cli.py` | `mise run admin:create` / `admin:revoke`: grant or remove the admin role |
+| `admin_cli.py` | `mise run admin:create` / `admin:revoke`: grant or remove the admin role (`admin:remote:*` for the hosted project) |
 | `services/clearance.py` | admin session cookie → `Clearance` (fail closed) |
 | `services/sessions.py` | Admin clearance sessions (hashed tokens) and the failed-attempt limiter |
 | `services/players.py` | Player accounts, sessions, daily quotas and saved boards |
+| `services/billing.py` | `PaymentProvider` and `StripeApi` ports, and the Stripe adapter |
+| `services/passes.py` | `PassDesk`: every known payment is granted or refunded |
+| `services/auth_flows.py` | Email links bound to the browser (spec 0047) |
+| `services/leaderboard.py`, `rate_limit.py` | Redis leaderboard and rate limits |
 | `services/scores.py` | `ScoreStore` protocol (leaderboard): Supabase (production/local), in-memory test double |
 | `providers/` | Model adapters: Gemini (standard-tier agent) and the BYOK provider allowlist |
 | `container.py` | Composition root; the only place that reads provider settings |

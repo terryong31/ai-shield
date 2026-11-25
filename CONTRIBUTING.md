@@ -7,15 +7,19 @@ development**. Please read this page before opening a PR.
 
 ```bash
 mise install && mise run setup
-mise run check     # should be green on a fresh clone
+mise run check     # should be green on a fresh clone; needs no secrets
 ```
+
+`mise run dev` reads secrets from Infisical. Without access, see
+[Manage secrets](docs/how-to/manage-secrets.md#work-without-access-to-infisical).
 
 `mise run setup` also installs the git hooks (`lefthook.yml`):
 
 - **pre-commit** scans the staged diff for secrets, then lints and fixes the
   staged Python and web files.
 - **commit-msg** checks that the subject is a Conventional Commit.
-- **pre-push** stops pushes to `main`, then runs `mise run check`.
+- **pre-push** stops pushes to `main`, then runs `mise run check` and the browser
+  tests (needs Docker; `LEFTHOOK_EXCLUDE=e2e git push` skips only them).
 
 CI (`.github/workflows/ci.yml`) runs the same mise tasks. The `CI OK` check
 must pass before a PR can merge.

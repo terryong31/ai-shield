@@ -5,6 +5,7 @@ type: software
 authors:
   - family-names: Ong
     given-names: Terry
+license: MIT
 repository-code: "https://github.com/terryong31/ai-shield"
 keywords:
   - prompt injection

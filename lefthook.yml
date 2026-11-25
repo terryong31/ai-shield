@@ -1,8 +1,9 @@
 # Git hooks. `mise run setup` installs them (lefthook install).
 #   pre-commit  fast checks on staged files only; fixes are restaged
 #   commit-msg  Conventional Commits subject line
-#   pre-push    no direct pushes to main, then the full CI gate (mise run check)
-# Bypass for one command: LEFTHOOK=0 git push. CI runs the same checks anyway.
+#   pre-push    no direct pushes to main, the full CI gate (mise run check), then the browser tests
+# Bypass for one command: LEFTHOOK=0 git push. CI runs the same checks anyway, except the
+# browser tests: only this hook runs them.
 
 min_version: 2.2.2
 
@@ -71,3 +72,10 @@ pre-push:
 
     - name: full-gate
       run: mise run check
+
+    # Local only (Docker + local Supabase). CI does not run these tests yet.
+    - name: e2e
+      glob: "{apps,packages,supabase,contracts}/**"
+      exclude:
+        - "**/*.md"
+      run: mise run e2e:gate

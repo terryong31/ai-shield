@@ -16,7 +16,7 @@ board to protect an LLM agent from injection waves. It has three separately depl
 | `apps/web` | Game client and the `/_console` admin page | Nuxt 4, Nuxt UI, Vue Flow |
 
 Supporting: `specs/` (specifications), `docs/` (Diátaxis docs),
-`contracts/` (OpenAPI contract), `supabase/` (migrations, seed, local config),
+`contracts/` (OpenAPI contract), `supabase/` (migrations, seed, local config), `.infisical.json` (secrets manager),
 `compose.yaml` (containers), `scripts/` (repo tooling).
 
 ## Commands
@@ -122,6 +122,8 @@ verify again.
 
 - Ask before: adding a dependency, changing a public engine API, changing the
   HTTP contract, editing an `Accepted` spec's criteria, touching CI, deleting files.
+- Secrets are in Infisical (`dev`/`prod`, `/api` and `/web`; `docs/how-to/manage-secrets.md`). A person enters
+  the values. Never print them.
 - Never: commit secrets or `.env` files, weaken or delete a test to make it
   pass, edit `api.gen.ts` by hand, load pickles that are not hash-verified,
   push to `main`.

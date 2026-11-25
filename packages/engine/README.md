@@ -26,7 +26,7 @@ from shield_engine.models import load_baseline
 board = BoardGraph(
     nodes=(
         BoardNode("incoming", "incoming"),
-        BoardNode("screen", "ml_classifier", {"algorithm": "tfidf"}),
+        BoardNode("screen", "word_filter", {"custom_words": ["ignore previous instructions"]}),
         BoardNode("assistant", "assistant"),
     ),
     edges=(
@@ -34,7 +34,7 @@ board = BoardGraph(
         BoardEdge("e2", "screen", "safe", "assistant"),
     ),
 )
-result = await run_wave(board, level_id="easy", classifier=load_baseline())
+result = await run_wave(board, level_id="easy-1", classifier=load_baseline())
 result.score.total_score, result.score.medal
 ```
 

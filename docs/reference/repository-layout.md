@@ -9,10 +9,13 @@ ai-shield/
 ├── uv.lock                      # Python lockfile for the whole workspace
 ├── package.json                 # bun workspaces: ["apps/web"]
 ├── bun.lock                     # JavaScript lockfile
+├── LICENSE                      # MIT
 ├── AGENTS.md, CLAUDE.md         # instructions for AI coding agents (see how-to/work-with-ai-agents.md)
 ├── .claude/                     # Claude Code settings, subagents, skills
 ├── .github/                     # CI workflows, setup action, templates, dependabot
 ├── lefthook.yml                 # git hooks: pre-commit, commit-msg, pre-push
+├── .infisical.json              # Infisical project id and default environment (no secrets)
+├── .semgrepignore               # paths that semgrep skips
 ├── .gitleaks.toml, .gitleaksignore  # secret scan rules and reviewed false positives
 ├── .dockerignore, .editorconfig, .gitignore
 │
@@ -20,7 +23,7 @@ ai-shield/
 │   └── engine/                  # shield-engine: the game's check library (Python)
 │       ├── pyproject.toml       # deps: scikit-learn, joblib; extra [groq]; script shield-engine
 │       ├── README.md
-│       ├── MODEL_CARD.md        # baseline classifier (Quick screen): data, limitations
+│       ├── MODEL_CARD.md        # bundled baseline classifier: data, limitations
 │       ├── data/seed/train.jsonl # 20 training prompts for the baseline
 │       ├── src/shield_engine/
 │       │   ├── __init__.py      # public API (__all__)
@@ -47,11 +50,11 @@ ai-shield/
 │   │   │   ├── container.py     # composition root: builds adapters from Settings
 │   │   │   ├── settings.py      # environment configuration
 │   │   │   ├── schemas.py       # HTTP models (the contract)
-│   │   │   ├── dependencies.py  # ContainerDep, ClearanceDep
+│   │   │   ├── dependencies.py  # ContainerDep, client address, rate-limit helper
 │   │   │   ├── openapi.py       # shield-api-export-openapi
-│   │   │   ├── routers/         # health, auth, game, clearance
-│   │   │   ├── services/        # players.py, scores.py, sessions.py, clearance.py, identity.py, admins.py
-│   │   │   └── providers/       # gemini.py (standard-tier agent), byok.py (custom sandbox)
+│   │   │   ├── routers/         # health, auth, account, billing, game, clearance
+│   │   │   ├── services/        # players, scores, leaderboard, identity, auth_flows, rate_limit, billing, passes, models, …
+│   │   │   └── providers/       # gemini.py (standard-tier agent), byok.py (custom sandbox), typesafe.py (Jev)
 │   │   └── tests/
 │   │
 │   └── web/                     # @ai-shield/web: Nuxt 4 + Nuxt UI + Vue Flow client
@@ -62,18 +65,18 @@ ai-shield/
 │       ├── app/
 │       │   ├── pages/           # index.vue (menu + levels), game.vue (board), plans.vue, settings.vue, auth/*, console/{index,settings}.vue (/_console)
 │       │   ├── layouts/         # dashboard.vue (UAuthForm-guarded layout for /_console)
-│       │   ├── components/      # workflow/GameNode.vue
-│       │   ├── composables/     # useShieldApi, usePlayerAuth, useAdminAccess
-│       │   ├── utils/           # gameBoard.ts, customSandbox.ts, format.ts, seo.ts
+│       │   ├── components/      # workflow/GameNode.vue, campaign/*, PasswordStrengthField.vue
+│       │   ├── composables/     # useShieldApi, usePlayerAuth, useLeaderboard, useAdminAccess, …
+│       │   ├── utils/           # gameBoard.ts, campaignSelect.ts, billing.ts, sessionHint.ts, seo.ts, …
 │       │   └── types/           # api.gen.ts (generated), api.ts (aliases)
 │       └── test/                # Vitest
 │
 ├── contracts/
 │   └── shield-api.openapi.json  # generated HTTP contract (committed)
-├── supabase/                    # `supabase init` project: config.toml, migrations/, seed.sql
+├── supabase/                    # `supabase init` project: config.toml, migrations/, templates/, seed.sql
 ├── compose.yaml                 # Docker Compose: redis, api, web
 ├── specs/                       # spec-driven development: README, _templates/, NNNN-slug/spec.md
-├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, local_env.py
+├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, e2e_gate.py, local_env.py, redact_traces.py, stripe_setup.py
 └── docs/                        # this documentation (Diátaxis)
 ```
 
@@ -102,7 +105,7 @@ See [ADR 0001](../explanation/decisions/0001-monorepo-with-uv-and-bun-workspaces
 Consequences:
 
 - Only `apps/api/src/shield_api/container.py` chooses concrete adapters.
-- Credentials stop in `apps/api/src/shield_api/services/access.py`; the engine sees only `Clearance`.
+- Credentials stop in `apps/api/src/shield_api/services/clearance.py`; the engine sees only `Clearance`.
 - A gateway schema change must go through `mise run contract`; the web client
   typechecks against the regenerated types ([how-to](../how-to/change-the-http-contract.md)).
 
