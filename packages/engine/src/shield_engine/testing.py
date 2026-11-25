@@ -64,6 +64,7 @@ class ScriptedUsageChatModel:
         *,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        thinking: bool = False,
     ) -> ChatCompletion:
         self.calls.append(list(messages))
         if self.replies:

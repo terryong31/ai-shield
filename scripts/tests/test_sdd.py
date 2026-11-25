@@ -123,7 +123,7 @@ def test_red_refuses_illegitimate_errors(repo) -> None:
 @pytest.mark.parametrize(
     ("message", "legitimate"),
     [
-        ("ImportError: cannot import name 'SqliteAuditLog' from 'shield_api.services.audit'", True),
+        ("ImportError: cannot import name 'AuditLog' from 'shield_api.services.audit'", True),
         ("ModuleNotFoundError: No module named 'shield_engine.detectors.heuristics'", True),
         ("AttributeError: module 'shield_engine' has no attribute 'Foo'", True),
         ("SyntaxError: invalid syntax", False),

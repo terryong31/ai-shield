@@ -21,6 +21,7 @@ from shield_api.schemas import (
     AccountPasswordRequest,
     AccountResetRequest,
     AccountResetResponse,
+    PlayerConfirmationResponse,
     PlayerSessionStatus,
 )
 from shield_api.services.identity import (
@@ -56,8 +57,8 @@ async def _player(request: Request, container: Container) -> tuple[str, str]:
     return token, player.email
 
 
-async def _reauthenticate(container: Container, email: str, password: str) -> str | None:
-    """Check the current password; returns the Supabase user id in Supabase mode."""
+async def _reauthenticate(container: Container, email: str, password: str) -> str:
+    """Check the current password via Supabase Auth and return the user id."""
     key = f"account:{email}"
     retry_after = container.attempts.retry_after(key)
     if retry_after is not None:
@@ -65,17 +66,13 @@ async def _reauthenticate(container: Container, email: str, password: str) -> st
             status.HTTP_429_TOO_MANY_REQUESTS, TOO_MANY, headers={"Retry-After": str(retry_after)}
         )
     user_id: str | None = None
-    if container.identity is not None:
-        try:
-            user_id = (await container.identity.verify(email, password)).user_id
-            ok = user_id is not None
-        except (InvalidIdentityError, EmailNotConfirmedError):
-            ok = False
-        except IdentityUnavailableError:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
-    else:
-        ok = await container.players.verify_password(email, password)
-    if not ok:
+    try:
+        user_id = (await container.identity.verify(email, password)).user_id
+    except (InvalidIdentityError, EmailNotConfirmedError):
+        user_id = None
+    except IdentityUnavailableError:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    if user_id is None:
         container.attempts.record_failure(key)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, WRONG_PASSWORD)
     container.attempts.reset(key)
@@ -100,56 +97,41 @@ async def change_password(
     """Change the password and sign out every other session."""
     token, email = await _player(request, container)
     user_id = await _reauthenticate(container, email, body.current_password)
-    if container.identity is not None and user_id is not None:
-        try:
-            await container.identity.update_password(user_id, body.new_password)
-        except (IdentityUnavailableError, IdentityConflictError):
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
-    else:
-        await _store(container.players.set_password(email, body.new_password))
+    try:
+        await container.identity.update_password(user_id, body.new_password)
+    except (IdentityUnavailableError, IdentityConflictError):
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
     await _store(container.players.revoke_sessions(email, keep=token))
+    await container.models.purge_account(email, keep_token=token)
     return await container.players.lookup(token)
 
 
 @router.post(
     "/email",
+    status_code=status.HTTP_202_ACCEPTED,
     responses={**_COMMON, 409: {"description": "An account with this email already exists."}},
 )
 async def change_email(
     body: AccountEmailRequest, request: Request, container: ContainerDep
-) -> PlayerSessionStatus:
-    """Move the account, its scores, saved boards, usage and sessions to a new email."""
-    token, email = await _player(request, container)
+) -> PlayerConfirmationResponse:
+    """Start a confirmed email change through Supabase Auth (spec 0042)."""
+    _, email = await _player(request, container)
     new_email = body.new_email.strip().lower()
     if new_email == email:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "The new email is the same as the current one."
         )
-    user_id = await _reauthenticate(container, email, body.current_password)
+    await _reauthenticate(container, email, body.current_password)
     if await _store(container.players.email_taken(new_email)):
         raise HTTPException(status.HTTP_409_CONFLICT, EMAIL_TAKEN)
 
-    identity = container.identity if user_id is not None else None
-    if identity is not None and user_id is not None:
-        try:
-            await identity.update_email(user_id, new_email)
-        except IdentityConflictError:
-            raise HTTPException(status.HTTP_409_CONFLICT, EMAIL_TAKEN) from None
-        except IdentityUnavailableError:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
     try:
-        # Scores, then boards, usage, sessions and the account row last (spec 0025).
-        await container.scores.rename_scores_email(email, new_email)
-        await container.players.move_email(email, new_email)
-    except Exception:
-        logger.exception("email change failed")
-        if identity is not None and user_id is not None:
-            try:
-                await identity.update_email(user_id, email)
-            except Exception:
-                logger.exception("could not restore the Supabase email after a failed move")
+        await container.identity.request_email_change(email, body.current_password, new_email)
+    except IdentityConflictError:
+        raise HTTPException(status.HTTP_409_CONFLICT, EMAIL_TAKEN) from None
+    except IdentityUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
-    return await container.players.lookup(token)
+    return PlayerConfirmationResponse()
 
 
 @router.post("/reset-progress", responses=_COMMON)
@@ -161,11 +143,8 @@ async def reset_progress(
     await _reauthenticate(container, email, body.current_password)
     scores_removed = await _store(container.scores.delete_scores_for(email))
     boards_removed = await _store(container.players.delete_boards(email))
-    if scores_removed > 0 and hasattr(container, "leaderboard_notifier"):
-        from shield_api.services.scores import RedisCachedScoreStore
-
-        if not isinstance(container.scores, RedisCachedScoreStore):
-            await container.leaderboard_notifier.publish(level_id=None, reason="deleted")
+    if scores_removed > 0:
+        await container.leaderboard.on_owner_deleted(email)
     return AccountResetResponse(scores_removed=scores_removed, boards_removed=boards_removed)
 
 
@@ -179,17 +158,14 @@ async def delete_account(
     # Gateway data first, the Supabase user last, so a failure can be retried.
     await _store(container.players.delete_boards(email))
     scores_removed = await _store(container.scores.delete_scores_for(email))
-    if scores_removed > 0 and hasattr(container, "leaderboard_notifier"):
-        from shield_api.services.scores import RedisCachedScoreStore
-
-        if not isinstance(container.scores, RedisCachedScoreStore):
-            await container.leaderboard_notifier.publish(level_id=None, reason="deleted")
+    if scores_removed > 0:
+        await container.leaderboard.on_owner_deleted(email)
+    await container.models.purge_account(email)
     await _store(container.players.delete_account(email))
-    if container.identity is not None and user_id is not None:
-        try:
-            await container.identity.delete_user(user_id)
-        except (IdentityUnavailableError, IdentityConflictError):
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    try:
+        await container.identity.delete_user(user_id)
+    except (IdentityUnavailableError, IdentityConflictError):
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
 
     settings = container.settings
     response = Response(status_code=status.HTTP_204_NO_CONTENT)

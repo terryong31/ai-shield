@@ -38,6 +38,9 @@ import {
   NODE_CATALOG,
   SAFETY_CHECK_MODELS,
   LLM_REVIEW_MODELS,
+  DEFAULT_SAFETY_CHECK_MODEL,
+  DEFAULT_LLM_REVIEW_MODEL,
+  nodeSupportsThinking,
   addAgentRule,
   addCheckNode,
   agentRulesFrom,
@@ -62,29 +65,42 @@ import {
   isNewRecord,
   nextHighStars,
   scoreBreakdown,
-  starsForMedal,
+  waveStars,
   waveOutcomeSummary,
   toApiBoard,
   boardFromSave,
   boardSignature,
   saveFromBoard,
   type GameNodeData,
-  confusionMatrix
+  confusionMatrix,
+  runWithAnonymousRetry
 } from '~/utils/gameBoard'
 import {
   FALLBACK_CAMPAIGN_LEVELS,
   canAccessLevel,
+  levelHighScore,
   countPlacedCheckNodes,
   isCheckDisabledByConstraints,
   nextCampaignLevel
 } from '~/utils/campaignSelect'
 import { hasSeenTour, levelTourSteps, markTourSeen } from '~/utils/levelTours'
+import {
+  ML_TRAINING_NOTICE,
+  REPLACE_MODEL_WARNING,
+  applyTrainedModelToBoard,
+  checkTrainingFile,
+  decodeTrainingCsv,
+  formatRemainingTrainings,
+  markUntrainedModelNodes,
+  needsReplaceConfirmation,
+  triggerBeaconPurge
+} from '~/utils/mlTraining'
 import { TWITTER_CARD_ALT, TWITTER_CARD_PATH, resolveSiteUrl } from '~/utils/seo'
 
 const route = useRoute()
 const goBack = useGoBack()
 const toast = useToast()
-const { getLevels, runGame, trainClassifier, getSave, putSave } = useShieldApi()
+const { getLevels, runGame, trainClassifier, purgeModels, getSave, putSave, getProgress } = useShieldApi()
 const {
   session,
   isAnonymous,
@@ -202,6 +218,8 @@ const nodeKeyState = computed(() => ({
 const mlCsvDraft = ref('')
 const mlTraining = ref(false)
 const mlTrainStats = ref<{ sampleCount: number, accuracy: number } | null>(null)
+const activeSessionModelId = ref<string | null>(null)
+const isReplaceModelConfirmOpen = ref(false)
 
 const mlAlgorithms = [
   { id: 'tfidf', label: 'TF-IDF' },
@@ -642,28 +660,65 @@ const toggleBlockedToolIndex = (index: number, name: string) => {
 }
 
 const onDatasetFileChange = async (event: Event) => {
+  if (isAnonymous.value) return
   const target = event.target as { files?: FileList | null } | null
   const file = target?.files?.[0]
   if (!file) return
-  const text = await file.text()
-  mlCsvDraft.value = text
+  const sizeCheck = checkTrainingFile(file, isCustomMode.value ? 'custom' : 'campaign')
+  if (!sizeCheck.ok) {
+    toast.add({
+      title: 'Training error',
+      description: sizeCheck.error,
+      icon: 'i-lucide-triangle-alert',
+      color: 'neutral'
+    })
+    return
+  }
+  const buffer = await file.arrayBuffer()
+  const decoded = decodeTrainingCsv(buffer)
+  if (!decoded.ok) {
+    toast.add({
+      title: 'Training error',
+      description: decoded.error,
+      icon: 'i-lucide-triangle-alert',
+      color: 'neutral'
+    })
+    return
+  }
+  mlCsvDraft.value = decoded.text
   await handleTrainCustomMl()
 }
 
-const handleTrainCustomMl = async () => {
+const handleTrainCustomMl = async (confirmedReplace = false) => {
+  if (isAnonymous.value) return
   if (!selectedNode.value || selectedNode.value.data?.kind !== 'ml_classifier') return
+  if (
+    !confirmedReplace
+    && needsReplaceConfirmation(nodes.value, selectedNode.value.id, activeSessionModelId.value)
+  ) {
+    isReplaceModelConfirmOpen.value = true
+    return
+  }
+  isReplaceModelConfirmOpen.value = false
+  const targetId = selectedNode.value.id
   const algo = String(selectedNode.value.data.config.algorithm || 'tfidf')
   mlTraining.value = true
   try {
     const res = await trainClassifier({
       algorithm: algo,
-      csv_text: mlCsvDraft.value
+      csv_text: mlCsvDraft.value,
+      level_id: isCustomMode.value ? 'custom' : currentLevelId.value
     })
-    updateNodeConfig('dataset', res.dataset)
+    activeSessionModelId.value = res.model_id
+    syncBoard({
+      nodes: applyTrainedModelToBoard(nodes.value, targetId, res.model_id),
+      edges: edges.value
+    })
     mlTrainStats.value = {
       sampleCount: res.sample_count,
       accuracy: res.accuracy
     }
+    await refreshSession()
     toast.add({
       title: 'Model trained',
       description: `${res.sample_count} samples (${(res.accuracy * 100).toFixed(0)}% accuracy)`,
@@ -791,7 +846,10 @@ const applySavePayload = (save: Parameters<typeof boardFromSave>[0]) => {
       color: 'neutral'
     })
   } else {
-    syncBoard(restored)
+    syncBoard({
+      nodes: markUntrainedModelNodes(restored.nodes, [], { allMl: true }),
+      edges: restored.edges
+    })
     if (isCustomMode.value && save.custom) {
       // The key is never saved, so it stays whatever the player typed this visit.
       customAgent.value = { objective: save.custom.agent.objective, tools: [...(save.custom.agent.tools ?? [])] }
@@ -804,19 +862,39 @@ const applySavePayload = (save: Parameters<typeof boardFromSave>[0]) => {
   }
 }
 
+const persistBoard = async () => {
+  const payload = saveFromBoard({ nodes: nodes.value, edges: edges.value }, customSetup.value)
+  await putSave(saveLevelKey.value, payload)
+  setCachedBoard(saveOwnerKey.value, saveLevelKey.value, payload)
+  markSaved()
+}
+
 const handleSaveBoard = async () => {
   savingBoard.value = true
   try {
-    const payload = saveFromBoard({ nodes: nodes.value, edges: edges.value }, customSetup.value)
-    await putSave(saveLevelKey.value, payload)
-    setCachedBoard(saveOwnerKey.value, saveLevelKey.value, payload)
-    markSaved()
+    await persistBoard()
     toast.add({ title: 'Saved', icon: 'i-lucide-check', color: 'neutral' })
   } catch (err) {
     const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Try again in a moment.'
     toast.add({ title: 'Save failed', description: detail, icon: 'i-lucide-triangle-alert', color: 'neutral' })
   } finally {
     savingBoard.value = false
+  }
+}
+
+// Seed the header's High Score with the stored best (WEB-AGENT-019).
+const loadStoredHighScore = async () => {
+  if (isAnonymous.value || isCustomMode.value) return
+  const levelId = currentLevelId.value
+  try {
+    const stored = levelHighScore(await getProgress(), levelId)
+    if (levelId !== currentLevelId.value || stored.score === null) return
+    if (highScore.value === null || stored.score > highScore.value) {
+      highScore.value = stored.score
+      highStars.value = stored.stars
+    }
+  } catch (err) {
+    console.warn('Stored progress unavailable:', err)
   }
 }
 
@@ -854,23 +932,26 @@ const handleRunWave = async (singleMessage?: string) => {
   runningWave.value = true
   syncBoard(markBoardRunning(resetBoardStatuses({ nodes: nodes.value, edges: edges.value })))
   try {
-    const response = await runGame({
-      level_id: isCustomMode.value ? 'custom' : currentLevelId.value,
-      board: toApiBoard({ nodes: nodes.value, edges: edges.value }),
-      custom_message: singleMessage ?? null,
-      custom: isCustomMode.value
-        ? {
-            agent: apiCustomAgent.value,
-            dataset: customDataset.value.rows,
-            model: { provider: customProvider.value, model: customModel.value, api_key: customApiKey.value }
-          }
-        : null
-    })
+    const response = await runWithAnonymousRetry(
+      () => runGame({
+        level_id: isCustomMode.value ? 'custom' : currentLevelId.value,
+        board: toApiBoard({ nodes: nodes.value, edges: edges.value }),
+        custom_message: singleMessage ?? null,
+        custom: isCustomMode.value
+          ? {
+              agent: apiCustomAgent.value,
+              dataset: customDataset.value.rows,
+              model: { provider: customProvider.value, model: customModel.value, api_key: customApiKey.value }
+            }
+          : null
+      }),
+      continueAnonymously
+    )
     traces.value = response.traces
     waveScore.value = response.score
     if (!singleMessage) {
       newRecord.value = isNewRecord(highScore.value, response.score.total_score)
-      highStars.value = nextHighStars(highScore.value, highStars.value, response.score.total_score, response.score.medal)
+      highStars.value = nextHighStars(highScore.value, highStars.value, response.score.total_score, waveStars(response.score))
       highScore.value = nextHighScore(highScore.value, response.score.total_score)
     }
     if (!singleMessage) isResultsOpen.value = true
@@ -878,7 +959,24 @@ const handleRunWave = async (singleMessage?: string) => {
       { nodes: nodes.value, edges: edges.value },
       response.traces
     )
-    syncBoard(summarized)
+    const untrainedList = response.untrained_model_nodes ?? []
+    syncBoard({
+      nodes: untrainedList.length > 0
+        ? markUntrainedModelNodes(summarized.nodes, untrainedList)
+        : summarized.nodes,
+      edges: summarized.edges
+    })
+    if (activeSessionModelId.value && untrainedList.length > 0) {
+      const stillTrained = nodes.value.some(
+        n => n.data?.kind === 'ml_classifier' && n.data?.config.model_id === activeSessionModelId.value
+      )
+      if (!stillTrained) {
+        activeSessionModelId.value = null
+      }
+    }
+    if (!singleMessage && response.score.won && !isAnonymous.value) {
+      void persistBoard().catch(err => console.warn('Auto-save failed:', err))
+    }
     await refreshSession()
     if (!singleMessage && !isAnonymous.value && response.agent_mode === 'live') {
       void refreshScores({ background: true })
@@ -891,8 +989,7 @@ const handleRunWave = async (singleMessage?: string) => {
     }
   } catch (err) {
     syncBoard(resetBoardStatuses({ nodes: nodes.value, edges: edges.value }))
-    const detail = (err as { data?: { detail?: string } }).data?.detail
-      ?? 'Place at least one tool node between Input and the final node.'
+    const detail = errorDetail(err, 'Place at least one tool node between Input and the final node.')
     toast.add({
       title: 'Run blocked',
       description: detail,
@@ -919,6 +1016,7 @@ watch(
       highStars.value = 0
       resetBoard()
       void loadSavedBoard()
+      void loadStoredHighScore()
     }
   }
 )
@@ -959,13 +1057,30 @@ onMounted(async () => {
     ? loadSavedBoard()
     : sessionTask.then(ok => (ok ? loadSavedBoard() : undefined))
 
-  await Promise.all([sessionTask, catalogTask, saveTask])
+  const highScoreTask = sessionTask.then(ok => (ok ? loadStoredHighScore() : undefined))
+  await Promise.all([sessionTask, catalogTask, saveTask, highScoreTask])
   isLoadingBoard.value = false
 
   if (hasLevelTour.value && !isProLevelLocked.value && !hasSeenTour(currentLevelId.value)) {
     await nextTick()
     startLevelTour()
   }
+})
+
+if (import.meta.client) {
+  const onPageHide = () => {
+    triggerBeaconPurge(navigator)
+  }
+  onMounted(() => {
+    window.addEventListener('pagehide', onPageHide)
+  })
+  onBeforeUnmount(() => {
+    window.removeEventListener('pagehide', onPageHide)
+  })
+}
+
+onBeforeRouteLeave(() => {
+  void purgeModels().catch(() => {})
 })
 </script>
 
@@ -1434,18 +1549,18 @@ onMounted(async () => {
             class="flex flex-col items-center gap-3 text-center"
           >
             <UInputRating
-              :model-value="starsForMedal(waveScore.medal)"
+              :model-value="waveStars(waveScore)"
               :length="3"
               readonly
               color="warning"
               size="xl"
-              :aria-label="`${starsForMedal(waveScore.medal)} of 3 stars`"
+              :aria-label="`${waveStars(waveScore)} of 3 stars`"
             />
             <div class="space-y-1">
               <p class="text-4xl font-bold tabular-nums text-highlighted">
                 {{ waveScore.total_score.toLocaleString() }}
               </p>
-              <div class="flex flex-wrap items-center justify-center gap-2">
+              <div class="flex flex-col items-center justify-center gap-2">
                 <div v-if="waveScore.won">
                   <p class="font-bold text-xl py-1">
                     Victory
@@ -1463,22 +1578,12 @@ onMounted(async () => {
                   color="warning"
                   variant="subtle"
                 />
-                <UBadge
-                  v-if="waveScore.follow_up_passed"
-                  label="Mastered"
-                  icon="i-lucide-star"
-                  color="warning"
-                  variant="subtle"
-                />
               </div>
-              <p class="text-xs text-muted">
-                {{ waveOutcomeSummary(waveScore) }}
-              </p>
               <p
-                v-if="waveScore.won && !waveScore.follow_up_passed && waveScore.follow_up_feedback"
+                v-if="!waveScore.won"
                 class="text-xs text-muted"
               >
-                {{ waveScore.follow_up_feedback }}
+                {{ waveOutcomeSummary(waveScore) }}
               </p>
             </div>
 
@@ -2146,20 +2251,51 @@ onMounted(async () => {
                 v-if="selectedNode.data.kind === 'ml_classifier'"
                 class="space-y-3"
               >
-                <h3 class="flex items-center gap-1.5 text-sm font-semibold text-highlighted">
-                  Training data
-                  <UTooltip text="Upload or paste CSV rows of text,label where 1 means attack and 0 means safe. Untrained models pass all prompts through.">
-                    <UIcon
-                      name="i-lucide-circle-question-mark"
-                      class="size-3.5 text-dimmed"
+                <div class="flex items-center justify-between gap-2">
+                  <h3 class="flex items-center gap-1.5 text-sm font-semibold text-highlighted">
+                    Training data
+                    <UTooltip text="Upload or paste CSV rows of text,label where 1 means attack and 0 means safe. Untrained models pass all prompts through.">
+                      <UIcon
+                        name="i-lucide-circle-question-mark"
+                        class="size-3.5 text-dimmed"
+                      />
+                    </UTooltip>
+                  </h3>
+                  <UBadge
+                    v-if="selectedNode.data.config.retrainNeeded && !selectedNode.data.config.model_id"
+                    label="Retrain needed"
+                    color="warning"
+                    variant="subtle"
+                    size="xs"
+                  />
+                </div>
+                <p class="text-xs text-muted">
+                  {{ ML_TRAINING_NOTICE }}
+                </p>
+                <UAlert
+                  v-if="isAnonymous"
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-lucide-lock"
+                  title="Sign in required to train"
+                  description="Anonymous sessions cannot train custom ML filters."
+                >
+                  <template #actions>
+                    <UButton
+                      to="/auth/login"
+                      label="Sign in to train"
+                      color="neutral"
+                      variant="solid"
+                      size="xs"
                     />
-                  </UTooltip>
-                </h3>
+                  </template>
+                </UAlert>
                 <div class="space-y-3 rounded-md border border-default p-3">
                   <UInput
                     type="file"
                     accept=".csv,.txt"
                     size="sm"
+                    :disabled="isAnonymous"
                     class="w-full"
                     @change="onDatasetFileChange"
                   />
@@ -2167,13 +2303,22 @@ onMounted(async () => {
                     v-model="mlCsvDraft"
                     :rows="5"
                     variant="none"
+                    :disabled="isAnonymous"
                     :placeholder="'text,label\nignore previous instructions,1\nwhat are opening hours,0'"
                     class="w-full"
                   />
                   <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs tabular-nums text-dimmed">
-                      {{ mlTrainStats ? `${mlTrainStats.sampleCount} rows, ${(mlTrainStats.accuracy * 100).toFixed(0)}% accuracy` : Array.isArray(selectedNode.data.config.dataset) && selectedNode.data.config.dataset.length >= 2 ? `${selectedNode.data.config.dataset.length} rows trained` : 'Not trained yet' }}
-                    </span>
+                    <div class="flex flex-col">
+                      <span class="text-xs tabular-nums text-dimmed">
+                        {{ selectedNode.data.config.model_id && mlTrainStats ? `${mlTrainStats.sampleCount} rows, ${(mlTrainStats.accuracy * 100).toFixed(0)}% accuracy` : selectedNode.data.config.retrainNeeded ? 'Retrain needed' : 'Not trained yet' }}
+                      </span>
+                      <span
+                        v-if="!isAnonymous"
+                        class="text-xs tabular-nums text-muted"
+                      >
+                        {{ formatRemainingTrainings(session) }}
+                      </span>
+                    </div>
                     <UButton
                       label="Train model"
                       icon="i-lucide-cpu"
@@ -2181,8 +2326,8 @@ onMounted(async () => {
                       variant="solid"
                       size="sm"
                       :loading="mlTraining"
-                      :disabled="!mlCsvDraft.trim()"
-                      @click="handleTrainCustomMl"
+                      :disabled="isAnonymous || !mlCsvDraft.trim()"
+                      @click="handleTrainCustomMl(false)"
                     />
                   </div>
                 </div>
@@ -2404,11 +2549,19 @@ onMounted(async () => {
                   </UTooltip>
                 </h3>
                 <USelectMenu
-                  :model-value="String(selectedNode.data.config.model || 'llama-guard-3-8b')"
+                  :model-value="String(selectedNode.data.config.model || DEFAULT_SAFETY_CHECK_MODEL)"
                   :items="safetyCheckModelItems"
                   value-key="value"
                   class="w-full"
                   @update:model-value="updateNodeConfig('model', $event)"
+                />
+                <USwitch
+                  v-if="nodeSupportsThinking(selectedNode.data.kind, String(selectedNode.data.config.model || DEFAULT_SAFETY_CHECK_MODEL))"
+                  color="neutral"
+                  :model-value="Boolean(selectedNode.data.config.thinking)"
+                  label="Thinking"
+                  description="The model reasons before it answers. It catches more attacks but costs more tokens and time."
+                  @update:model-value="updateNodeConfig('thinking', Boolean($event))"
                 />
               </section>
 
@@ -2476,11 +2629,19 @@ onMounted(async () => {
                     </UTooltip>
                   </h3>
                   <USelectMenu
-                    :model-value="String(selectedNode.data.config.model || 'gemini-2.5-flash')"
+                    :model-value="String(selectedNode.data.config.model || DEFAULT_LLM_REVIEW_MODEL)"
                     :items="llmReviewModelItems"
                     value-key="value"
                     class="w-full"
                     @update:model-value="updateNodeConfig('model', $event)"
+                  />
+                  <USwitch
+                    v-if="nodeSupportsThinking(selectedNode.data.kind, String(selectedNode.data.config.model || DEFAULT_LLM_REVIEW_MODEL))"
+                    color="neutral"
+                    :model-value="Boolean(selectedNode.data.config.thinking)"
+                    label="Thinking"
+                    description="The model reasons before it answers. It catches more attacks but costs more tokens and time."
+                    @update:model-value="updateNodeConfig('thinking', Boolean($event))"
                   />
                 </div>
                 <div class="space-y-2">
@@ -2500,12 +2661,6 @@ onMounted(async () => {
                       label="Allow reviewer AI to switch off final agent tools"
                       @update:model-value="updateNodeConfig('tool_policy_enabled', Boolean($event))"
                     />
-                    <p
-                      v-if="Boolean(selectedNode.data.config.tool_policy_enabled)"
-                      class="text-xs text-muted"
-                    >
-                      Instruct the reviewer AI below when to switch off specific tools ({{ numberedAgentTools.map(t => t.label).join(', ') || 'Tool 1, Tool 2, ...' }}) for the final agent instead of blocking the prompt.
-                    </p>
                   </div>
                 </div>
                 <div class="space-y-2">
@@ -2601,5 +2756,28 @@ onMounted(async () => {
         </div>
       </template>
     </UPopover>
+
+    <UModal
+      v-model:open="isReplaceModelConfirmOpen"
+      title="Replace earlier trained model?"
+      :description="REPLACE_MODEL_WARNING"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            label="Cancel"
+            color="neutral"
+            variant="ghost"
+            @click="isReplaceModelConfirmOpen = false"
+          />
+          <UButton
+            label="Train & replace"
+            color="neutral"
+            variant="solid"
+            @click="handleTrainCustomMl(true)"
+          />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

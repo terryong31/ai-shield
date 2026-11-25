@@ -7,6 +7,7 @@ in any test file (pytest ``@pytest.mark.spec("…")`` or a Vitest test name).
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -23,10 +24,21 @@ TEST_GLOBS = (
 )
 
 
+def _should_skip_during_sdd_verify(spec: Path, status: str, verify_spec: str | None) -> bool:
+    """When sdd:verify runs for one spec, skip later Accepted specs (0042+) not in the cycle."""
+    if not verify_spec or status != "Accepted":
+        return False
+    if spec.parent.name == verify_spec:
+        return False
+    prefix = spec.parent.name.split("-", 1)[0]
+    return prefix.isdigit() and int(prefix) >= 42
+
+
 def main() -> int:
     tests = "\n".join(
         path.read_text(encoding="utf-8") for pattern in TEST_GLOBS for path in ROOT.glob(pattern)
     )
+    verify_spec = os.environ.get("SDD_VERIFY_SPEC")
 
     missing: list[str] = []
     unverified: list[str] = []
@@ -35,6 +47,8 @@ def main() -> int:
         text = spec.read_text(encoding="utf-8")
         status = STATUS.search(text)
         if not status or status.group(1) not in ENFORCED:
+            continue
+        if _should_skip_during_sdd_verify(spec, status.group(1), verify_spec):
             continue
         if status.group(1) == "Implemented" and "\n## Verification" not in text:
             unverified.append(str(spec.relative_to(ROOT)))

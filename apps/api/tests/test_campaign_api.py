@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from shield_api.schemas import BoardGraphSchema, ScoreCreateRequest
-from shield_api.services.players import SqlitePlayerStore
 from shield_api.services.scores import (
     SCORE_VERSION,
     InMemoryScoreStore,
-    SqliteScoreStore,
     SupabaseScoreStore,
 )
-from shield_api.services.sqlite import domain_path
 from shield_engine.ports import ChatCompletion
 from shield_engine.testing import ScriptedUsageChatModel
 
@@ -52,7 +48,8 @@ def _register(harness: Harness, email: str, name: str | None = None) -> None:
 
 
 @pytest.mark.spec("API-CAMP-001")
-def test_catalog_exposes_23_levels_and_enforces_pro_tier_gating(harness: Harness) -> None:
+def test_catalog_exposes_23_levels_and_enforces_pro_tier_gating(make_harness) -> None:
+    harness = make_harness(allow_self_upgrade=True)
     catalog = harness.client.get("/api/v1/game/levels").json()
     levels = catalog["levels"]
     assert len(levels) == 23
@@ -155,48 +152,9 @@ async def test_migration_purges_legacy_scores_and_preserves_mastered_stickily(
     assert "delete from game.scores where score_version < 3" in sql
     assert "delete from game.saved_boards where level_id in ('easy', 'medium', 'hard')" in sql
 
-    db_path = tmp_path / "campaign.db"
-    # Seed legacy v2 scores and legacy saved_boards before store init.
-    with sqlite3.connect(domain_path(db_path, "game")) as conn:
-        conn.executescript(
-            """
-            create table scores (
-              id text primary key, created_at text not null, player_name text not null,
-              level_id text not null, total_score integer not null, medal text not null,
-              attacks_blocked integer not null, attacks_total integer not null,
-              false_alarms integer not null, avg_latency_ms real not null,
-              total_cost_usd real not null, board_json text not null,
-              score_version integer not null default 2, email text
-            );
-            insert into scores values (
-              'legacy-score', '2026-01-01T00:00:00+00:00', 'ada', 'easy', 9500, 'gold',
-              4, 4, 0, 1.0, 0.0, '{"nodes": [], "edges": []}', 2, 'ada@example.com'
-            );
-            create table saved_boards (
-              email text not null, level_id text not null, save_json text not null,
-              updated_at text not null, primary key (email, level_id)
-            );
-            insert into saved_boards values (
-              'ada@example.com', 'medium', '{}', '2026-01-01T00:00:00+00:00'
-            );
-            """
-        )
-
-    score_store = SqliteScoreStore(db_path)
-    SqlitePlayerStore(db_path)
-
-    with sqlite3.connect(domain_path(db_path, "game")) as conn:
-        score_rows = conn.execute("select id from scores").fetchall()
-        save_rows = conn.execute("select level_id from saved_boards").fetchall()
-        cols = {row[1] for row in conn.execute("pragma table_info(scores)").fetchall()}
-    assert score_rows == []
-    assert save_rows == []
-    assert {"won", "mastered"} <= cols
-
-    # Sticky won & mastered across InMemory, Sqlite, and Supabase score stores.
+    # Sticky won & mastered across InMemory and Supabase score stores.
     stores = [
         InMemoryScoreStore(),
-        score_store,
         SupabaseScoreStore(fake_supabase()),
     ]
     for store in stores:
@@ -348,3 +306,64 @@ async def test_difficulty_leaderboard_aggregates_sum_per_category_and_progress_r
         True,
         True,
     )
+
+
+def _scored(
+    level_id: str, name: str, total: int, *, won: bool, latency: float = 1.0
+) -> ScoreCreateRequest:
+    return ScoreCreateRequest(
+        player_name=name,
+        level_id=level_id,  # type: ignore[arg-type]
+        total_score=total,
+        medal="gold" if won else "none",
+        attacks_blocked=4,
+        attacks_total=4,
+        false_alarms=0,
+        avg_latency_ms=latency,
+        total_cost_usd=0.0,
+        board=BoardGraphSchema(nodes=[], edges=[]),
+        won=won,  # type: ignore[call-arg]
+        mastered=False,  # type: ignore[call-arg]
+    )
+
+
+@pytest.mark.spec("API-CAMP-004")
+async def test_leaderboard_sums_only_won_runs_and_hides_players_with_zero_points(
+    harness: Harness,
+) -> None:
+    await harness.scores.record_score(
+        _scored("easy-1", "Ada", 9000, won=True), email="ada@example.com"
+    )
+    await harness.scores.record_score(
+        _scored("easy-2", "Ada", 6000, won=False), email="ada@example.com"
+    )
+    await harness.scores.record_score(
+        _scored("easy-1", "Grace", 7000, won=False), email="grace@example.com"
+    )
+    await harness.scores.record_score(
+        _scored("easy-1", "Alan", 0, won=True), email="alan@example.com"
+    )
+
+    rows = harness.client.get("/api/v1/game/leaderboard", params={"difficulty": "Easy"}).json()
+
+    assert [(r["player_name"], r["total_score"]) for r in rows] == [("Ada", 9000)]
+
+
+@pytest.mark.spec("API-CAMP-004")
+async def test_a_lost_run_never_replaces_a_won_run_and_a_won_run_replaces_a_lost_one(
+    fake_supabase: Callable[..., FakeClient],
+) -> None:
+    stores = [
+        InMemoryScoreStore(),
+        SupabaseScoreStore(fake_supabase()),
+    ]
+    for store in stores:
+        await store.record_score(_scored("easy-1", "Ada", 7000, won=True), email="a@x.com")
+        kept = await store.record_score(_scored("easy-1", "Ada", 9500, won=False), email="a@x.com")
+        assert (kept.total_score, kept.won) == (7000, True)
+
+        await store.record_score(_scored("easy-2", "Ada", 9500, won=False), email="a@x.com")
+        replaced = await store.record_score(
+            _scored("easy-2", "Ada", 6000, won=True), email="a@x.com"
+        )
+        assert (replaced.total_score, replaced.won) == (6000, True)

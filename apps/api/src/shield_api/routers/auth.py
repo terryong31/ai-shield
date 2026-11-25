@@ -9,7 +9,12 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from shield_api.container import Container
-from shield_api.dependencies import PLAYER_SESSION_COOKIE, ContainerDep
+from shield_api.dependencies import (
+    PLAYER_SESSION_COOKIE,
+    ContainerDep,
+    client_address,
+    enforce_rate_limit,
+)
 from shield_api.schemas import (
     PlayerConfirmationResponse,
     PlayerLoginRequest,
@@ -25,9 +30,16 @@ from shield_api.services.identity import (
     InvalidIdentityError,
     VerifiedPlayer,
 )
-from shield_api.services.players import (
-    InvalidCredentialsError,
-    PlayerAlreadyExistsError,
+from shield_api.services.rate_limit import (
+    ANON_IP_LIMIT,
+    ANON_IP_WINDOW,
+    AUTH_IP_LIMIT,
+    AUTH_IP_WINDOW,
+    EMAIL_SEND_LIMIT,
+    EMAIL_SEND_WINDOW,
+    LOGIN_FAIL_EMAIL_LIMIT,
+    LOGIN_FAIL_EMAIL_WINDOW,
+    RateLimitExceededError,
 )
 from shield_api.settings import Settings
 
@@ -65,6 +77,14 @@ async def sign_in_anonymous_player(
 ) -> PlayerSessionStatus:
     """Create a free anonymous player session."""
     settings = container.settings
+    if settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "anon_ip",
+            client_address(request),
+            limit=ANON_IP_LIMIT,
+            window_seconds=ANON_IP_WINDOW,
+        )
     if previous := request.cookies.get(PLAYER_SESSION_COOKIE):
         await container.players.revoke(previous)
 
@@ -78,6 +98,23 @@ async def _open_verified(
     player: VerifiedPlayer, request: Request, response: Response, container: Container
 ) -> PlayerSessionStatus:
     settings = container.settings
+    if player.profile_email is not None and player.profile_email != player.email:
+        try:
+            await container.scores.rename_scores_email(player.profile_email, player.email)
+            await container.leaderboard.on_owner_renamed(player.profile_email, player.email)
+            await container.players.move_email(player.profile_email, player.email)
+        except Exception:
+            logger.exception("deferred email change move failed on sign-in")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    if player.user_id is not None and player.profile_email != player.email:
+        try:
+            await container.identity.set_profile_email(
+                player.user_id, player.email, player.app_metadata
+            )
+        except IdentityUnavailableError:
+            logger.exception("failed to record profile_email in app_metadata")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+
     if previous := request.cookies.get(PLAYER_SESSION_COOKIE):
         await container.players.revoke(previous)
     ttl = timedelta(minutes=settings.SESSION_TTL_MINUTES)
@@ -102,40 +139,25 @@ def _confirmation_sent() -> JSONResponse:
             "model": PlayerConfirmationResponse,
             "description": "Check your email: sent for every address when confirmation is on.",
         },
-        409: {"description": "An account with this email already exists (local mode only)."},
     },
 )
 async def register_player(
     body: PlayerRegisterRequest, request: Request, response: Response, container: ContainerDep
 ) -> Response | PlayerSessionStatus:
-    """Register a player on the free tier.
-
-    With Supabase, the player must confirm their email before signing in.
-    """
-    email = body.email.strip().lower()
-    if container.identity is not None:
-        player = await container.identity.register(email, body.password, body.player_name)
-        if player is None:
-            return _confirmation_sent()
-        return await _open_verified(player, request, response, container)
-
-    settings = container.settings
-    if previous := request.cookies.get(PLAYER_SESSION_COOKIE):
-        await container.players.revoke(previous)
-
-    ttl = timedelta(minutes=settings.SESSION_TTL_MINUTES)
-    try:
-        token, session_status = await container.players.register(
-            email=email,
-            password=body.password,
-            player_name=body.player_name,
-            ttl=ttl,
+    """Register a player on the free tier via Supabase Auth."""
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "auth_ip",
+            client_address(request),
+            limit=AUTH_IP_LIMIT,
+            window_seconds=AUTH_IP_WINDOW,
         )
-    except PlayerAlreadyExistsError as err:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(err)) from err
-
-    _set_player_cookie(response, token, settings, ttl)
-    return session_status
+    email = body.email.strip().lower()
+    player = await container.identity.register(email, body.password, body.player_name)
+    if player is None:
+        return _confirmation_sent()
+    return await _open_verified(player, request, response, container)
 
 
 @router.post(
@@ -143,6 +165,7 @@ async def register_player(
     responses={
         401: {"description": "Invalid email or password."},
         403: {"description": "The email has not been confirmed yet."},
+        429: {"description": "Too many requests."},
         503: {"description": "Sign-in is unavailable."},
     },
 )
@@ -151,33 +174,45 @@ async def login_player(
 ) -> PlayerSessionStatus:
     """Sign in an existing player account."""
     email = body.email.strip().lower()
-    if container.identity is not None:
-        try:
-            player = await container.identity.verify(email, body.password)
-        except InvalidIdentityError:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LOGIN) from None
-        except EmailNotConfirmedError:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, NOT_CONFIRMED) from None
-        except IdentityUnavailableError:
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
-        return await _open_verified(player, request, response, container)
-
-    settings = container.settings
-    if previous := request.cookies.get(PLAYER_SESSION_COOKIE):
-        await container.players.revoke(previous)
-
-    ttl = timedelta(minutes=settings.SESSION_TTL_MINUTES)
-    try:
-        token, session_status = await container.players.login(
-            email=email,
-            password=body.password,
-            ttl=ttl,
+    is_prod = container.settings.APP_ENV == "production"
+    if is_prod:
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "auth_ip",
+            client_address(request),
+            limit=AUTH_IP_LIMIT,
+            window_seconds=AUTH_IP_WINDOW,
         )
-    except InvalidCredentialsError:
+        try:
+            await container.rate_limiter.check_only(
+                "login_fail",
+                email,
+                limit=LOGIN_FAIL_EMAIL_LIMIT,
+                window_seconds=LOGIN_FAIL_EMAIL_WINDOW,
+            )
+        except RateLimitExceededError as err:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                err.detail,
+                headers={"Retry-After": str(err.retry_after)},
+            ) from None
+    try:
+        player = await container.identity.verify(email, body.password)
+    except InvalidIdentityError:
+        if is_prod:
+            await container.rate_limiter.record_failure(
+                "login_fail", email, window_seconds=LOGIN_FAIL_EMAIL_WINDOW
+            )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LOGIN) from None
-
-    _set_player_cookie(response, token, settings, ttl)
-    return session_status
+    except EmailNotConfirmedError:
+        if is_prod:
+            await container.rate_limiter.record_failure(
+                "login_fail", email, window_seconds=LOGIN_FAIL_EMAIL_WINDOW
+            )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, NOT_CONFIRMED) from None
+    except IdentityUnavailableError:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    return await _open_verified(player, request, response, container)
 
 
 @router.post(
@@ -185,37 +220,62 @@ async def login_player(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def resend_confirmation(
-    body: PlayerResendRequest, container: ContainerDep
+    body: PlayerResendRequest, request: Request, container: ContainerDep
 ) -> PlayerConfirmationResponse:
     """Send the confirmation email again. The answer is the same for every address."""
-    if container.identity is not None:
-        await container.identity.resend(body.email.strip().lower())
+    email = body.email.strip().lower()
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "auth_ip",
+            client_address(request),
+            limit=AUTH_IP_LIMIT,
+            window_seconds=AUTH_IP_WINDOW,
+        )
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "resend_email",
+            email,
+            limit=EMAIL_SEND_LIMIT,
+            window_seconds=EMAIL_SEND_WINDOW,
+        )
+    await container.identity.resend(email)
     return PlayerConfirmationResponse()
 
 
 @router.post("/recover")
 async def recover_player_password(
-    body: PlayerRecoverRequest, container: ContainerDep
+    body: PlayerRecoverRequest, request: Request, container: ContainerDep
 ) -> PlayerRecoverResponse:
-    """Trigger a password recovery email via Supabase Auth when configured."""
-    settings = container.settings
-    if settings.SUPABASE_URL and settings.SUPABASE_KEY:
-        try:
-            from supabase import create_client
-
-            sb = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY.get_secret_value())
-            sb.auth.reset_password_for_email(body.email.strip())
-        except Exception:
-            logger.debug("Supabase reset_password_for_email skipped or unavailable")
+    """Trigger a password recovery email via Supabase Auth."""
+    email = body.email.strip().lower()
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "auth_ip",
+            client_address(request),
+            limit=AUTH_IP_LIMIT,
+            window_seconds=AUTH_IP_WINDOW,
+        )
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "recover_email",
+            email,
+            limit=EMAIL_SEND_LIMIT,
+            window_seconds=EMAIL_SEND_WINDOW,
+        )
+    await container.identity.recover(email)
     return PlayerRecoverResponse()
 
 
 @router.post(
     "/upgrade",
-    responses={403: {"description": "Sign in required to upgrade plan."}},
+    responses={403: {"description": "Paid plans are disabled or sign-in is required."}},
 )
 async def upgrade_player_plan(request: Request, container: ContainerDep) -> PlayerSessionStatus:
     """Upgrade the currently signed-in player from the free tier to the paid tier."""
+    if not container.settings.ALLOW_SELF_UPGRADE:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Paid plans are not available yet.")
     token = request.cookies.get(PLAYER_SESSION_COOKIE)
     try:
         return await container.players.upgrade(token)
@@ -229,6 +289,7 @@ async def logout_player(request: Request, container: ContainerDep) -> Response:
     settings = container.settings
     if token := request.cookies.get(PLAYER_SESSION_COOKIE):
         await container.players.revoke(token)
+        await container.models.purge_session(token)
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     response.delete_cookie(
         PLAYER_SESSION_COOKIE,

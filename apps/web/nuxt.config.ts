@@ -4,7 +4,9 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    '@vueuse/nuxt'
+    '@vueuse/nuxt',
+    // Vercel Web Analytics: the script only reports on Vercel deployments
+    '@vercel/analytics'
   ],
   app: {
     head: {
@@ -32,6 +34,8 @@ export default defineNuxtConfig({
   // and NUXT_PUBLIC_SITE_URL. No database keys live here.
   runtimeConfig: {
     apiProxyTarget: 'http://localhost:8000',
+    apiProxySecret: '',
+    clientIpHeader: 'x-vercel-forwarded-for',
     public: {
       siteUrl: 'http://localhost:3000'
     }

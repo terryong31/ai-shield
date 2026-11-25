@@ -110,10 +110,15 @@ Check locally with `mise run spec:check`.
 | 0038 | [ML filter user-defined training data only](0038-ml-classifier-user-data-only/spec.md) | ENG, API, WEB | Implemented |
 | 0039 | [Campaign levels and difficulty leaderboard](0039-campaign-levels-and-difficulty-leaderboard/spec.md) | ENG, API | Implemented |
 | 0040 | [Minimal monochrome Level Select and in-game briefing UI](0040-campaign-problem-hub-and-briefing-ui/spec.md) | WEB | Implemented |
-| 0028 | [Instant leaderboard](0028-instant-leaderboard/spec.md) | API, WEB | Draft |
+| 0028 | [Instant leaderboard](0028-instant-leaderboard/spec.md) | API, WEB | Superseded by 0044 |
 | 0026 | [Game-only cleanup](0026-game-only-cleanup/spec.md) | ENG, API, WEB | Draft |
 | 0027 | [Player email confirmation](0027-player-email-confirmation/spec.md) | API, WEB | Draft |
 | 0041 | [Same-origin API proxy](0041-same-origin-api-proxy/spec.md) | WEB | Implemented |
+| 0042 | [Run spend and account integrity](0042-run-spend-and-account-integrity/spec.md) | API, WEB | Implemented |
+| 0043 | [Rate limiting, trusted client IP, bot protection and production configuration](0043-rate-limiting-and-client-ip/spec.md) | API, WEB | Implemented |
+| 0044 | [Leaderboard on Redis sorted sets](0044-leaderboard-read-scaling/spec.md) | API, WEB | Implemented |
+| 0045 | [Training upload hardening and server-held models](0045-train-upload-hardening/spec.md) | ENG, API, WEB | Implemented |
+| 0046 | [Remove SQLite: Supabase is the only store](0046-remove-sqlite-supabase-only/spec.md) | API, DEV | Implemented |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

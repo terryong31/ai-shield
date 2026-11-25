@@ -1,17 +1,22 @@
 import asyncio
-import contextlib
-import json
+import hashlib
 import logging
-from collections.abc import AsyncIterator
+import secrets
+import sys
 from dataclasses import asdict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from shield_api.container import Container
-from shield_api.dependencies import PLAYER_SESSION_COOKIE, ClearanceDep, ContainerDep
+from shield_api.dependencies import (
+    PLAYER_SESSION_COOKIE,
+    ClearanceDep,
+    ContainerDep,
+    client_address,
+    enforce_rate_limit,
+)
 from shield_api.providers.byok import ProviderAuthError
 from shield_api.schemas import (
     BoardGraphSchema,
@@ -23,6 +28,7 @@ from shield_api.schemas import (
     GameRunResponse,
     GameTrainRequest,
     GameTrainResponse,
+    LeaderboardRankResponse,
     MessageTraceSchema,
     PlayerProgressResponse,
     PlayerSessionStatus,
@@ -34,13 +40,24 @@ from shield_api.schemas import (
     WaveScoreSchema,
 )
 from shield_api.services.clearance import Clearance
-from shield_api.services.players import AI_AGENT_NODE_KINDS, QuotaExceededError
-from shield_api.services.scores import (
-    RedisCachedScoreStore,
-    aggregate_difficulty_leaderboard,
-    build_player_progress,
+from shield_api.services.models import (
+    CAMPAIGN_TRAIN_MAX_BYTES,
+    ModelTooLargeError,
+    owner_hash,
+    signing_context,
 )
+from shield_api.services.players import AI_AGENT_NODE_KINDS, QuotaExceededError
+from shield_api.services.rate_limit import (
+    GAME_RUN_ACTOR_LIMIT,
+    GAME_RUN_ACTOR_WINDOW,
+    GAME_RUN_IP_LIMIT,
+    GAME_RUN_IP_WINDOW,
+    GAME_TRAIN_EMAIL_LIMIT,
+    GAME_TRAIN_EMAIL_WINDOW,
+)
+from shield_api.services.scores import build_player_progress
 from shield_engine.game import (
+    ALLOWED_ML_ALGORITHMS,
     AgentProfile,
     AgentTool,
     AgentUnavailableError,
@@ -50,14 +67,17 @@ from shield_engine.game import (
     BoardValidationError,
     DifficultyCategory,
     LevelId,
+    fit_classifier,
     get_check_catalog,
     get_level,
     get_levels,
+    parse_dataset_csv,
     run_single_message,
     run_wave,
-    train_custom_classifier,
+    strip_training_data,
     validate_board,
     validate_board_for_level,
+    validate_training_rows,
 )
 from shield_engine.game.custom import (
     build_custom_messages,
@@ -65,11 +85,12 @@ from shield_engine.game.custom import (
     run_custom_wave,
     validate_custom_profile,
 )
-from shield_engine.ports import JevClient, UsageChatModel
+from shield_engine.ports import JevClient, ProbabilityModel
 
 logger = logging.getLogger(__name__)
 
 BYOK_KEY_MAX_CHARS = 200
+MODEL_CHECK_NODE_KINDS = frozenset({"safety_check", "llm_review", "jev"})
 
 router = APIRouter(prefix="/game", tags=["Game"])
 
@@ -89,6 +110,56 @@ def _to_engine_board(schema: BoardGraphSchema) -> BoardGraph:
     )
 
 
+def _strip_board_schema(board: BoardGraphSchema) -> BoardGraphSchema:
+    engine_board = _to_engine_board(board)
+    stripped = strip_training_data(engine_board)
+    return BoardGraphSchema(
+        nodes=[
+            {"id": n.id, "kind": n.kind, "config": dict(n.config)}  # type: ignore[misc]
+            for n in stripped.nodes
+        ],
+        edges=list(board.edges),
+    )
+
+
+def _reject_board_dataset(board: BoardGraphSchema) -> None:
+    for node in board.nodes:
+        if "dataset" in node.config:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Training data is not accepted here. Train the ML filter first.",
+            )
+
+
+async def _load_board_ml_models(
+    board: BoardGraph,
+    token: str | None,
+    player: PlayerSessionStatus,
+    container: Container,
+) -> tuple[dict[str, ProbabilityModel], list[str]]:
+    loaded: dict[str, ProbabilityModel] = {}
+    untrained: list[str] = []
+    key = container.model_signing_key
+    for node in board.nodes:
+        if node.kind != "ml_classifier":
+            continue
+        raw_mid = node.config.get("model_id")
+        if (
+            isinstance(raw_mid, str)
+            and raw_mid
+            and token
+            and key is not None
+            and player.authenticated
+            and not player.is_anonymous
+        ) and raw_mid not in loaded:
+            model = await container.models.get(token, raw_mid, signing_key=key)
+            if model is not None:
+                loaded[raw_mid] = model
+        if not isinstance(raw_mid, str) or raw_mid not in loaded:
+            untrained.append(node.id)
+    return loaded, untrained
+
+
 @router.get("/levels")
 async def list_game_levels(container: ContainerDep) -> GameCatalogResponse:
     """Return built-in levels and placeable check definitions."""
@@ -99,12 +170,14 @@ async def list_game_levels(container: ContainerDep) -> GameCatalogResponse:
         checks=checks,
         jev_key_configured=container.jev_client is not None,
         ai_key_configured=bool(container.game_agent or container.game_agents),
+        self_upgrade_enabled=container.settings.ALLOW_SELF_UPGRADE,
     )
 
 
 @router.post(
     "/run",
     responses={
+        401: {"description": "Session required to run a level or node that uses a hosted model."},
         403: {"description": "Sign in required for AI agent nodes."},
         422: {"description": "Invalid board graph"},
         429: {"description": "Daily run limit reached."},
@@ -118,30 +191,68 @@ async def run_game_board(
     body: GameRunRequest, request: Request, container: ContainerDep
 ) -> GameRunResponse:
     """Run either a full level wave or a single custom message against a player's board."""
+    token = request.cookies.get(PLAYER_SESSION_COOKIE)
+    player = await container.players.lookup(token)
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "game_run_ip",
+            client_address(request),
+            limit=GAME_RUN_IP_LIMIT,
+            window_seconds=GAME_RUN_IP_WINDOW,
+        )
+        if player.authenticated:
+            actor_key = (
+                player.email
+                if player.email
+                else hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+            )
+            await enforce_rate_limit(
+                container.rate_limiter,
+                "game_run_actor",
+                actor_key,
+                limit=GAME_RUN_ACTOR_LIMIT,
+                window_seconds=GAME_RUN_ACTOR_WINDOW,
+            )
+
+    _reject_board_dataset(body.board)
+    if len(body.board.nodes) > SAVE_MAX_NODES or len(body.board.edges) > SAVE_MAX_EDGES:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            f"A board holds at most {SAVE_MAX_NODES} nodes and {SAVE_MAX_EDGES} wires.",
+        )
     board = _to_engine_board(body.board)
     try:
         validate_board(board)
     except BoardValidationError as err:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
 
-    token = request.cookies.get(PLAYER_SESSION_COOKIE)
-    player = await container.players.lookup(token)
     uses_ai_nodes = any(node.kind in AI_AGENT_NODE_KINDS for node in board.nodes)
-    if uses_ai_nodes and not player.ai_nodes_allowed:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Sign in required to use AI agent nodes (safety_check, llm_review).",
-        )
 
     jev_client = container.jev_client
     check_model = container.game_agent
 
     if body.level_id == "custom":
-        return await _run_custom(
-            body, board, player, container, jev_client=jev_client, check_model=check_model
-        )
+        if uses_ai_nodes and not player.ai_nodes_allowed:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Sign in required to use AI agent nodes (safety_check, llm_review).",
+            )
+        return await _run_custom(body, board, player, container, token=token, jev_client=jev_client)
 
     level = get_level(body.level_id)
+    uses_model_checks = any(node.kind in MODEL_CHECK_NODE_KINDS for node in board.nodes)
+    counts_quota = level.agent is not None or uses_model_checks
+    if counts_quota and not player.authenticated:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Start a session to play this level.",
+        )
+    if uses_ai_nodes and not player.ai_nodes_allowed:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Sign in required to use AI agent nodes (safety_check, llm_review).",
+        )
     if level.tier == "pro" and player.tier != "paid":
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -152,12 +263,12 @@ async def run_game_board(
     except BoardValidationError as err:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
 
+    ml_models, untrained_nodes = await _load_board_ml_models(board, token, player, container)
+
     is_custom_test = body.custom_message is not None
-    # A classification-only level calls no model, so it costs no quota (spec 0021).
-    counts_quota = level.agent is not None
     if counts_quota:
         try:
-            player = await container.players.check_run(token, is_custom_test=is_custom_test)
+            player = await container.players.reserve_run(token, is_custom_test=is_custom_test)
         except QuotaExceededError as err:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
 
@@ -173,6 +284,7 @@ async def run_game_board(
                 jev_client=jev_client,
                 check_model=check_model,
                 check_model_for=container.check_model_for,
+                ml_models=ml_models,
             )
         else:
             result = await run_wave(
@@ -184,10 +296,15 @@ async def run_game_board(
                 jev_client=jev_client,
                 check_model=check_model,
                 check_model_for=container.check_model_for,
+                ml_models=ml_models,
             )
     except BoardValidationError as err:
+        if counts_quota:
+            await container.players.release_run(token, is_custom_test=is_custom_test)
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
     except AgentUnavailableError as err:
+        if counts_quota:
+            await container.players.release_run(token, is_custom_test=is_custom_test)
         cause = err.__cause__
         if isinstance(cause, ProviderAuthError):
             raise HTTPException(
@@ -198,19 +315,16 @@ async def run_game_board(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "The AI Agent is unavailable right now. This run was not counted.",
         ) from err
-
-    # Charged only after a successful run, so provider failures never cost a run.
-    if counts_quota:
-        try:
-            await container.players.consume_run(token, is_custom_test=is_custom_test)
-        except QuotaExceededError as err:
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
+    except BaseException:
+        if counts_quota:
+            await container.players.release_run(token, is_custom_test=is_custom_test)
+        raise
 
     score_schema = WaveScoreSchema.model_validate(asdict(result.score))
     # Simulated agent runs are practice; live and model-free (Easy) runs are recorded.
     recordable = result.agent_mode in ("live", "none")
     if not is_custom_test and player.can_record_scores and recordable:
-        await container.scores.record_score(
+        change = await container.scores.record_score_change(
             ScoreCreateRequest(
                 player_name=player.player_name,
                 level_id=body.level_id,
@@ -221,20 +335,20 @@ async def run_game_board(
                 false_alarms=score_schema.false_alarms,
                 avg_latency_ms=score_schema.avg_latency_ms,
                 total_cost_usd=score_schema.total_cost_usd,
-                board=body.board,
+                board=_strip_board_schema(body.board),
                 won=score_schema.won,
                 mastered=score_schema.follow_up_passed,
             ),
             email=player.email,
         )
-        if not isinstance(container.scores, RedisCachedScoreStore):
-            await container.leaderboard_notifier.publish(level_id=body.level_id, reason="recorded")
+        await container.leaderboard.on_score_recorded(player.email, change)
 
     return GameRunResponse(
         level_id=result.level_id,
         traces=[MessageTraceSchema.model_validate(asdict(t)) for t in result.traces],
         score=score_schema,
         agent_mode=result.agent_mode,
+        untrained_model_nodes=untrained_nodes,
     )
 
 
@@ -244,8 +358,8 @@ async def _run_custom(
     player: PlayerSessionStatus,
     container: Container,
     *,
+    token: str | None = None,
     jev_client: JevClient | None = None,
-    check_model: UsageChatModel | None = None,
 ) -> GameRunResponse:
     """Custom sandbox (spec 0022): the player's agent, dataset and key, for paid players.
 
@@ -274,6 +388,7 @@ async def _run_custom(
     except BoardValidationError as err:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
 
+    ml_models, untrained_nodes = await _load_board_ml_models(board, token, player, container)
     model = container.byok_factory(custom.model.provider, custom.model.model, api_key)
     try:
         if body.custom_message is not None:
@@ -284,7 +399,9 @@ async def _run_custom(
                 agent=model,
                 classifier=container.classifier,
                 jev_client=jev_client,
-                check_model=check_model or model,
+                check_model=model,
+                check_model_for=lambda _: model,
+                ml_models=ml_models,
             )
         else:
             result = await run_custom_wave(
@@ -294,7 +411,9 @@ async def _run_custom(
                 agent=model,
                 classifier=container.classifier,
                 jev_client=jev_client,
-                check_model=check_model or model,
+                check_model=model,
+                check_model_for=lambda _: model,
+                ml_models=ml_models,
             )
     except AgentUnavailableError as err:
         cause = err.__cause__
@@ -312,6 +431,7 @@ async def _run_custom(
         traces=[MessageTraceSchema.model_validate(asdict(t)) for t in result.traces],
         score=WaveScoreSchema.model_validate(asdict(result.score)),
         agent_mode=result.agent_mode,
+        untrained_model_nodes=untrained_nodes,
     )
 
 
@@ -337,7 +457,7 @@ async def _saving_email(request: Request, container: Container, level_id: RunLev
 
 
 def _upgrade_legacy_save(save: dict[str, Any]) -> dict[str, Any]:
-    """Migrate retired ``quick_screen`` nodes in saved boards to ``ml_classifier`` (tfidf)."""
+    """Migrate retired ``quick_screen`` nodes and strip ML training data from saved boards."""
     board = save.get("board")
     if not isinstance(board, dict):
         return save
@@ -349,9 +469,21 @@ def _upgrade_legacy_save(save: dict[str, Any]) -> dict[str, Any]:
     for node in raw_nodes:
         if isinstance(node, dict) and node.get("kind") == "quick_screen":
             cfg = node.get("config")
-            merged_cfg = {"algorithm": "tfidf", **(cfg if isinstance(cfg, dict) else {})}
-            upgraded_nodes.append({**node, "kind": "ml_classifier", "config": merged_cfg})
+            raw_cfg = cfg if isinstance(cfg, dict) else {}
+            cleaned_cfg = {
+                "algorithm": "tfidf",
+                **{k: v for k, v in raw_cfg.items() if k not in ("model_id", "dataset")},
+            }
+            upgraded_nodes.append({**node, "kind": "ml_classifier", "config": cleaned_cfg})
             changed = True
+        elif isinstance(node, dict) and node.get("kind") == "ml_classifier":
+            cfg = node.get("config")
+            if isinstance(cfg, dict) and ("model_id" in cfg or "dataset" in cfg):
+                cleaned_cfg = {k: v for k, v in cfg.items() if k not in ("model_id", "dataset")}
+                upgraded_nodes.append({**node, "config": cleaned_cfg})
+                changed = True
+            else:
+                upgraded_nodes.append(node)
         else:
             upgraded_nodes.append(node)
     if not changed:
@@ -410,6 +542,7 @@ async def put_saved_board(
             status.HTTP_422_UNPROCESSABLE_CONTENT, "Only custom mode saves an agent setup."
         )
     save = body.model_dump(mode="json")
+    save["board"] = _strip_board_schema(body.board).model_dump(mode="json")
     updated_at = await container.players.save_board(email, level_id, save)
     return SavedBoardResponse.model_validate(
         {**save, "level_id": level_id, "updated_at": updated_at}
@@ -428,13 +561,32 @@ async def list_game_scores(
 
 @router.get("/leaderboard")
 async def get_difficulty_leaderboard(
+    response: Response,
     container: ContainerDep,
     difficulty: DifficultyCategory | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
 ) -> list[DifficultyLeaderboardEntry]:
-    """Aggregate each player's best scores across all levels in a difficulty category."""
-    owned_scores = await container.scores.list_all_current_scores()
-    return aggregate_difficulty_leaderboard(owned_scores, difficulty=difficulty, limit=limit)
+    """Return each player's aggregated scores across all levels in a difficulty category."""
+    response.headers["Cache-Control"] = "public, s-maxage=10, stale-while-revalidate=30"
+    return await container.leaderboard.get_leaderboard(difficulty=difficulty, limit=limit)
+
+
+@router.get(
+    "/leaderboard/me",
+    responses={403: {"description": "Signed-in player session required."}},
+)
+async def get_my_leaderboard_rank(
+    request: Request,
+    response: Response,
+    container: ContainerDep,
+    difficulty: DifficultyCategory = "Easy",
+) -> LeaderboardRankResponse:
+    """Return the signed-in player's rank and score for one difficulty board."""
+    player = await container.players.lookup(request.cookies.get(PLAYER_SESSION_COOKIE))
+    if not player.authenticated or player.is_anonymous or not player.email:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Sign in to view your rank.")
+    response.headers["Cache-Control"] = "private, no-store"
+    return await container.leaderboard.get_player_rank(player.email, difficulty=difficulty)
 
 
 @router.get("/progress")
@@ -447,74 +599,6 @@ async def get_player_progress(request: Request, container: ContainerDep) -> Play
     return build_player_progress(owned)
 
 
-_STREAM_KEEPALIVE_SECONDS = 25.0
-
-
-@router.get("/scores/stream")
-async def stream_game_scores(request: Request, container: ContainerDep) -> StreamingResponse:
-    """Stream real-time leaderboard update notifications via Server-Sent Events."""
-
-    async def event_stream() -> AsyncIterator[str]:
-        subscription = container.leaderboard_notifier.subscribe()
-        pending: asyncio.Task[dict[str, str | None]] | None = None
-
-        async def next_event() -> dict[str, str | None]:
-            return await anext(subscription)
-
-        try:
-            while not await request.is_disconnected():
-                if pending is None:
-                    pending = asyncio.create_task(next_event())
-                done, _ = await asyncio.wait({pending}, timeout=_STREAM_KEEPALIVE_SECONDS)
-                if pending in done:
-                    try:
-                        event = pending.result()
-                    except StopAsyncIteration:
-                        pending = None
-                        return
-                    pending = None
-                    yield f"event: leaderboard\ndata: {json.dumps(event)}\n\n"
-                else:
-                    yield ": keepalive\n\n"
-        except asyncio.CancelledError:
-            return
-        finally:
-            if pending is not None and not pending.done():
-                pending.cancel()
-                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
-                    await pending
-            aclose = getattr(subscription, "aclose", None)
-            if callable(aclose):
-                await aclose()
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@router.post(
-    "/scores",
-    responses={403: {"description": "Sign in required to record leaderboard scores."}},
-)
-async def create_game_score(
-    body: ScoreCreateRequest, request: Request, container: ContainerDep
-) -> ScoreRecord:
-    """Save a completed run to the scoreboard."""
-    token = request.cookies.get(PLAYER_SESSION_COOKIE)
-    player = await container.players.lookup(token)
-    if not player.can_record_scores:
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "Sign in required to record leaderboard scores.",
-        )
-    record = await container.scores.record_score(body, email=player.email)
-    if not isinstance(container.scores, RedisCachedScoreStore):
-        await container.leaderboard_notifier.publish(level_id=body.level_id, reason="recorded")
-    return record
-
-
 @router.delete(
     "/scores",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -525,28 +609,180 @@ async def clear_game_scores(clearance: ClearanceDep, container: ContainerDep) ->
     if clearance is not Clearance.GRANTED:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Admin access required.")
     await container.scores.clear_scores()
-    if not isinstance(container.scores, RedisCachedScoreStore):
-        await container.leaderboard_notifier.publish(level_id=None, reason="cleared")
+    await container.leaderboard.on_scores_cleared()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _parse_train_input(body: GameTrainRequest) -> tuple[list[tuple[str, int]], int]:
+    if body.algorithm not in ALLOWED_ML_ALGORITHMS:
+        allowed_str = ", ".join(ALLOWED_ML_ALGORITHMS)
+        raise BoardValidationError(
+            f"Unsupported ML algorithm '{body.algorithm}'. Choose one of: {allowed_str}."
+        )
+    max_rows = 2000 if body.level_id == "custom" else 200
+    if body.csv_text is not None:
+        rows = parse_dataset_csv(body.csv_text, max_rows=max_rows)
+    elif body.dataset is not None:
+        rows = validate_training_rows(
+            [{"text": row.text, "label": row.label} for row in body.dataset],
+            max_rows=max_rows,
+        )
+    else:
+        raise BoardValidationError("Provide CSV text or dataset rows to train.")
+    return rows, max_rows
 
 
 @router.post(
     "/train",
-    responses={422: {"description": "Invalid algorithm or dataset"}},
+    responses={
+        403: {"description": "Sign in required (paid plan for custom mode)."},
+        413: {"description": "Training upload exceeds maximum size."},
+        422: {"description": "Invalid algorithm, dataset, or oversized model."},
+        429: {"description": "Daily or per-minute training limit reached."},
+        503: {"description": "Training unavailable or timed out."},
+    },
 )
-async def train_game_classifier(body: GameTrainRequest) -> GameTrainResponse:
-    """Validate and train an allowlisted ML classifier on uploaded CSV or dataset rows."""
-    try:
-        summary = train_custom_classifier(
-            algorithm=body.algorithm,
-            dataset=body.dataset,
-            csv_text=body.csv_text,
+async def train_game_classifier(
+    body: GameTrainRequest, request: Request, container: ContainerDep
+) -> GameTrainResponse:
+    """Validate, fit once, HMAC-sign, and store a temporary session ML model."""
+    token = request.cookies.get(PLAYER_SESSION_COOKIE)
+    player = await container.players.lookup(token)
+    if not token or not player.authenticated or player.is_anonymous or not player.email:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Sign in to train the ML filter.")
+
+    if body.level_id == "custom" and player.tier != "paid":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Custom mode is for paid players.")
+
+    if body.level_id != "custom" and len(await request.body()) > CAMPAIGN_TRAIN_MAX_BYTES:
+        raise HTTPException(
+            status.HTTP_413_CONTENT_TOO_LARGE,
+            "Training upload exceeds the 128 KB campaign limit.",
         )
+
+    signing_key = container.model_signing_key
+    if signing_key is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Training is unavailable.")
+
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "game_train_email",
+            player.email,
+            limit=GAME_TRAIN_EMAIL_LIMIT,
+            window_seconds=GAME_TRAIN_EMAIL_WINDOW,
+        )
+
+    try:
+        rows, max_rows = _parse_train_input(body)
     except BoardValidationError as err:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
+
+    try:
+        await container.players.reserve_train(token)
+    except QuotaExceededError as err:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
+
+    model_id = secrets.token_urlsafe(16)
+    use_subprocess = container.train_worker_cmd is not None or container.trainer is fit_classifier
+    if use_subprocess:
+        cmd = container.train_worker_cmd or (
+            sys.executable,
+            "-m",
+            "shield_api.services.train_worker",
+        )
+        context = signing_context(owner_hash(token), model_id)
+        try:
+            algorithm, sample_count, accuracy, blob = await container.train_worker.run(
+                cmd=cmd,
+                algorithm=body.algorithm,
+                rows=rows,
+                max_rows=max_rows,
+                signing_key=signing_key,
+                context=context,
+                timeout_seconds=container.train_timeout_seconds,
+            )
+        except TimeoutError:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Training took too long. Try a smaller dataset.",
+            ) from None
+        except BoardValidationError as err:
+            await container.players.release_train(token)
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
+        except BaseException:
+            await container.players.release_train(token)
+            raise
+
+        try:
+            expires_at = await container.models.put_signed_blob(
+                token,
+                email=player.email,
+                model_id=model_id,
+                blob=blob,
+            )
+        except ModelTooLargeError as err:
+            await container.players.release_train(token)
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
+        return GameTrainResponse(
+            model_id=model_id,
+            algorithm=algorithm,
+            sample_count=sample_count,
+            accuracy=accuracy,
+            expires_at=expires_at,
+        )
+
+    try:
+        fitted = await asyncio.wait_for(
+            asyncio.to_thread(
+                container.trainer, algorithm=body.algorithm, rows=rows, max_rows=max_rows
+            ),
+            timeout=container.train_timeout_seconds,
+        )
+    except TimeoutError:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Training took too long. Try a smaller dataset.",
+        ) from None
+    except BoardValidationError as err:
+        await container.players.release_train(token)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
+    except BaseException:
+        await container.players.release_train(token)
+        raise
+
+    try:
+        expires_at = await container.models.put(
+            token,
+            email=player.email,
+            model_id=model_id,
+            model=fitted.model,
+            signing_key=signing_key,
+        )
+    except ModelTooLargeError as err:
+        await container.players.release_train(token)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
+
     return GameTrainResponse(
-        algorithm=summary.algorithm,
-        sample_count=summary.sample_count,
-        accuracy=summary.accuracy,
-        dataset=list(summary.dataset),
+        model_id=model_id,
+        algorithm=fitted.algorithm,
+        sample_count=fitted.sample_count,
+        accuracy=fitted.accuracy,
+        expires_at=expires_at,
     )
+
+
+@router.delete("/models", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session_models(request: Request, container: ContainerDep) -> Response:
+    """Purge the current session's server-held ML models."""
+    if token := request.cookies.get(PLAYER_SESSION_COOKIE):
+        await container.models.purge_session(token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/models/purge", status_code=status.HTTP_204_NO_CONTENT)
+async def purge_session_models_beacon(request: Request, container: ContainerDep) -> Response:
+    """Beacon-compatible purge endpoint for pagehide cleanup."""
+    if token := request.cookies.get(PLAYER_SESSION_COOKIE):
+        await container.models.purge_session(token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

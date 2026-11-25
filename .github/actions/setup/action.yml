@@ -1,0 +1,50 @@
+name: Set up toolchain
+description: >-
+  Install the mise-pinned toolchain, then the Python and JavaScript
+  dependencies from their lockfiles, with caches keyed on those lockfiles.
+
+inputs:
+  tools:
+    description: Space-separated mise tools to install (default is the app toolchain).
+    default: node bun uv python
+  python:
+    description: Install Python dependencies with uv.
+    default: "true"
+  javascript:
+    description: Install JavaScript dependencies with bun.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install mise tools
+      uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+      with:
+        install_args: ${{ inputs.tools }}
+        cache: true
+
+    - name: Cache uv
+      if: inputs.python == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/uv
+        key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+        restore-keys: uv-${{ runner.os }}-
+
+    - name: Install Python dependencies
+      if: inputs.python == 'true'
+      shell: bash
+      run: uv sync --all-packages --locked
+
+    - name: Cache bun
+      if: inputs.javascript == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-
+
+    - name: Install JavaScript dependencies
+      if: inputs.javascript == 'true'
+      shell: bash
+      run: bun install --frozen-lockfile

@@ -62,12 +62,12 @@ const run = async (action: () => Promise<void>) => {
 }
 
 const submitEmail = () => run(async () => {
-  session.value = await changeEmail({
+  await changeEmail({
     new_email: emailForm.email.trim(),
     current_password: emailForm.password
   })
   openModal.value = null
-  toast.add({ title: 'Email changed', description: `You now sign in as ${session.value.email}.`, icon: 'i-lucide-mail-check', color: 'neutral' })
+  toast.add({ title: 'Confirmation sent', description: 'Check your new inbox to confirm the change.', icon: 'i-lucide-mail-check', color: 'neutral' })
 })
 
 const submitPassword = () => run(async () => {

@@ -9,7 +9,7 @@ never holds a Supabase token.
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,9 @@ class VerifiedPlayer:
     player_name: str | None
     # Supabase Auth user id, for the admin calls in account settings (spec 0025).
     user_id: str | None = None
+    # Server-owned gateway email stored in app_metadata (never user_metadata, spec 0042).
+    profile_email: str | None = None
+    app_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class PlayerIdentity(Protocol):
@@ -54,15 +57,25 @@ class PlayerIdentity(Protocol):
         """Send the confirmation email again. Never raises."""
         ...
 
+    async def recover(self, email: str) -> None:
+        """Send a password recovery email. Never raises."""
+        ...
+
     async def update_password(self, user_id: str, password: str) -> None:
         """Raises ``IdentityUnavailableError``."""
         ...
 
-    async def update_email(self, user_id: str, email: str) -> None:
-        """Set a confirmed new email.
+    async def request_email_change(self, current_email: str, password: str, new_email: str) -> None:
+        """Start confirmed email change via the player's own Supabase session.
 
         Raises ``IdentityConflictError`` or ``IdentityUnavailableError``.
         """
+        ...
+
+    async def set_profile_email(
+        self, user_id: str, profile_email: str, existing_app_metadata: dict[str, Any] | None = None
+    ) -> None:
+        """Persist ``app_metadata.profile_email`` via the admin API."""
         ...
 
     async def delete_user(self, user_id: str) -> None:
@@ -74,6 +87,18 @@ def _player_name(user: Any) -> str | None:
     metadata = getattr(user, "user_metadata", None) or {}
     name = metadata.get("player_name") if isinstance(metadata, dict) else None
     return name.strip() or None if isinstance(name, str) else None
+
+
+def _app_metadata(user: Any) -> dict[str, Any]:
+    raw = getattr(user, "app_metadata", None)
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _profile_email(user: Any) -> str | None:
+    raw = _app_metadata(user).get("profile_email")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip().lower()
+    return None
 
 
 def _describe(err: Exception) -> str:
@@ -137,6 +162,8 @@ class SupabasePlayerIdentity:
             email=email,
             player_name=_player_name(response.user) or player_name,
             user_id=str(response.user.id),
+            profile_email=_profile_email(response.user),
+            app_metadata=_app_metadata(response.user),
         )
 
     async def verify(self, email: str, password: str) -> VerifiedPlayer:
@@ -158,7 +185,14 @@ class SupabasePlayerIdentity:
             user = getattr(response, "user", None)
             if user is None:
                 raise IdentityUnavailableError
-            return VerifiedPlayer(email=email, player_name=_player_name(user), user_id=str(user.id))
+            confirmed_email = str(getattr(user, "email", None) or email).strip().lower()
+            return VerifiedPlayer(
+                email=confirmed_email,
+                player_name=_player_name(user),
+                user_id=str(user.id),
+                profile_email=_profile_email(user),
+                app_metadata=_app_metadata(user),
+            )
         finally:
             _sign_out(client)
 
@@ -178,12 +212,32 @@ class SupabasePlayerIdentity:
             lambda admin: admin.update_user_by_id(user_id, {"password": password}),
         )
 
-    async def update_email(self, user_id: str, email: str) -> None:
-        # The current password was just checked, so the new address is set as confirmed.
+    async def request_email_change(self, current_email: str, password: str, new_email: str) -> None:
+        await asyncio.to_thread(self._request_email_change, current_email, password, new_email)
+
+    def _request_email_change(self, current_email: str, password: str, new_email: str) -> None:
+        client = self._client_factory()
+        try:
+            client.auth.sign_in_with_password({"email": current_email, "password": password})
+            client.auth.update_user({"email": new_email})
+        except Exception as err:
+            code = getattr(err, "code", None)
+            if code == "email_exists":
+                raise IdentityConflictError from None
+            logger.warning("Supabase email change request failed (%s)", _describe(err))
+            raise IdentityUnavailableError from None
+        finally:
+            _sign_out(client)
+
+    async def set_profile_email(
+        self, user_id: str, profile_email: str, existing_app_metadata: dict[str, Any] | None = None
+    ) -> None:
+        merged = dict(existing_app_metadata or {})
+        merged["profile_email"] = profile_email
         await asyncio.to_thread(
             self._admin,
-            "email update",
-            lambda admin: admin.update_user_by_id(user_id, {"email": email, "email_confirm": True}),
+            "profile_email update",
+            lambda admin: admin.update_user_by_id(user_id, {"app_metadata": merged}),
         )
 
     async def delete_user(self, user_id: str) -> None:
@@ -206,3 +260,13 @@ class SupabasePlayerIdentity:
             )
         except Exception as err:
             logger.warning("Supabase resend failed (%s)%s", _describe(err), _email_hint(err))
+
+    async def recover(self, email: str) -> None:
+        await asyncio.to_thread(self._recover, email)
+
+    def _recover(self, email: str) -> None:
+        client = self._client_factory()
+        try:
+            client.auth.reset_password_for_email(email)
+        except Exception:
+            logger.debug("Supabase reset_password_for_email skipped or unavailable")

@@ -33,12 +33,23 @@ class GroqChatModel:
         )
         return completion.text
 
+    def _reasoning_options(self, thinking: bool) -> dict[str, Any]:
+        # Reasoning tokens count against max_tokens; unchecked, they leave an empty answer.
+        # GPT-OSS cannot switch reasoning off, so "low" is its off setting.
+        if self.model.startswith("openai/gpt-oss"):
+            return {"reasoning_effort": "medium" if thinking else "low", "include_reasoning": False}
+        if self.model.startswith("qwen/qwen3"):
+            effort = "medium" if thinking else "none"
+            return {"reasoning_effort": effort, "reasoning_format": "hidden"}
+        return {}
+
     async def complete_with_usage(
         self,
         messages: Sequence[ChatMessage],
         *,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        thinking: bool = False,
     ) -> ChatCompletion:
         # The SDK's per-role TypedDicts can't be inferred from a dynamic role.
         messages_payload: list[Any] = [{"role": m.role, "content": m.content} for m in messages]
@@ -47,6 +58,7 @@ class GroqChatModel:
             messages=messages_payload,
             temperature=temperature,
             max_tokens=max_tokens,
+            **self._reasoning_options(thinking),
         )
         usage = response.usage
         return ChatCompletion(

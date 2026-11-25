@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 import tomllib
 from collections.abc import Callable
 from datetime import timedelta
@@ -12,24 +11,19 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
-from shield_api.container import build_container
+from shield_api.container import ConfigurationError, build_container
 from shield_api.schemas import BoardGraphSchema, ScoreCreateRequest
 from shield_api.services.players import (
     InMemoryPlayerStore,
-    InvalidCredentialsError,
-    PlayerAlreadyExistsError,
     PlayerStore,
-    SqlitePlayerStore,
     SupabasePlayerStore,
 )
-from shield_api.services.scores import SqliteScoreStore, SupabaseScoreStore
+from shield_api.services.scores import SupabaseScoreStore
 from shield_api.services.sessions import (
     InMemorySessionStore,
     SessionStore,
-    SqliteSessionStore,
     SupabaseSessionStore,
 )
-from shield_api.services.sqlite import connect_domains
 from shield_api.settings import Settings
 
 from .conftest import FakeClient
@@ -140,29 +134,27 @@ async def test_supabase_score_store_persists_game_scores(
     assert ("game", "scores") in client.accessed
 
 
-def _session_stores(tmp_path: Path, client: FakeClient) -> list[SessionStore]:
+def _session_stores(client: FakeClient) -> list[SessionStore]:
     return [
         InMemorySessionStore(),
-        SqliteSessionStore(tmp_path / "s.db"),
         SupabaseSessionStore(client),
     ]
 
 
-def _player_stores(tmp_path: Path, client: FakeClient) -> list[PlayerStore]:
+def _player_stores(client: FakeClient) -> list[PlayerStore]:
     return [
         InMemoryPlayerStore(),
-        SqlitePlayerStore(tmp_path / "p.db"),
         SupabasePlayerStore(client),
     ]
 
 
 @pytest.mark.spec("API-SCHEMA-004")
 async def test_supabase_session_and_player_stores_honour_the_store_contracts(
-    tmp_path: Path, fake_supabase: Callable[..., FakeClient]
+    fake_supabase: Callable[..., FakeClient],
 ) -> None:
     client = fake_supabase()
 
-    for sessions in _session_stores(tmp_path, client):
+    for sessions in _session_stores(client):
         token, expires_at = await sessions.create(TTL)
         assert await sessions.lookup(token) == expires_at
         stale, _ = await sessions.create(timedelta(seconds=-1))
@@ -173,21 +165,15 @@ async def test_supabase_session_and_player_stores_honour_the_store_contracts(
     stored = client.tables[("audit", "clearance_sessions")].rows
     assert all(len(row["token_hash"]) == 64 for row in stored)
 
-    for players in _player_stores(tmp_path, client):
+    for players in _player_stores(client):
         anon_token, anon = await players.create_anonymous(TTL)
         assert anon.is_anonymous
         assert (await players.consume_run(anon_token, is_custom_test=False)).wave_runs_used == 1
 
-        token, status = await players.register(
-            email="Ada@Example.com", password="password123", player_name="Ada", ttl=TTL
+        token, status = await players.sign_in_verified(
+            email="Ada@Example.com", player_name="Ada", ttl=TTL
         )
         assert (status.tier, status.email) == ("free", "ada@example.com")
-        with pytest.raises(PlayerAlreadyExistsError):
-            await players.register(
-                email="ada@example.com", password="x" * 8, player_name=None, ttl=TTL
-            )
-        with pytest.raises(InvalidCredentialsError):
-            await players.login(email="ada@example.com", password="wrong-pass", ttl=TTL)
 
         await players.consume_run(token, is_custom_test=False)
         await players.consume_run(token, is_custom_test=True)
@@ -196,8 +182,8 @@ async def test_supabase_session_and_player_stores_honour_the_store_contracts(
 
         upgraded = await players.upgrade(token)
         assert upgraded.tier == "paid"
-        relogged, again = await players.login(
-            email="ada@example.com", password="password123", ttl=TTL
+        relogged, again = await players.sign_in_verified(
+            email="ada@example.com", player_name=None, ttl=TTL
         )
         assert (again.tier, again.wave_runs_used) == ("paid", 1)
 
@@ -206,13 +192,11 @@ async def test_supabase_session_and_player_stores_honour_the_store_contracts(
 
     touched = {table for schema, table in client.accessed if schema == "players"}
     assert touched == {"accounts", "sessions", "daily_usage"}
-    accounts = client.tables[("players", "accounts")].rows
-    assert all("password123" not in str(row) for row in accounts)
 
 
 @pytest.mark.spec("API-SCHEMA-005")
-def test_supabase_settings_wire_every_store_and_otherwise_fall_back_to_sqlite(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_supabase_settings_wire_every_store_and_missing_raises(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     created: list[FakeClient] = []
 
@@ -222,13 +206,13 @@ def test_supabase_settings_wire_every_store_and_otherwise_fall_back_to_sqlite(
         return client
 
     monkeypatch.setattr("supabase.create_client", fake_create)
-    base = {
-        "_env_file": None,
-        "SQLITE_PATH": tmp_path / "var" / "shield.db",
-    }
-
     online = build_container(
-        Settings(**base, SUPABASE_URL="https://x.supabase.co", SUPABASE_KEY=SecretStr("k"))
+        Settings(
+            _env_file=None,
+            APP_ENV="development",
+            SUPABASE_URL="https://x.supabase.co",
+            SUPABASE_KEY=SecretStr("k"),
+        )
     )
     assert isinstance(online.scores, SupabaseScoreStore)
     assert isinstance(online.sessions, SupabaseSessionStore)
@@ -236,42 +220,5 @@ def test_supabase_settings_wire_every_store_and_otherwise_fall_back_to_sqlite(
     assert len(created) == 1
 
     for partial in ({"SUPABASE_URL": "https://x.supabase.co"}, {"SUPABASE_KEY": SecretStr("k")}):
-        offline = build_container(Settings(**base, **partial))
-        assert isinstance(offline.scores, SqliteScoreStore)
-        assert isinstance(offline.sessions, SqliteSessionStore)
-        assert isinstance(offline.players, SqlitePlayerStore)
-
-
-@pytest.mark.spec("API-SCHEMA-006")
-def test_sqlite_stores_use_attached_domain_schemas_that_mirror_the_migrations(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "shield.db"
-    SqliteScoreStore(path)
-    SqliteSessionStore(path)
-    SqlitePlayerStore(path)
-
-    connection = connect_domains(path)
-    try:
-        main_tables = connection.execute(
-            "select name from main.sqlite_master where type = 'table'"
-        ).fetchall()
-        assert main_tables == []
-        for schema, tables in DOMAIN_TABLES.items():
-            found = {
-                row[0]
-                for row in connection.execute(
-                    f"select name from {schema}.sqlite_master where type = 'table'"  # noqa: S608
-                )
-            }
-            assert found == set(tables), schema
-            for table in tables:
-                columns = {
-                    row[1] for row in connection.execute(f"pragma {schema}.table_info({table})")
-                }
-                assert columns == _migration_columns(schema, table), f"{schema}.{table}"
-    finally:
-        connection.close()
-
-    with sqlite3.connect(path) as plain:
-        assert plain.execute("select count(*) from sqlite_master").fetchone() == (0,)
+        with pytest.raises(ConfigurationError):
+            build_container(Settings(_env_file=None, **partial))

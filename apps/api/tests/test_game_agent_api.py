@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
-from shield_api.services.players import QuotaExceededError, SqlitePlayerStore
+from shield_api.services.players import QuotaExceededError
 from shield_engine.ports import ChatCompletion
 from shield_engine.testing import ScriptedUsageChatModel
 
@@ -59,10 +58,10 @@ def _register(harness: Harness, email: str) -> None:
 
 @pytest.mark.spec("API-AGENT-001")
 async def test_daily_limits_are_one_five_and_three_hundred_waves_by_tier(
-    harness: Harness, tmp_path: Path
+    make_harness,
 ) -> None:
-    store = SqlitePlayerStore(tmp_path / "players.db")
-    harness.container.players = store
+    harness = make_harness(allow_self_upgrade=True)
+    store = harness.container.players
 
     # Anonymous: 1 wave and 3 tests per day
     assert harness.client.post("/api/v1/auth/anonymous").status_code == 200
@@ -94,9 +93,8 @@ async def test_daily_limits_are_one_five_and_three_hundred_waves_by_tier(
 
 @pytest.mark.spec("API-AGENT-002")
 def test_provider_failure_returns_503_without_consuming_quota_or_recording(
-    harness: Harness, tmp_path: Path
+    harness: Harness,
 ) -> None:
-    harness.container.players = SqlitePlayerStore(tmp_path / "players.db")
     harness.container.game_agent = ScriptedUsageChatModel(replies=[RuntimeError("down")])
     _register(harness, "ada@example.com")
 
@@ -112,9 +110,8 @@ def test_provider_failure_returns_503_without_consuming_quota_or_recording(
 
 @pytest.mark.spec("API-AGENT-003")
 def test_only_live_agent_runs_are_recorded_on_the_leaderboard(
-    harness: Harness, tmp_path: Path
+    harness: Harness,
 ) -> None:
-    harness.container.players = SqlitePlayerStore(tmp_path / "players.db")
     _register(harness, "grace@example.com")
 
     simulated = harness.client.post(
@@ -147,6 +144,7 @@ def test_levels_expose_agent_profile_and_runs_return_agent_results(harness: Harn
     assert "Confidential value" not in levels.text
     assert "CANARY" not in levels.text.upper()
 
+    assert harness.client.post("/api/v1/auth/anonymous").status_code == 200
     harness.container.game_agent = ScriptedUsageChatModel(replies=[], default=HELPFUL)
     run = harness.client.post("/api/v1/game/run", json={"level_id": "medium-1", "board": _board()})
     assert run.status_code == 200

@@ -490,7 +490,11 @@ def run_tests(root: Path, ids: list[str]) -> TestRun:
 
 
 def run_gate(root: Path) -> bool:
-    return subprocess.run(["mise", "run", "check"], cwd=root, check=False).returncode == 0
+    state = load_state(root)
+    env = dict(os.environ)
+    if state is not None:
+        env["SDD_VERIFY_SPEC"] = str(state.get("spec") or "__refactor__")
+    return subprocess.run(["mise", "run", "check"], cwd=root, env=env, check=False).returncode == 0
 
 
 def current_commit() -> str:

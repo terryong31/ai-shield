@@ -84,15 +84,15 @@ The Level Select experience uses **two focused, clutter-free steps** built exclu
 - **Run Results Modal Updates:**
   - When `waveScore.constraint_violations` is non-empty, displays each runtime SLA violation cleanly in a `UAlert` alongside `won=false`.
   - When `waveScore.follow_up_passed` is true, highlights `Mastered` (`i-lucide-star`).
-  - When `waveScore.won` is true and `waveScore.follow_up_passed` is false, displays `waveScore.follow_up_feedback` so players know how to earn the Mastery Star.
+  - On a win the modal shows no outcome summary or `follow_up_feedback` text (removed at the owner's request); the summary line appears only on a loss.
   - Footer includes `Next Level` (advances to next sequential level if unlocked, or links to `/plans` when locked) and `Back to Levels` (`/?view=levels&difficulty=...`).
 
 ## Acceptance criteria
 
 - **WEB-CAMP-001**: Given Step 1 of Level Select (`/?view=levels`), when rendered on a solid monochrome surface with the 23-level catalog and player tier, then it displays 3 tall monochrome `UPageCard` spotlight poster cards (`Easy` 5, `Medium` 10, `Hard` 8) with centered geometric emblems, difficulty badges, concise subtitles, and inline `Enter` cues without progress bars, cleared counts, or points, using Nuxt UI's default sans typography (no `font-mono`); Pro-only locked difficulties (`Hard`) render blurred with a centered padlock overlay and open an **Upgrade to Pro** `UModal` (`to="/plans"`) when clicked, alongside the Spec `0022` Custom Sandbox strip.
 - **WEB-CAMP-002**: Given Step 2 of Level Select (`/?view=levels&difficulty=<Easy|Medium|Hard>`), when rendered on a solid monochrome surface, then it displays only the minimal top header (`Back`, `Select Level` + difficulty badge — with no upper-right total score and no bottom difficulty switcher), the centered numbered tile grid (`5`, `10`, or `8` tiles with large numbers, 3-star `<UInputRating>` footers driven by `stars = (won ? 1 : 0) + (medal === 'gold' ? 1 : 0) + (mastered ? 1 : 0)`, high-contrast WCAG borders/icons, and blurred + padlock overlays on Pro-locked tiles), clicking an unlocked tile opens a `UModal` Mission Briefing (`#header/#body/#footer`) with tools, constraints, Mastery target, and `Play Level` CTA, and clicking a Pro-locked tile opens the **Upgrade to Pro** `UModal` (`to="/plans"`).
-- **WEB-CAMP-003**: Given the Main Menu leaderboard on `/`, when loading or receiving an SSE leaderboard update, then it fetches `GET /api/v1/game/leaderboard` and renders each difficulty tab (`Easy`, `Medium`, `Hard`) showing aggregated `total_score`, `levels_solved / levels_total`, `levels_mastered`, `avg_latency_ms`, and `total_cost_usd`.
-- **WEB-CAMP-004**: Given `/game` for any of the 23 levels, when loaded and run, then it displays the Mission Briefing (tools with `Dual-Use` badges, Hard Constraints, Mastery Star objective), locks palette nodes listed in `constraints.disabled_checks`, displays a live check-node counter against `constraints.max_check_nodes`, shows a Pro lock gate linking to `/plans` if a non-paid user visits a `pro` level, and shows `constraint_violations`, `Mastered` status / `follow_up_feedback`, and `Next Level` in the Run Results modal (no `Back to Levels` button there; the header `Return` goes back, at the owner's request).
+- **WEB-CAMP-003**: Given the Main Menu leaderboard on `/`, when loading or receiving an SSE leaderboard update, then it fetches `GET /api/v1/game/leaderboard` and renders each difficulty tab (`Easy`, `Medium`, `Hard`) showing only each player's name and aggregated `total_score` (right-aligned), ranked highest first (no cleared, mastered, speed or cost columns, at the owner's request).
+- **WEB-CAMP-004**: Given `/game` for any of the 23 levels, when loaded and run, then it displays the Mission Briefing (tools with `Dual-Use` badges, Hard Constraints, Mastery Star objective), locks palette nodes listed in `constraints.disabled_checks`, displays a live check-node counter against `constraints.max_check_nodes`, shows a Pro lock gate linking to `/plans` if a non-paid user visits a `pro` level, and shows `constraint_violations`, `Mastered` status, and `Next Level` in the Run Results modal, with no outcome summary or `follow_up_feedback` text on a win (owner's request), (no `Back to Levels` button there; the header `Return` goes back, at the owner's request).
 - **WEB-CAMP-005**: Given all new and modified files under `apps/web/app/`, when checked against Spec `0015` design-hygiene and WCAG 2.1 AA contrast standards, then only Nuxt UI and Vue Flow components and semantic tokens are used (`UEmpty`, `UTable`, `UCard`, `UModal` `#header/#body/#footer` slots), with `>= 4.5:1` text contrast, `>= 3.0:1` interactive borders/icons, non-color state redundancy, zero raw Tailwind palette classes, zero native HTML controls, zero emojis or em-dashes, and zero literal `color="error"` attributes on non-`UButton` elements.
 - **WEB-CAMP-006**: Given `/game` on a level whose `constraints.disabled_checks` lists a check, when the Tools palette renders, then that card is locked the same way as a sign-in-locked card (dimmed, `cursor-not-allowed`, `aria-disabled`, not draggable, hover overlay `Disabled in this level`) and its footer shows a `i-lucide-ban` icon with `Disabled` instead of latency and cost, with no separate ban badge in its header. (Added at the owner's request.)
 - **WEB-CAMP-007**: Given `/game` on an introductory level (`easy-1`, `easy-2`, `easy-3`), when the board first loads for a player who has not finished or skipped that level's tour in this browser, then a guided tour opens, driven by Nuxt UI `useTour` and a single `UPopover`, with the steps from `levelTourSteps(levelId)` (`app/utils/levelTours.ts`): a centred intro, the taught palette cards, the placed nodes and anchors, the Test bar and `Run wave`, each pointing at a `[data-tour="…"]` target (a step whose node is not on the board yet points at the canvas). Each step shows its position, `Back`, `Next` (or `Finish` on the last step) and `Skip`; finishing or skipping remembers the tour under `tourSeenKey(levelId)`, and a `Guide` button in the header replays it. Other levels have no tour and no `Guide` button. (Added at the owner's request.)
@@ -138,4 +138,18 @@ The Level Select experience uses **two focused, clutter-free steps** built exclu
 - Criteria: WEB-CAMP-007
 - Red: 1 failing test(s) before implementation (`/Users/terryong/Desktop/nuxt-projects/ai-shield/apps/web/test/levelTours.test.ts`)
 - Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-21 · commit faa585d (+ uncommitted changes)
+
+- Criteria: WEB-CAMP-003
+- Red: 1 failing test(s) before implementation (`minimal monochrome level select and campaign briefing UI (spec 0040) [WEB-CAMP-003] fetches difficulty-aggregated leaderboard entries for Easy, Medium, and Hard on the main menu`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-21 · commit faa585d (+ uncommitted changes)
+
+- Criteria: WEB-CAMP-004
+- Red: 1 failing test(s) before implementation (`minimal monochrome level select and campaign briefing UI (spec 0040) [WEB-CAMP-004] displays in-game Mission Briefing, locks disabled check nodes, counts placed check nodes against max_check_nodes, gates Pro levels, and shows constraint violations and Mastery in Run results`)
+- Green: 1 passing test(s)
 - Gate: `mise run check` passed

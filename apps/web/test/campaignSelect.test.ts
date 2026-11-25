@@ -146,8 +146,11 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
 
     const indexSource = read('pages', 'index.vue')
     expect(indexSource).toContain('selectedLeaderboardDifficulty')
-    expect(indexSource).toContain('levels_solved')
-    expect(indexSource).toContain('levels_mastered')
+    expect(indexSource).toContain('{ accessorKey: \'player_name\', header: \'Player\' }')
+    expect(indexSource).toContain('{ accessorKey: \'total_score\', header: \'Total Score\', meta: { class: { th: \'text-right\', td: \'text-right\' } } }')
+    for (const hidden of ['levels_solved', 'levels_mastered', 'avg_latency_ms', 'total_cost_usd']) {
+      expect(indexSource).not.toContain(hidden)
+    }
     expect((campaignSelect as Record<string, unknown>).LEADERBOARD_DIFFICULTY_TABS).toEqual([
       'Easy',
       'Medium',
@@ -192,7 +195,8 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
     expect(gameSource).toContain('Pro Level Locked')
     expect(gameSource).toContain('constraint_violations')
     expect(gameSource).toContain('follow_up_passed')
-    expect(gameSource).toContain('follow_up_feedback')
+    expect(gameSource).not.toContain('follow_up_feedback')
+    expect(gameSource).toContain('v-if="!waveScore.won"\n                class="text-xs text-muted"\n              >\n                {{ waveOutcomeSummary(waveScore) }}')
     expect(gameSource).toContain('label="Next Level"')
     expect(gameSource).not.toContain('label="Back to Levels"')
   })

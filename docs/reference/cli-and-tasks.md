@@ -47,11 +47,13 @@ into the contract. Prints `wrote <path>`.
 
 Defined in [`mise.toml`](../../mise.toml). Run from anywhere in the repository
 with `mise run <task>`; list them with `mise tasks`. Tools pinned by mise:
-node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
+node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0, lefthook 2.2.2,
+gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0.
 
 | Task | Runs | Description |
 | --- | --- | --- |
-| `setup` | `uv sync --all-packages`; `bun install` | Install all Python and JavaScript dependencies |
+| `setup` | `mise install`; `uv sync --all-packages`; `bun install`; `lefthook install` | Install tools, all Python and JavaScript dependencies, and the git hooks |
+| `hooks:install` | `lefthook install` | Install the git hooks from `lefthook.yml` |
 | `api:dev` | `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
 | `web:dev` | `bun run dev` in `apps/web` | Run the Nuxt web client on :3000 |
 | `dev` | depends on `api:dev`, `web:dev` | Run API and web together |
@@ -62,7 +64,9 @@ node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
 | `test` | depends on the three test tasks | All tests |
 | `lint:py` | `uv run ruff check .`; `uv run ruff format --check .` | Ruff lint + format check |
 | `lint:web` | `bun run lint` in `apps/web` | ESLint |
-| `lint` | depends on `lint:py`, `lint:web` | (no description) |
+| `lint:actions` | `actionlint`; `zizmor --offline --min-severity medium .github` | Lint the GitHub Actions workflows and audit them for security problems |
+| `lint` | depends on `lint:py`, `lint:web`, `lint:actions` | All linters |
+| `secrets:scan` | `gitleaks git --redact --no-banner` | Scan the full git history for secrets. Rules: `.gitleaks.toml`; reviewed false positives: `.gitleaksignore` |
 | `typecheck:py` | `uv run mypy` | mypy --strict over engine and API |
 | `typecheck:web` | `bun run typecheck` in `apps/web` | vue-tsc via nuxt typecheck |
 | `typecheck` | depends on both typecheck tasks | (no description) |
@@ -72,7 +76,7 @@ node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
 | `spec:check` | `uv run python scripts/check_spec_coverage.py` | Every acceptance criterion in accepted specs has a test |
 | `spec:new` | `uv run python scripts/new_spec.py <slug>` | Scaffold a new spec folder: `mise run spec:new <slug>` |
 | `train` | `uv run shield-engine train --data packages/engine/data/seed/train.jsonl` | Retrain the bundled baseline classifier |
-| `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check` | Everything CI runs. Must pass before pushing |
+| `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check`, `secrets:scan` | Everything CI runs. Must pass before pushing |
 | `build:web` | `bun run build` in `apps/web` | Production build of the web client |
 | `sdd:start` | `python3 scripts/sdd.py start` | Start a cycle: `<spec> [IDs…]` or `--refactor "reason"` |
 | `sdd:red` | `python3 scripts/sdd.py red` | Run target tests; advance only if each criterion has a legitimately failing test |
@@ -91,11 +95,45 @@ node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0.
 | `db:lint` | `supabase db lint --schema audit,game,players` | Lint the local schema |
 | `db:link` | `supabase link` | Link to a hosted project (`--project-ref <ref>`) |
 | `db:push` | `supabase db push` | Apply pending migrations to the linked project; never runs seed |
-| `local:db:reset` | deletes `apps/api/var/shield.db`, `shield.audit.db`, `shield.game.db`, `shield.players.db` and their journals (asks first) | Reset the local SQLite data; stop the API first |
+| `infra:up` | `mise run db:start && mise run redis:start` | Start the local Supabase stack and Redis container |
 | `admin:create` | `python -m shield_api.admin_cli create <email>` | Create a Supabase user as admin, or promote an existing one (`app_metadata.role = "admin"`); prompts for the password. Needs `SUPABASE_URL` and the service `SUPABASE_KEY` |
 | `admin:revoke` | `python -m shield_api.admin_cli revoke <email>` | Remove the admin role; other `app_metadata` is kept |
-| `up` | `docker compose up --build` | Build and run API + web containers |
-| `down` | `docker compose down` | Stop containers; the `shield-data` volume is kept |
+| `up` | `docker compose up --build` | Build and run Redis, API + web containers |
+| `down` | `docker compose down` | Stop containers |
+
+## Git hooks (`lefthook.yml`)
+
+`mise run setup` installs the hooks. To skip the hooks for one command, set
+`LEFTHOOK=0`. CI runs the same checks, so a skipped hook does not skip the gate.
+
+| Hook | Job | Runs | Files |
+| --- | --- | --- | --- |
+| `pre-commit` | `secrets` | `gitleaks git --pre-commit --staged` | Staged diff |
+| `pre-commit` | `whitespace` | `git diff --cached --check` | Staged files, except `*.md` |
+| `pre-commit` | `ruff` | `ruff check --fix`, then `ruff format`; fixes are staged again | Staged `*.py`, `*.pyi` |
+| `pre-commit` | `eslint` | `eslint --fix` in `apps/web`; fixes are staged again | Staged `*.ts`, `*.mts`, `*.js`, `*.mjs`, `*.vue`, except `api.gen.ts` |
+| `pre-commit` | `workflows` | `mise run lint:actions` | Staged files in `.github/` |
+| `commit-msg` | `conventional-commit` | Subject line must be a Conventional Commit (`type(scope): text`). `Merge`, `Revert`, `fixup!`, `squash!` and `amend!` subjects are also accepted | Commit message |
+| `pre-push` | `protect-main` | Stops a push to `refs/heads/main` | Pushed refs |
+| `pre-push` | `full-gate` | `mise run check`. Runs only if `protect-main` passes | Whole repository |
+
+## GitHub Actions (`.github/`)
+
+| File | Trigger | Jobs |
+| --- | --- | --- |
+| `workflows/ci.yml` | Pull request, push to `main`, merge queue, manual | `Lint`, `Typecheck`, `Test (Python)`, `Test (web)`, `Specs and contract`, `Build (web)`, `Workflow security`, `Secret scan`, `Dependency review` (pull requests only), and `CI OK` |
+| `workflows/codeql.yml` | Pull request, push to `main`, weekly (Monday 03:17 UTC), manual | CodeQL `security-extended` queries for `python`, `javascript-typescript` and `actions` |
+| `workflows/pr-title.yml` | Pull request opened, edited, reopened or updated | The PR title must be a Conventional Commit |
+| `actions/setup/action.yml` | Used by the CI jobs | Installs the mise tools, then `uv sync --all-packages --locked` and `bun install --frozen-lockfile`, with caches keyed on `uv.lock` and `bun.lock` |
+| Vercel Git integration (not a workflow) | Push to any branch; push to `main` | Deploys the web client (`ai-shield`) and the gateway (`ai-shield-backend`) to a preview URL for each push, and to production for each push to `main`. Reports each deploy as a commit status |
+| `dependabot.yml` | Weekly (monthly for actions) | Grouped updates for uv, bun, Docker base images and actions, with a 7-day cooldown |
+
+Each CI job runs the same mise task as a local run. CI does not build the
+Docker images; `mise run up` builds them locally. `CI OK` fails if a job
+fails or is cancelled. Set `CI OK` as the only required status check in the
+branch protection rule for `main`. Every third-party action is pinned to a
+full commit SHA, and every job gets read-only `contents` permission unless it
+needs more.
 
 ## pytest `--spec-ids`
 

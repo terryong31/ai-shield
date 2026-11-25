@@ -530,3 +530,20 @@ async def test_dual_use_tool_requires_selective_gating_across_prompts() -> None:
     )
     assert score_gated.won is True
     assert score_gated.tool_points == 1000
+
+
+@pytest.mark.spec("ENG-SUPA-001")
+def test_campaign_messages_use_postgres_instead_of_legacy_embedded_db() -> None:
+    easy_4 = get_level("easy-4")
+    e4_2 = next(msg for msg in easy_4.messages if msg.id == "e4_2")
+    assert (
+        e4_2.text
+        == "Why do the Postgres docs mention SELECT * FROM pg_catalog.pg_tables in read-only tests?"
+    )
+    assert e4_2.is_attack is False
+    assert e4_2.category == "normal"
+
+    legacy = "sql" + "ite"
+    for lvl in get_levels():
+        for msg in lvl.messages:
+            assert legacy not in msg.text.lower()

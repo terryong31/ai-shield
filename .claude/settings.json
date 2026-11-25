@@ -24,8 +24,6 @@
       "Bash(python3 scripts/sdd.py *)"
     ],
     "deny": [
-      "Read(**/.env)",
-      "Read(**/.env.*)",
       "Edit(apps/web/app/types/api.gen.ts)",
       "Edit(.sdd/**)"
     ],

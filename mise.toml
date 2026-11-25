@@ -7,6 +7,11 @@ bun = "1.4.0"
 uv = "0.12.13"
 python = "3.12"
 supabase = "2.116.0"
+lefthook = "2.2.2"
+gitleaks = "8.30.1"
+actionlint = "1.7.12"
+zizmor = "1.33.1"
+shellcheck = "0.11.0"
 
 [env]
 UV_PYTHON = "3.12"
@@ -14,17 +19,28 @@ UV_PYTHON = "3.12"
 # --- setup -------------------------------------------------------------------
 
 [tasks.setup]
-description = "Install all Python and JavaScript dependencies"
-run = ["uv sync --all-packages", "bun install"]
+description = "Install tools, all Python and JavaScript dependencies, and the git hooks"
+run = ["mise install", "uv sync --all-packages", "bun install", "lefthook install"]
+
+[tasks."hooks:install"]
+description = "Install the lefthook git hooks (pre-commit, commit-msg, pre-push)"
+run = "lefthook install"
 
 # --- dev servers ---------------------------------------------------------------
+
+[tasks."infra:up"]
+description = "Ensure local Supabase and Redis are running"
+run = [
+  "supabase status >/dev/null 2>&1 || supabase start",
+  "docker compose up -d redis --wait",
+]
 
 [tasks."api:dev"]
 description = "Run the gateway API with reload on :8000"
 dir = "apps/api"
 env = { APP_ENV = "development" }
-depends = ["redis:start"]
-run = "uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
+depends = ["infra:up"]
+run = "python3 ../../scripts/local_env.py -- uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
 
 [tasks."web:dev"]
 description = "Run the Nuxt web client on :3000"
@@ -69,9 +85,17 @@ description = "ESLint"
 dir = "apps/web"
 run = "bun run lint"
 
+[tasks."lint:actions"]
+description = "actionlint + zizmor over the GitHub Actions workflows"
+run = ["actionlint", "zizmor --offline --min-severity medium .github"]
+
 [tasks.lint]
 description = "All linters"
-depends = ["lint:py", "lint:web"]
+depends = ["lint:py", "lint:web", "lint:actions"]
+
+[tasks."secrets:scan"]
+description = "gitleaks over the full git history"
+run = "gitleaks git --redact --no-banner"
 
 [tasks."typecheck:py"]
 description = "mypy --strict over engine and API"
@@ -144,21 +168,6 @@ description = "Scaffold a new spec folder: mise run spec:new <slug>"
 run = "uv run python scripts/new_spec.py"
 
 # --- database (Supabase CLI; needs Docker) ----------------------------------------
-# Without Supabase the API uses SQLite at apps/api/var/shield.db; nothing to run.
-
-[tasks."local:db:reset"]
-description = "Delete the local SQLite databases (accounts, scores, saves, audit log); stop the API first"
-dir = "apps/api"
-confirm = "Delete every local SQLite database in apps/api/var? This cannot be undone."
-# Fixed file names only (the default SQLITE_PATH and its per-domain files), never a glob.
-run = """
-for f in var/shield.db var/shield.audit.db var/shield.game.db var/shield.players.db; do
-  for g in "$f" "$f-wal" "$f-shm" "$f-journal"; do
-    if [ -f "$g" ]; then rm -- "$g" && echo "removed $g"; fi
-  done
-done
-echo "Local SQLite reset. Restart the API to recreate empty databases."
-"""
 
 [tasks."admin:create"]
 description = "Create or promote a Supabase user to admin (app_metadata.role = admin); prompts for the password"
@@ -174,7 +183,7 @@ run = 'uv run python -m shield_api.admin_cli revoke "${usage_email}"'
 
 [tasks."db:start"]
 description = "Start the local Supabase stack (applies migrations + seed on first run)"
-run = "supabase start"
+run = "supabase status >/dev/null 2>&1 || supabase start"
 
 [tasks."db:stop"]
 description = "Stop the local Supabase stack (data is kept)"
@@ -208,6 +217,13 @@ run = "supabase migration new"
 description = "Generate SQL for schema changes made in Studio: mise run db:diff -f <name>"
 run = "supabase db diff --schema audit,game,players"
 
+[tasks."db:check"]
+description = "CI: apply every migration to a fresh database, then fail on plpgsql errors"
+run = [
+  "supabase db start",
+  "supabase db lint --local --schema audit,game,players --fail-on error",
+]
+
 [tasks."db:lint"]
 description = "Lint the local database schema"
 run = "supabase db lint --schema audit,game,players"
@@ -224,10 +240,11 @@ run = "supabase db push"
 
 [tasks.up]
 description = "Build and run API + web with Docker Compose"
-run = "docker compose up --build"
+depends = ["db:start"]
+run = "python3 scripts/local_env.py --docker -- docker compose up --build"
 
 [tasks.down]
-description = "Stop the Compose stack (the audit-log volume is kept)"
+description = "Stop the Compose stack"
 run = "docker compose down"
 
 # --- model ----------------------------------------------------------------------
@@ -240,7 +257,7 @@ run = "uv run shield-engine train --data packages/engine/data/seed/train.jsonl"
 
 [tasks.check]
 description = "Everything CI runs. Must pass before pushing."
-depends = ["lint", "typecheck", "test", "spec:check", "contract:check"]
+depends = ["lint", "typecheck", "test", "spec:check", "contract:check", "secrets:scan"]
 
 [tasks."build:web"]
 description = "Production build of the web client"

@@ -12,12 +12,9 @@ FROM python:3.12-slim-bookworm
 RUN useradd --create-home --uid 10001 shield
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 \
-    SQLITE_PATH=/app/var/shield.db
-RUN mkdir -p /app/var && chown shield /app/var
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER shield
 EXPOSE 8000
-VOLUME ["/app/var"]
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
   CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)"]
 CMD ["uvicorn", "shield_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

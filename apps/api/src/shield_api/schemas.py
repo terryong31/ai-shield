@@ -14,6 +14,8 @@ from pydantic import (
     ConfigDict,
     Field,
     SecretStr,
+    StrictInt,
+    StrictStr,
     StringConstraints,
     model_validator,
 )
@@ -40,7 +42,7 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     # Agent tiers that run a live model; the rest use the offline stand-in.
     agent_tiers: list[AgentTier]
-    storage_backend: Literal["sqlite", "supabase", "memory"]
+    storage_backend: Literal["supabase", "memory"]
 
 
 class ClearanceRequest(BaseModel):
@@ -150,6 +152,7 @@ class GameCatalogResponse(BaseModel):
     checks: list[CheckDefinitionSchema]
     jev_key_configured: bool = False
     ai_key_configured: bool = False
+    self_upgrade_enabled: bool = False
 
 
 PlayerTier = Literal["anonymous", "free", "paid"]
@@ -273,6 +276,8 @@ class PlayerSessionStatus(BaseModel):
     wave_runs_used: int = 0
     daily_test_limit: int | None = None
     test_runs_used: int = 0
+    daily_train_limit: int | None = 0
+    train_runs_used: int = 0
 
 
 ProviderId = Literal["openai", "anthropic", "google", "groq", "deepseek", "qwen", "moonshot"]
@@ -354,7 +359,7 @@ class SavedBoardResponse(SavedBoardRequest):
 class GameRunRequest(BaseModel):
     level_id: RunLevelId = "easy-1"
     board: BoardGraphSchema
-    custom_message: str | None = None
+    custom_message: Annotated[str, Field(max_length=1000)] | None = None
     # Required when level_id is "custom" (paid players only, spec 0022).
     custom: CustomRunSchema | None = None
 
@@ -420,6 +425,7 @@ class GameRunResponse(BaseModel):
     traces: list[MessageTraceSchema]
     score: WaveScoreSchema
     agent_mode: AgentMode
+    untrained_model_nodes: list[str] = Field(default_factory=list)
 
 
 class ScoreCreateRequest(BaseModel):
@@ -468,6 +474,12 @@ class DifficultyLeaderboardEntry(BaseModel):
     total_cost_usd: float
 
 
+class LeaderboardRankResponse(BaseModel):
+    difficulty: DifficultyCategory
+    rank: int | None
+    total_score: int | None
+
+
 class LevelProgressItem(BaseModel):
     level_id: LevelId
     difficulty: DifficultyCategory
@@ -491,14 +503,25 @@ class PlayerProgressResponse(BaseModel):
     difficulties: list[DifficultyProgressSummary]
 
 
+class TrainingRowSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: StrictStr
+    label: StrictInt | StrictStr
+
+
 class GameTrainRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     algorithm: str = "logistic_regression"
-    csv_text: str | None = None
-    dataset: list[dict[str, Any]] | None = None
+    csv_text: StrictStr | None = None
+    dataset: list[TrainingRowSchema] | None = None
+    level_id: RunLevelId | None = None
 
 
 class GameTrainResponse(BaseModel):
+    model_id: str
     algorithm: str
     sample_count: int
     accuracy: float
-    dataset: list[dict[str, Any]]
+    expires_at: datetime

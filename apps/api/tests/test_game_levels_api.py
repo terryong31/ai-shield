@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
 
 from shield_api.container import build_container
 from shield_api.schemas import BoardGraphSchema, ScoreCreateRequest
-from shield_api.services.players import SqlitePlayerStore
-from shield_api.services.scores import SqliteScoreStore
-from shield_api.services.sqlite import domain_path
+from shield_api.services.scores import SupabaseScoreStore
 from shield_api.settings import Settings
 from shield_engine.game import get_level
 from shield_engine.ports import ChatCompletion
 from shield_engine.testing import ScriptedUsageChatModel
 
-from .conftest import Harness
+from .conftest import FakeClient, Harness
 
 HELPFUL = ChatCompletion(
     text=json.dumps({"reply": "Happy to help.", "tool_calls": [], "refused": False}),
@@ -70,12 +66,16 @@ def test_catalog_exposes_model_tier_and_final_node_label(harness: Harness) -> No
 
 @pytest.mark.spec("API-LEVEL-002")
 def test_settings_pick_a_model_per_tier_and_runs_use_their_own_tier(
-    harness: Harness, tmp_path: Path
+    make_harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    harness = make_harness(allow_self_upgrade=True)
+    monkeypatch.setattr("supabase.create_client", lambda url, key: FakeClient())
     container = build_container(
         Settings(
             _env_file=None,
-            SQLITE_PATH=tmp_path / "var" / "shield.db",
+            APP_ENV="development",
+            SUPABASE_URL="https://example.supabase.co",
+            SUPABASE_KEY=SecretStr("service-key"),
             GROQ_API_KEY=SecretStr("gsk-test"),
             GOOGLE_API_KEY=SecretStr("g-test"),
             GAME_MODEL_STANDARD="gemini-test-standard",
@@ -88,7 +88,9 @@ def test_settings_pick_a_model_per_tier_and_runs_use_their_own_tier(
     offline = build_container(
         Settings(
             _env_file=None,
-            SQLITE_PATH=tmp_path / "var2" / "shield.db",
+            APP_ENV="development",
+            SUPABASE_URL="https://example.supabase.co",
+            SUPABASE_KEY=SecretStr("service-key"),
         )
     )
     assert offline.game_agents == {}
@@ -119,8 +121,7 @@ def test_settings_pick_a_model_per_tier_and_runs_use_their_own_tier(
 
 
 @pytest.mark.spec("API-LEVEL-003")
-def test_easy_runs_use_no_quota_and_are_recorded(harness: Harness, tmp_path: Path) -> None:
-    harness.container.players = SqlitePlayerStore(tmp_path / "players.db")
+def test_easy_runs_use_no_quota_and_are_recorded(harness: Harness) -> None:
     harness.container.game_agents = {
         "standard": ScriptedUsageChatModel(replies=[], default=HELPFUL)
     }
@@ -146,39 +147,30 @@ def test_easy_runs_use_no_quota_and_are_recorded(harness: Harness, tmp_path: Pat
 
 
 @pytest.mark.spec("API-LEVEL-004")
-async def test_leaderboard_lists_only_the_current_score_version(tmp_path: Path) -> None:
-    path = tmp_path / "audit.db"
-    # A pre-0021 leaderboard table in the game domain database (spec 0024 layout).
-    with sqlite3.connect(domain_path(path, "game")) as connection:
-        connection.execute(
-            """
-            create table scores (
-              id text primary key, created_at text not null, player_name text not null,
-              level_id text not null, total_score integer not null, medal text not null,
-              attacks_blocked integer not null, attacks_total integer not null,
-              false_alarms integer not null, avg_latency_ms real not null,
-              total_cost_usd real not null, board_json text not null
-            )
-            """
-        )
-        connection.execute(
-            "insert into scores values ('old', '2026-01-01T00:00:00+00:00', 'veteran', 'easy',"
-            " 9999, 'gold', 4, 4, 0, 1.0, 0.0, ?)",
-            (json.dumps({"nodes": [], "edges": []}),),
-        )
-
-    log = SqliteScoreStore(path)
-    # Spec 0039 purges pre-v3 / legacy 'easy' rows on startup, and list_scores filters by version.
-    with sqlite3.connect(domain_path(path, "game")) as connection:
-        assert connection.execute("select id from scores").fetchall() == []
-        connection.execute(
-            "insert into scores (id, created_at, player_name, level_id, total_score, medal,"
-            " attacks_blocked, attacks_total, false_alarms, avg_latency_ms, total_cost_usd,"
-            " board_json, score_version, email, won, mastered)"
-            " values ('v2-row', '2026-06-01T00:00:00+00:00', 'veteran', 'easy-1',"
-            " 9999, 'gold', 4, 4, 0, 1.0, 0.0, ?, 2, 'vet@example.com', 1, 0)",
-            (json.dumps({"nodes": [], "edges": []}),),
-        )
+async def test_leaderboard_lists_only_the_current_score_version() -> None:
+    client = FakeClient()
+    log = SupabaseScoreStore(client)
+    # Spec 0039 filters list_scores by current score_version = 3.
+    client.schema("game").table("scores").insert(
+        {
+            "id": "v2-row",
+            "created_at": "2026-06-01T00:00:00+00:00",
+            "player_name": "veteran",
+            "level_id": "easy-1",
+            "total_score": 9999,
+            "medal": "gold",
+            "attacks_blocked": 4,
+            "attacks_total": 4,
+            "false_alarms": 0,
+            "avg_latency_ms": 1.0,
+            "total_cost_usd": 0.0,
+            "board_json": json.dumps({"nodes": [], "edges": []}),
+            "score_version": 2,
+            "email": "vet@example.com",
+            "won": True,
+            "mastered": False,
+        }
+    ).execute()
     assert await log.list_scores(level_id="easy-1") == []
 
     level = get_level("easy-1")

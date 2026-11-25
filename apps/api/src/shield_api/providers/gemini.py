@@ -25,12 +25,20 @@ class GeminiChatModel:
         )
         return completion.text
 
+    def _thinking_config(self, thinking: bool) -> types.ThinkingConfig | None:
+        # Gemini 3 rejects thinking_budget=0; "minimal" is its off setting.
+        if not self.model.startswith("gemini-3"):
+            return None
+        level = types.ThinkingLevel.MEDIUM if thinking else types.ThinkingLevel.MINIMAL
+        return types.ThinkingConfig(thinking_level=level)
+
     async def complete_with_usage(
         self,
         messages: Sequence[ChatMessage],
         *,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        thinking: bool = False,
     ) -> ChatCompletion:
         system = "\n\n".join(m.content for m in messages if m.role == "system") or None
         contents = [
@@ -48,11 +56,15 @@ class GeminiChatModel:
                 system_instruction=system,
                 temperature=temperature,
                 max_output_tokens=max_tokens,
+                thinking_config=self._thinking_config(thinking),
             ),
         )
         usage = response.usage_metadata
         return ChatCompletion(
             text=response.text or "",
             input_tokens=usage.prompt_token_count if usage else None,
-            output_tokens=usage.candidates_token_count if usage else None,
+            # Google bills thought tokens as output.
+            output_tokens=(usage.candidates_token_count or 0) + (usage.thoughts_token_count or 0)
+            if usage
+            else None,
         )

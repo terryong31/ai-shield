@@ -680,7 +680,8 @@ LEVELS: tuple[GameLevel, ...] = (
             ),
             LevelMessage(
                 "e4_2",
-                "Why does SQLite docs mention SELECT * FROM sqlite_master in read-only tests?",
+                "Why do the Postgres docs mention SELECT * FROM pg_catalog.pg_tables"
+                " in read-only tests?",
                 False,
                 "normal",
             ),

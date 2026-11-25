@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { levelHighScore } from '../app/utils/campaignSelect'
 import type { MessageTraceSchema, PlayerSessionStatus, WaveScoreSchema } from '../app/types/api'
 import {
   AGENT_RULE_LIMIT,
@@ -24,7 +25,7 @@ import {
   nextHighScore,
   isNewRecord,
   nextHighStars,
-  starsForMedal,
+  waveStars,
   scoreBreakdown,
   summarizeNodeTraffic,
   toApiBoard,
@@ -187,16 +188,39 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-019] always shows the high-score stars to the right of High Score', () => {
-    expect(nextHighStars(null, 0, 9000, 'gold')).toBe(3)
-    expect(nextHighStars(9000, 3, 8000, 'bronze')).toBe(3)
-    expect(nextHighStars(8000, 1, 9500, 'silver')).toBe(2)
+    expect(nextHighStars(null, 0, 9000, 3)).toBe(3)
+    expect(nextHighStars(9000, 3, 8000, 1)).toBe(3)
+    expect(nextHighStars(8000, 1, 9500, 2)).toBe(2)
 
     const gameSource = read('pages', 'game.vue')
     const header = gameSource.slice(gameSource.indexOf('<header'), gameSource.indexOf('</header>'))
     expect(header).toMatch(/High Score:[\s\S]*?<\/span>\s*<UInputRating[\s\S]*?:model-value="highStars"[\s\S]*?readonly/)
     const waveOnly = header.slice(header.indexOf('v-if="waveScore"'), header.indexOf('High Score:'))
     expect(waveOnly).not.toContain('UInputRating')
-    expect(gameSource).toMatch(/highStars\.value = nextHighStars\(highScore\.value, highStars\.value, response\.score\.total_score, response\.score\.medal\)/)
+    expect(gameSource).toMatch(/highStars\.value = nextHighStars\(highScore\.value, highStars\.value, response\.score\.total_score, waveStars\(response\.score\)\)/)
+
+    const item = (level_id: 'easy-1' | 'easy-2', best_score: number, won: boolean, medal: WaveScoreSchema['medal'], mastered: boolean) =>
+      ({ level_id, difficulty: 'Easy' as const, best_score, won, medal, mastered })
+    const progress = { difficulties: [], levels: [item('easy-1', 9366, true, 'gold', false), item('easy-2', 0, false, 'none', false)] }
+    expect(levelHighScore(progress, 'easy-1')).toEqual({ score: 9366, stars: 2 })
+    expect(levelHighScore(progress, 'easy-2')).toEqual({ score: null, stars: 0 })
+    expect(levelHighScore(progress, 'easy-3')).toEqual({ score: null, stars: 0 })
+    expect(levelHighScore(null, 'easy-1')).toEqual({ score: null, stars: 0 })
+    const loader = gameSource.slice(gameSource.indexOf('const loadStoredHighScore'))
+    expect(loader).toContain('getProgress()')
+    expect(loader).toContain('levelHighScore(')
+    expect(gameSource.match(/loadStoredHighScore\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+  })
+
+  it('[WEB-AGENT-023] saves the board automatically after a won wave for signed-in players', () => {
+    const gameSource = read('pages', 'game.vue')
+    const persist = gameSource.slice(gameSource.indexOf('const persistBoard'), gameSource.indexOf('const handleSaveBoard'))
+    expect(persist).toContain('putSave(saveLevelKey.value, payload)')
+    expect(persist).toContain('setCachedBoard(')
+    expect(persist).toContain('markSaved()')
+    expect(persist).not.toContain('toast')
+    const run = gameSource.slice(gameSource.indexOf('const handleRunWave'), gameSource.indexOf('const handleTestCustomMessage'))
+    expect(run).toMatch(/if \(!singleMessage && response\.score\.won && !isAnonymous\.value\) \{\s*void persistBoard\(\)/)
   })
 
   it('[WEB-AGENT-020] shows the confusion matrix in Score breakdown, not in Run results', () => {
@@ -377,10 +401,11 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-010] shows latency and cost in the header and stars instead of Last run', () => {
-    expect(starsForMedal('gold')).toBe(3)
-    expect(starsForMedal('silver')).toBe(2)
-    expect(starsForMedal('bronze')).toBe(1)
-    expect(starsForMedal('none')).toBe(0)
+    expect(waveStars({ won: true, medal: 'gold', follow_up_passed: true })).toBe(3)
+    expect(waveStars({ won: true, medal: 'gold', follow_up_passed: false })).toBe(2)
+    expect(waveStars({ won: true, medal: 'silver', follow_up_passed: true })).toBe(2)
+    expect(waveStars({ won: true, medal: 'bronze', follow_up_passed: false })).toBe(1)
+    expect(waveStars({ won: false, medal: 'none', follow_up_passed: false })).toBe(0)
 
     expect(nodeCostLine(0.2, 0)).toBe('0.2 ms per message · Free')
     expect(nodeCostLine(85, 0.0002)).toBe('85 ms per message · $0.0002')
@@ -397,7 +422,8 @@ describe('game AI agent (spec 0020)', () => {
     expect(gameSource).toContain('nodeCostLine(')
     // The per-node Last wave summary moved to the Run results modal (WEB-AGENT-011).
     expect(gameSource).toMatch(/<UInputRating[^>]*readonly/)
-    expect(gameSource).toContain('starsForMedal(waveScore.medal)')
+    expect(gameSource).toContain(':model-value="waveStars(waveScore)"')
+    expect(gameSource).not.toContain('starsForMedal')
   })
 
   it('[WEB-AGENT-011] shows a confusion matrix of the run instead of a per-node Last wave', () => {

@@ -1,22 +1,25 @@
 import type {
   DifficultyCategory,
   DifficultyLeaderboardEntry,
-  LevelId,
-  ScoreRecord
+  LeaderboardRankResponse,
+  LevelId
 } from '~/types/api'
+import {
+  LEADERBOARD_POLL_INTERVAL_MS,
+  LEADERBOARD_STALE_AFTER_MS
+} from '~/utils/leaderboard'
 
-const CACHE_KEY = 'shield_leaderboard_cache_v3'
+const CACHE_KEY = 'shield_leaderboard_cache_v5'
 
 let inFlightRefresh: Promise<void> | null = null
-let streamSource: EventSource | null = null
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-let retryTimer: ReturnType<typeof setTimeout> | null = null
-let streamSubscribers = 0
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let visibilityListenerAttached = false
+let subscribers = 0
 
 export const useLeaderboard = () => {
-  const { getScores, getLeaderboard } = useShieldApi()
+  const { getLeaderboard, getMyLeaderboardRank } = useShieldApi()
+  const { isLoggedIn } = usePlayerAuth()
 
-  const scores = useState<ScoreRecord[]>('shield_leaderboard_scores', () => [])
   const difficultyLeaderboards = useState<Record<DifficultyCategory, DifficultyLeaderboardEntry[]>>(
     'shield_difficulty_leaderboards',
     () => ({
@@ -25,17 +28,18 @@ export const useLeaderboard = () => {
       Hard: []
     })
   )
+  const myRanks = useState<Partial<Record<DifficultyCategory, LeaderboardRankResponse>>>(
+    'shield_leaderboard_my_ranks',
+    () => ({})
+  )
+  const lastFetchedAt = useState<Partial<Record<DifficultyCategory, number>>>(
+    'shield_leaderboard_fetched_at',
+    () => ({})
+  )
   const hasLoaded = useState<boolean>('shield_leaderboard_loaded', () => false)
   const loading = useState<boolean>('shield_leaderboard_loading', () => false)
   const selectedTab = useState<LevelId>('shield_leaderboard_tab', () => 'easy-1')
   const selectedDifficulty = useState<DifficultyCategory>('shield_leaderboard_difficulty', () => 'Easy')
-
-  const clearRetryTimer = () => {
-    if (retryTimer) {
-      clearTimeout(retryTimer)
-      retryTimer = null
-    }
-  }
 
   const hydrateFromCache = () => {
     if (!import.meta.client || hasLoaded.value) return
@@ -69,14 +73,30 @@ export const useLeaderboard = () => {
     }
   }
 
-  const refreshRawScores = async (limit = 50) => {
-    scores.value = await getScores(undefined, limit)
+  const isStale = (diff: DifficultyCategory): boolean => {
+    const ts = lastFetchedAt.value[diff]
+    if (ts === undefined) return true
+    return Date.now() - ts >= LEADERBOARD_STALE_AFTER_MS
   }
 
-  const refreshScores = async (options?: { background?: boolean }) => {
-    if (inFlightRefresh) return inFlightRefresh
-    clearRetryTimer()
+  const refreshMyRank = async (diff: DifficultyCategory) => {
+    if (!isLoggedIn.value) return
+    try {
+      const rank = await getMyLeaderboardRank(diff)
+      myRanks.value = { ...myRanks.value, [diff]: rank }
+    } catch {
+      // Non-fatal: keep existing rank summary on transient errors.
+    }
+  }
+
+  const refreshScores = async (options?: { background?: boolean, force?: boolean }) => {
     hydrateFromCache()
+    const activeDiff = selectedDifficulty.value
+    const force = options?.force ?? options?.background ?? false
+    if (!force && !isStale(activeDiff)) {
+      return
+    }
+    if (inFlightRefresh) return inFlightRefresh
 
     const background = options?.background ?? hasLoaded.value
     if (!background && !hasLoaded.value) {
@@ -85,42 +105,20 @@ export const useLeaderboard = () => {
 
     inFlightRefresh = (async () => {
       try {
-        const allTabs: DifficultyCategory[] = ['Easy', 'Medium', 'Hard']
-        const activeDiff = selectedDifficulty.value
         const activeRows = await getLeaderboard(activeDiff, 25)
         difficultyLeaderboards.value = {
           ...difficultyLeaderboards.value,
           [activeDiff]: activeRows
         }
+        lastFetchedAt.value = {
+          ...lastFetchedAt.value,
+          [activeDiff]: Date.now()
+        }
         hasLoaded.value = true
-        loading.value = false
-        clearRetryTimer()
         persistToCache()
-
-        const remainingTabs = allTabs.filter(t => t !== activeDiff)
-        void Promise.all(
-          remainingTabs.map(async (diff) => {
-            const rows = await getLeaderboard(diff, 25)
-            difficultyLeaderboards.value = {
-              ...difficultyLeaderboards.value,
-              [diff]: rows
-            }
-          })
-        )
-          .then(() => {
-            persistToCache()
-          })
-          .catch((err) => {
-            console.warn('Background leaderboard prefetch failed:', err)
-          })
+        await refreshMyRank(activeDiff)
       } catch (err) {
         console.warn('Scoreboard unavailable:', err)
-        if (!hasLoaded.value && import.meta.client && !retryTimer) {
-          retryTimer = setTimeout(() => {
-            retryTimer = null
-            void refreshScores({ background: true })
-          }, 1500)
-        }
       } finally {
         loading.value = false
         inFlightRefresh = null
@@ -130,56 +128,59 @@ export const useLeaderboard = () => {
     return inFlightRefresh
   }
 
-  const scheduleBackgroundRefresh = () => {
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null
-      void refreshScores({ background: true })
-    }, 300)
-  }
-
-  const connectStream = () => {
-    if (!import.meta.client || typeof EventSource === 'undefined') return
-    streamSubscribers += 1
-    if (streamSource) return
-
-    // Same-origin /api/v1/game/scores/stream, proxied to the gateway (spec 0041).
-    const source = new EventSource(LEADERBOARD_STREAM_PATH)
-    source.addEventListener('open', () => {
-      if (!hasLoaded.value) {
-        void refreshScores({ background: true })
-      }
-    })
-    source.addEventListener('leaderboard', () => {
-      scheduleBackgroundRefresh()
-    })
-    streamSource = source
-  }
-
-  const disconnectStream = () => {
-    streamSubscribers = Math.max(0, streamSubscribers - 1)
-    if (streamSubscribers > 0) return
-    clearRetryTimer()
-    if (debounceTimer) {
-      clearTimeout(debounceTimer)
-      debounceTimer = null
-    }
-    if (streamSource) {
-      streamSource.close()
-      streamSource = null
+  const handleVisibilityChange = () => {
+    if (!import.meta.client || document.hidden) return
+    if (isStale(selectedDifficulty.value)) {
+      void refreshScores({ background: true, force: true })
     }
   }
+
+  const startPolling = () => {
+    if (!import.meta.client) return
+    subscribers += 1
+    if (!visibilityListenerAttached && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      visibilityListenerAttached = true
+    }
+    if (!pollTimer) {
+      pollTimer = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return
+        void refreshScores({ background: true, force: true })
+      }, LEADERBOARD_POLL_INTERVAL_MS)
+    }
+  }
+
+  const stopPolling = () => {
+    subscribers = Math.max(0, subscribers - 1)
+    if (subscribers > 0) return
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+    if (visibilityListenerAttached && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      visibilityListenerAttached = false
+    }
+  }
+
+  watch(selectedDifficulty, (diff) => {
+    if (!import.meta.client) return
+    if (isStale(diff)) {
+      void refreshScores({ background: hasLoaded.value, force: true })
+    } else if (isLoggedIn.value && myRanks.value[diff] === undefined) {
+      void refreshMyRank(diff)
+    }
+  })
 
   return {
-    scores,
     difficultyLeaderboards,
+    myRanks,
     hasLoaded,
     loading,
     selectedTab,
     selectedDifficulty,
     refreshScores,
-    refreshRawScores,
-    connectStream,
-    disconnectStream
+    startPolling,
+    stopPolling
   }
 }

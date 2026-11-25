@@ -1,11 +1,9 @@
-# Runs the demo as containers: `mise run up` (or `docker compose up --build`).
+# Runs the demo as containers: `mise run up` starts local Supabase first, then
+# runs `docker compose up --build` with SUPABASE_URL / SUPABASE_KEY injected.
 #   web  http://localhost:3000
 #   api  http://localhost:8000/api/v1/health
-#   (Swagger UI at /api/v1/docs only with APP_ENV=development: `APP_ENV=development mise run up`)
-#
-# Data: SQLite in the `shield-data` volume by default. To use Supabase,
-# set SUPABASE_URL and SUPABASE_KEY in apps/api/.env. For the local Supabase
-# stack (`mise run db:start`), use SUPABASE_URL=http://host.docker.internal:54321.
+#   (APP_ENV defaults to development here: Swagger UI on, rate limits and BotID off.
+#    Production runs on Vercel with APP_ENV=production; `APP_ENV=production mise run up` to try it.)
 
 name: ai-shield
 
@@ -29,13 +27,13 @@ services:
       - path: apps/api/.env
         required: false
     environment:
-      APP_ENV: ${APP_ENV:-production}
+      APP_ENV: ${APP_ENV:-development}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://[::1]:3000,http://[::]:3000}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
     ports:
       - "8000:8000"
-    volumes:
-      - shield-data:/app/var
     depends_on:
       redis:
         condition: service_healthy
@@ -48,6 +46,7 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     environment:
+      APP_ENV: ${APP_ENV:-development}
       # Server-side proxy target (spec 0041); the browser only talks to web.
       NUXT_API_PROXY_TARGET: http://api:8000
     ports:
@@ -56,6 +55,3 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  shield-data:

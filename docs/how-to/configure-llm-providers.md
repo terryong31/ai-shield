@@ -8,7 +8,7 @@ The game's agent levels run a real model when one is configured. Keys go in
 | --- | --- | --- | --- |
 | Easy | none | classification only, no model | nothing |
 | Medium | `standard` | `GAME_MODEL_STANDARD`, else `GEMINI_MODEL` (Gemini) or `GROQ_CHAT_MODEL` (Groq) | `GOOGLE_API_KEY` or `GROQ_API_KEY` |
-| Hard | `budget` | `GAME_MODEL_BUDGET` (default `llama-3.1-8b-instant`) on Groq | `GROQ_API_KEY` |
+| Hard | `budget` | `GAME_MODEL_BUDGET` (default `openai/gpt-oss-20b`) on Groq | `GROQ_API_KEY` |
 | Custom | the player's own | the player's provider and model (BYOK) | the player's key, per run |
 
 Without a key for a tier, that level runs a deterministic offline stand-in, so
@@ -21,7 +21,7 @@ the game still works and tests need no network.
 
    ```dotenv
    GOOGLE_API_KEY=...
-   GEMINI_MODEL=gemini-2.5-flash
+   GEMINI_MODEL=gemini-3.5-flash-lite
    ```
 
 ## Enable Groq (budget tier, and standard without Gemini)
@@ -31,9 +31,14 @@ the game still works and tests need no network.
 
    ```dotenv
    GROQ_API_KEY=gsk_...
-   GAME_MODEL_BUDGET=llama-3.1-8b-instant
-   GROQ_CHAT_MODEL=llama-3.3-70b-versatile   # standard tier when there is no Google key
+   GAME_MODEL_BUDGET=openai/gpt-oss-20b
+   GROQ_CHAT_MODEL=openai/gpt-oss-120b   # standard tier when there is no Google key
    ```
+
+Groq shut down its Llama chat and Llama Guard models for free and developer
+keys on 2026-08-16, and Google no longer serves `gemini-2.x` to new keys. Boards
+saved with those IDs still run: the engine maps them to the replacements above,
+and `Safety check` uses `openai/gpt-oss-safeguard-20b`.
 
 ## Check
 

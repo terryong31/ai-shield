@@ -17,7 +17,7 @@ Input ──▶ [Text cleaner / Word filter / Length limit / Secret scanner / ML
 | Path | What | Stack |
 | --- | --- | --- |
 | [`packages/engine`](packages/engine) | **Engine** (`shield-engine`): board interpreter, checks, levels, AI agent, custom sandbox and scoring | Python 3.12, scikit-learn |
-| [`apps/api`](apps/api) | **Gateway** (`shield-api`): players and quotas, runs, saved boards, leaderboard, admin clearance | FastAPI, SQLite / Supabase |
+| [`apps/api`](apps/api) | **Gateway** (`shield-api`): players and quotas, runs, saved boards, leaderboard, admin clearance | FastAPI, Supabase |
 | [`apps/web`](apps/web) | **Web client** (`@ai-shield/web`): main menu (`/`), defence board (`/game`), plans (`/plans`), settings and the admin console (`/_console`) | Nuxt 4, Nuxt UI, Vue Flow |
 
 The web client talks only to the gateway through a committed [OpenAPI contract](contracts/shield-api.openapi.json). The gateway holds no detection logic; checks, graph evaluation, custom ML training and wave scoring live in `shield-engine`.
@@ -27,7 +27,7 @@ The web client talks only to the gateway through a committed [OpenAPI contract](
 ```bash
 # prerequisites: mise (https://mise.jdx.dev)
 mise install          # pins Python, uv, Node, bun
-mise run setup        # installs all dependencies
+mise run setup        # installs all dependencies and the git hooks
 mise run dev          # API on :8000 (Swagger at /api/v1/docs), web on :3000
 ```
 
@@ -38,7 +38,7 @@ Open http://localhost:3000:
 3. **Admin console (`/_console`):** for Supabase users with `app_metadata.role = "admin"` (create one with `mise run admin:create <email>`); shows score stats and the leaderboard, and can clear the scoreboard.
 
 - **Containers:** `mise run up` builds and runs both apps with [`compose.yaml`](compose.yaml).
-- **Storage:** players, saved boards, scores and admin sessions go to SQLite under `apps/api/var/` by default (`mise run local:db:reset` wipes it). For Supabase see [persist game data](docs/how-to/persist-game-data.md).
+- **Storage:** players, saved boards, scores and admin sessions live in Supabase (local stack via `mise run db:start` in development, Supabase Cloud in production). See [persist game data](docs/how-to/persist-game-data.md).
 
 ## Documentation
 
@@ -56,7 +56,8 @@ Development is **spec-driven and test-driven**:
 
 1. Every behaviour change starts as a spec in [`specs/`](specs/README.md) with acceptance criteria carrying permanent IDs (`ENG-GAME-001`, `WEB-GAME-005`).
 2. Each criterion gets a failing test tagged with its ID before production code is unlocked (`mise run sdd:start` -> `sdd:red` -> `sdd:green` -> `sdd:verify` -> `sdd:done`).
-3. `mise run check` verifies spec coverage (`mise run spec:check`), contract drift (`mise run contract:check`), strict typechecking (`mypy` + `vue-tsc`), linters (`ruff` + `eslint`), and test suites across engine, API, and web.
+3. `mise run check` verifies spec coverage (`mise run spec:check`), contract drift (`mise run contract:check`), strict typechecking (`mypy` + `vue-tsc`), linters (`ruff` + `eslint` + `actionlint` + `zizmor`), a secret scan (`gitleaks`), and test suites across engine, API, and web.
+4. Git hooks ([`lefthook.yml`](lefthook.yml)) run fast checks before each commit and the full gate before each push. GitHub Actions ([`ci.yml`](.github/workflows/ci.yml), [`codeql.yml`](.github/workflows/codeql.yml)) runs the same tasks on every pull request. See [Work with CI and the git hooks](docs/how-to/work-with-ci-and-git-hooks.md).
 
 See [AGENTS.md](AGENTS.md) and [docs/how-to/work-with-ai-agents.md](docs/how-to/work-with-ai-agents.md).
 

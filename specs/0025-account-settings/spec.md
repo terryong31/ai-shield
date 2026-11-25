@@ -162,14 +162,14 @@ Errors and safety (all four endpoints)
 
 Storage
 
-- **API-ACCOUNT-016**: Given the in-memory, SQLite and Supabase (fake client) player stores and audit logs, when the same sequence of account actions runs against each, then their results match.
-- **API-ACCOUNT-017**: Given the new migration and the SQLite mirror, when a signed-in player's wave score is recorded, then the row stores their email, and the best-score upsert is keyed by email, level and score version.
+- **API-ACCOUNT-016**: Given the in-memory and Supabase (fake client) player and score stores, when the same sequence of account actions runs against each, then their results match.
+- **API-ACCOUNT-017**: Given the new migration, when a signed-in player's wave score is recorded, then the row stores their email, and the best-score upsert is keyed by email, level and score version.
 - **API-ACCOUNT-018**: Given recorded scores with emails, when `GET /api/v1/game/scores` is called, then no row in the response contains an email.
 
 Supabase Auth (spec 0027)
 
 - **API-ACCOUNT-019**: Given Supabase mode, when a player changes their password with the right current password, then the current password is checked by a Supabase sign-in whose session is signed out, the new password is set with the admin API on that user, signing in with the old password returns `401` and with the new one `200`, and `players.accounts.password_hash` stays empty.
-- **API-ACCOUNT-020**: Given Supabase mode, when a player changes their email, then the Supabase user's email is updated (confirmed) before the gateway data moves; when Supabase reports the address is taken, then `409` is returned and nothing changes; when the gateway move fails afterwards, then the Supabase email is set back and `503` is returned.
+- **API-ACCOUNT-020**: Given a signed-in player, when they change their email, then the new address must be confirmed through Supabase's confirm-change flow and the gateway data moves at the first sign-in after confirmation ([spec 0042](../0042-run-spend-and-account-integrity/spec.md)); when Supabase reports the address is taken, then `409` is returned and nothing changes.
 - **API-ACCOUNT-021**: Given Supabase mode, when a player deletes their account, then the gateway data is removed and then the Supabase user is deleted, so signing in returns `401`; when deleting the Supabase user fails, then `503` is returned.
 
 Web

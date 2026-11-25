@@ -77,7 +77,7 @@ Criteria 003–015 are observed on the pure `proxyToGateway(request, target, fet
 with a fake `fetch` as the observation point (no network).
 
 - **WEB-PROXY-001**: Given `SHIELD_API_PREFIX`, then it equals `/api/v1`, and no source file under `apps/web/app` reads `public.apiBaseUrl`.
-- **WEB-PROXY-002**: Given `LEADERBOARD_STREAM_PATH`, then it equals `/api/v1/game/scores/stream`, and `useLeaderboard` opens its `EventSource` with that constant.
+- **WEB-PROXY-002**: Given `useLeaderboard`, then it reads leaderboard data only through `useShieldApi()` (under `SHIELD_API_PREFIX`), and it references no stream path and no hard-coded gateway URL.
 - **WEB-PROXY-003**: Given target `https://gw.example` (with or without a trailing slash) and a request to `/api/v1/game/levels?difficulty=Easy`, when it is proxied, then the fake `fetch` is called with `https://gw.example/api/v1/game/levels?difficulty=Easy`.
 - **WEB-PROXY-004**: Given a dot-segment path (`/api/v1/../admin`, `/api/v1/%2e%2e/admin`, `/api/v1/%2E%2E/admin`, `/api/v1/.%2e/admin`), when it is proxied, then the answer is `404` and the fake `fetch` is never called.
 - **WEB-PROXY-005**: Given a path with an empty segment, backslash or encoded slash (`/api/v1//evil.example/x`, `/api/v1/..\admin`, `/api/v1/a%2fb`, `/api/v1/a%5cb`), when it is proxied, then the answer is `404` and the fake `fetch` is never called.

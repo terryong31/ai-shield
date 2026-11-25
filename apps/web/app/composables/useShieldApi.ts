@@ -12,6 +12,7 @@ import type {
   GameRunResponse,
   GameTrainRequest,
   GameTrainResponse,
+  LeaderboardRankResponse,
   LevelId,
   PlayerConfirmationResponse,
   PlayerLoginRequest,
@@ -24,7 +25,6 @@ import type {
   RunLevelId,
   SavedBoardRequest,
   SavedBoardResponse,
-  ScoreCreateRequest,
   ScoreRecord
 } from '~/types/api'
 
@@ -60,7 +60,7 @@ export const useShieldApi = () => {
     changePassword: (body: AccountPasswordRequest) =>
       api<PlayerSessionStatus>('/auth/account/password', { method: 'POST', body }),
     changeEmail: (body: AccountEmailRequest) =>
-      api<PlayerSessionStatus>('/auth/account/email', { method: 'POST', body }),
+      api<PlayerConfirmationResponse>('/auth/account/email', { method: 'POST', body }),
     resetProgress: (body: AccountResetRequest) =>
       api<AccountResetResponse>('/auth/account/reset-progress', { method: 'POST', body }),
     deleteAccount: (body: AccountDeleteRequest) =>
@@ -70,6 +70,7 @@ export const useShieldApi = () => {
       api<GameRunResponse>('/game/run', { method: 'POST', body }),
     trainClassifier: (body: GameTrainRequest) =>
       api<GameTrainResponse>('/game/train', { method: 'POST', body }),
+    purgeModels: () => api('/game/models', { method: 'DELETE' }),
     getSave: (levelId: RunLevelId) =>
       api<SavedBoardResponse>(`/game/saves/${levelId}`),
     putSave: (levelId: RunLevelId, body: SavedBoardRequest) =>
@@ -78,14 +79,16 @@ export const useShieldApi = () => {
       api<DifficultyLeaderboardEntry[]>('/game/leaderboard', {
         query: { difficulty, limit }
       }),
+    getMyLeaderboardRank: (difficulty: DifficultyCategory = 'Easy') =>
+      api<LeaderboardRankResponse>('/game/leaderboard/me', {
+        query: { difficulty }
+      }),
     getProgress: () =>
       api<PlayerProgressResponse>('/game/progress'),
     getScores: (levelId?: LevelId, limit = 25) =>
       api<ScoreRecord[]>('/game/scores', {
         query: levelId ? { level_id: levelId, limit } : { limit }
       }),
-    submitScore: (body: ScoreCreateRequest) =>
-      api<ScoreRecord>('/game/scores', { method: 'POST', body }),
     clearScores: () => api('/game/scores', { method: 'DELETE' })
   }
 }

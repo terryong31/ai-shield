@@ -113,3 +113,55 @@ async def test_test_doubles_replay_their_scripts() -> None:
     assert (await usage.complete_with_usage([])).text == "d"
     with pytest.raises(AssertionError):
         await ScriptedUsageChatModel([]).complete_with_usage([])
+
+
+@pytest.mark.spec("ENG-CHECK-004")
+@pytest.mark.parametrize(
+    ("model_name", "extra"),
+    [
+        ("openai/gpt-oss-120b", {"reasoning_effort": "low", "include_reasoning": False}),
+        ("openai/gpt-oss-safeguard-20b", {"reasoning_effort": "low", "include_reasoning": False}),
+        ("qwen/qwen3.8-27b", {"reasoning_effort": "none", "reasoning_format": "hidden"}),
+        ("allam-2-7b", {}),
+    ],
+)
+async def test_groq_adapter_keeps_reasoning_models_inside_the_token_budget(
+    model_name: str, extra: dict[str, Any]
+) -> None:
+    from shield_engine.adapters.groq import GroqChatModel
+
+    model = GroqChatModel("test-key", model_name)
+    completions = FakeCompletions(None)
+    model._client = type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})()
+
+    await model.complete_with_usage([ChatMessage("user", "hi")], max_tokens=160)
+
+    sent = completions.calls[0]
+    for key in ("reasoning_effort", "include_reasoning", "reasoning_format"):
+        assert sent.get(key) == extra.get(key)
+
+
+@pytest.mark.spec("ENG-CHECK-008")
+@pytest.mark.parametrize(
+    ("model_name", "thinking", "extra"),
+    [
+        ("openai/gpt-oss-120b", True, {"reasoning_effort": "medium", "include_reasoning": False}),
+        ("openai/gpt-oss-20b", False, {"reasoning_effort": "low", "include_reasoning": False}),
+        ("qwen/qwen3.8-27b", True, {"reasoning_effort": "medium", "reasoning_format": "hidden"}),
+        ("qwen/qwen3.8-27b", False, {"reasoning_effort": "none", "reasoning_format": "hidden"}),
+    ],
+)
+async def test_groq_adapter_maps_the_thinking_toggle_to_reasoning_effort(
+    model_name: str, thinking: bool, extra: dict[str, Any]
+) -> None:
+    from shield_engine.adapters.groq import GroqChatModel
+
+    model = GroqChatModel("test-key", model_name)
+    completions = FakeCompletions(None)
+    model._client = type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})()
+
+    await model.complete_with_usage([ChatMessage("user", "hi")], max_tokens=2048, thinking=thinking)
+
+    sent = completions.calls[0]
+    for key in ("reasoning_effort", "include_reasoning", "reasoning_format"):
+        assert sent.get(key) == extra.get(key)

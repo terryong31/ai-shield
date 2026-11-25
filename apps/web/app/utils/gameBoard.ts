@@ -171,20 +171,27 @@ export const NODE_CATALOG: Record<
 }
 
 export const SAFETY_CHECK_MODELS = [
-  { label: 'Llama Guard 3 8B', value: 'llama-guard-3-8b' },
-  { label: 'Llama Guard 4 12B', value: 'meta-llama/llama-guard-4-12b' },
-  { label: 'Qwen3Guard 8B', value: 'qwen3guard-8b' },
-  { label: 'ShieldGemma 9B', value: 'shieldgemma-9b' },
-  { label: 'Nemotron Safety Guard 8B', value: 'llama-nemotron-safety-guard-8b' }
+  { label: 'GPT-OSS Safeguard 20B', value: 'openai/gpt-oss-safeguard-20b' },
+  { label: 'Llama Prompt Guard 2 86M', value: 'meta-llama/llama-prompt-guard-2-86m' },
+  { label: 'Llama Prompt Guard 2 22M', value: 'meta-llama/llama-prompt-guard-2-22m' }
 ] as const
 
 export const LLM_REVIEW_MODELS = [
-  { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
-  { label: 'Gemini 2.0 Flash', value: 'gemini-2.0-flash' },
-  { label: 'Llama 3.3 70B Versatile', value: 'llama-3.3-70b-versatile' },
-  { label: 'Llama 3.1 8B Instant', value: 'llama-3.1-8b-instant' },
-  { label: 'GPT-4o mini', value: 'gpt-4o-mini' }
+  { label: 'Gemini 3.5 Flash-Lite', value: 'gemini-3.5-flash-lite' },
+  { label: 'GPT-OSS 120B', value: 'openai/gpt-oss-120b' },
+  { label: 'GPT-OSS 20B', value: 'openai/gpt-oss-20b' },
+  { label: 'Qwen 3.8 27B', value: 'qwen/qwen3.8-27b' }
 ] as const
+
+export const DEFAULT_SAFETY_CHECK_MODEL = SAFETY_CHECK_MODELS[0].value
+export const DEFAULT_LLM_REVIEW_MODEL = LLM_REVIEW_MODELS[0].value
+
+/** Whether a node's model can think before answering; Prompt Guard only scores (WEB-CHECK-003). */
+export function nodeSupportsThinking(kind: NodeKind | string, model: string): boolean {
+  if (kind === 'llm_review') return true
+  if (kind === 'safety_check') return !model.startsWith('meta-llama/llama-prompt-guard')
+  return false
+}
 
 export function makeGameNode(
   id: string,
@@ -217,11 +224,13 @@ export function makeGameNode(
     defaultConfig.rules = []
     defaultConfig.blocked_tools = []
   } else if (kind === 'safety_check') {
-    defaultConfig.model = 'llama-guard-3-8b'
+    defaultConfig.model = DEFAULT_SAFETY_CHECK_MODEL
+    defaultConfig.thinking = false
     defaultConfig.tool_policy_enabled = false
     defaultConfig.block_tools = []
   } else if (kind === 'llm_review') {
-    defaultConfig.model = 'gemini-2.5-flash'
+    defaultConfig.model = DEFAULT_LLM_REVIEW_MODEL
+    defaultConfig.thinking = false
     defaultConfig.prompt = ''
     defaultConfig.tool_policy_enabled = false
   } else if (kind === 'assistant') {
@@ -417,11 +426,18 @@ export function boardFromSave(save: SavedBoardRequest, levelId: LevelId): BoardS
 
 export function toApiBoard(board: BoardState): BoardGraphSchema {
   return {
-    nodes: board.nodes.map(n => ({
-      id: n.id,
-      kind: (n.data?.kind ?? 'ml_classifier') as NodeKind,
-      config: { ...(n.data?.config ?? {}) }
-    })),
+    nodes: board.nodes.map((n) => {
+      const config = { ...(n.data?.config ?? {}) }
+      if (n.data?.kind === 'ml_classifier') {
+        delete config.dataset
+        delete config.retrainNeeded
+      }
+      return {
+        id: n.id,
+        kind: (n.data?.kind ?? 'ml_classifier') as NodeKind,
+        config
+      }
+    }),
     edges: board.edges.map(e => ({
       id: e.id,
       source: e.source,
@@ -732,10 +748,10 @@ export function nodeCostLine(latencyMs: number, costUsd: number): string {
   return `${Number(latencyMs.toFixed(1))} ms per message · ${formatCheckCost(costUsd)}`
 }
 
-const MEDAL_STARS: Record<WaveScoreSchema['medal'], number> = { none: 0, bronze: 1, silver: 2, gold: 3 }
-
-export function starsForMedal(medal: WaveScoreSchema['medal']): number {
-  return MEDAL_STARS[medal]
+/** Same rule as the Level Select tiles: a win, a gold medal and a mastered Follow-up each add a star. */
+export function waveStars(score: Pick<WaveScoreSchema, 'won' | 'medal' | 'follow_up_passed'>): number {
+  if (!score.won) return 0
+  return 1 + (score.medal === 'gold' ? 1 : 0) + (score.follow_up_passed ? 1 : 0)
 }
 
 /** Stars of the high-score wave: a new wave's stars replace them only when it sets the high score. */
@@ -743,9 +759,9 @@ export function nextHighStars(
   previousScore: number | null,
   previousStars: number,
   score: number,
-  medal: WaveScoreSchema['medal']
+  stars: number
 ): number {
-  return previousScore === null || score > previousScore ? starsForMedal(medal) : previousStars
+  return previousScore === null || score > previousScore ? stars : previousStars
 }
 
 export function waveOutcomeSummary(score: WaveScoreSchema): string {
@@ -806,7 +822,11 @@ export interface PlanCard {
 }
 
 /** Plans shown on /plans (WEB-GAME-014). Limits mirror the gateway's DAILY_LIMITS. */
-export function planCards(session: PlayerSessionStatus): PlanCard[] {
+export function planCards(
+  session: PlayerSessionStatus,
+  options: { selfUpgradeEnabled?: boolean } = {}
+): PlanCard[] {
+  const selfUpgradeEnabled = options.selfUpgradeEnabled ?? true
   const anonymous = session.is_anonymous || session.tier === 'anonymous'
   const signIn = { label: 'Sign in', to: '/auth/login', color: 'neutral' as const, variant: 'outline' as const }
   const current = { label: 'Current plan', disabled: true, color: 'neutral' as const, variant: 'outline' as const }
@@ -837,8 +857,28 @@ export function planCards(session: PlayerSessionStatus): PlanCard[] {
   if (session.tier === 'paid') return [free, { ...paid, button: current }]
   return [
     { ...free, button: current },
-    { ...paid, button: { label: 'Upgrade to Paid', color: 'neutral', variant: 'solid' }, action: 'upgrade' }
+    selfUpgradeEnabled
+      ? { ...paid, button: { label: 'Upgrade to Paid', color: 'neutral', variant: 'solid' }, action: 'upgrade' }
+      : { ...paid, button: { label: 'Coming soon', disabled: true, color: 'neutral', variant: 'solid' } }
   ]
+}
+
+/**
+ * Retry a model-gated run once after creating an anonymous session when the gateway answers 401 (WEB-SPEND-004).
+ */
+export async function runWithAnonymousRetry<T>(
+  run: () => Promise<T>,
+  signInAnonymously: () => Promise<unknown>
+): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    const e = err as { statusCode?: number, status?: number, response?: { status?: number } }
+    const status = e.statusCode ?? e.status ?? e.response?.status
+    if (status !== 401) throw err
+    await signInAnonymously()
+    return await run()
+  }
 }
 
 export interface ConsoleScoreStats {

@@ -26,12 +26,14 @@ def test_only_versioned_routes_are_published() -> None:
         "/api/v1/auth/upgrade",
         "/api/v1/clearance",
         "/api/v1/game/leaderboard",
+        "/api/v1/game/leaderboard/me",
         "/api/v1/game/levels",
+        "/api/v1/game/models",
+        "/api/v1/game/models/purge",
         "/api/v1/game/progress",
         "/api/v1/game/run",
         "/api/v1/game/saves/{level_id}",  # spec 0023
         "/api/v1/game/scores",
-        "/api/v1/game/scores/stream",  # spec 0028
         "/api/v1/game/train",
         "/api/v1/health",
     ]

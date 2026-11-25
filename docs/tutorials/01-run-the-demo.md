@@ -34,7 +34,7 @@ mise install
 mise run setup
 ```
 
-This runs `uv sync --all-packages` (the Python engine and gateway) and `bun install` (the web client).
+This runs `uv sync --all-packages` (the Python engine and gateway) and `bun install` (the web client). It also installs the git hooks (`lefthook install`). The hooks check your commits and run the full gate before each push. See [Work with CI and the git hooks](../how-to/work-with-ci-and-git-hooks.md).
 
 ## 4. (Optional) Configure the gateway
 
