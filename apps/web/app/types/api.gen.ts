@@ -35,7 +35,7 @@ export interface paths {
         put?: never;
         /**
          * Change Email
-         * @description Move the account, its scores, saved boards, usage and sessions to a new email.
+         * @description Start a confirmed email change through Supabase Auth (spec 0042).
          */
         post: operations["change_email_api_v1_auth_account_email_post"];
         delete?: never;
@@ -155,7 +155,7 @@ export interface paths {
         put?: never;
         /**
          * Recover Player Password
-         * @description Trigger a password recovery email via Supabase Auth when configured.
+         * @description Trigger a password recovery email via Supabase Auth.
          */
         post: operations["recover_player_password_api_v1_auth_recover_post"];
         delete?: never;
@@ -175,9 +175,7 @@ export interface paths {
         put?: never;
         /**
          * Register Player
-         * @description Register a player on the free tier.
-         *
-         *     With Supabase, the player must confirm their email before signing in.
+         * @description Register a player on the free tier via Supabase Auth.
          */
         post: operations["register_player_api_v1_auth_register_post"];
         delete?: never;
@@ -285,9 +283,29 @@ export interface paths {
         };
         /**
          * Get Difficulty Leaderboard
-         * @description Aggregate each player's best scores across all levels in a difficulty category.
+         * @description Return each player's aggregated scores across all levels in a difficulty category.
          */
         get: operations["get_difficulty_leaderboard_api_v1_game_leaderboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/game/leaderboard/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Leaderboard Rank
+         * @description Return the signed-in player's rank and score for one difficulty board.
+         */
+        get: operations["get_my_leaderboard_rank_api_v1_game_leaderboard_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -310,6 +328,46 @@ export interface paths {
         get: operations["list_game_levels_api_v1_game_levels_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/game/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Session Models
+         * @description Purge the current session's server-held ML models.
+         */
+        delete: operations["delete_session_models_api_v1_game_models_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/game/models/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Session Models Beacon
+         * @description Beacon-compatible purge endpoint for pagehide cleanup.
+         */
+        post: operations["purge_session_models_beacon_api_v1_game_models_purge_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -393,36 +451,12 @@ export interface paths {
          */
         get: operations["list_game_scores_api_v1_game_scores_get"];
         put?: never;
-        /**
-         * Create Game Score
-         * @description Save a completed run to the scoreboard.
-         */
-        post: operations["create_game_score_api_v1_game_scores_post"];
+        post?: never;
         /**
          * Clear Game Scores
          * @description Clear scoreboard records. Requires an active admin clearance session.
          */
         delete: operations["clear_game_scores_api_v1_game_scores_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/game/scores/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream Game Scores
-         * @description Stream real-time leaderboard update notifications via Server-Sent Events.
-         */
-        get: operations["stream_game_scores_api_v1_game_scores_stream_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -439,7 +473,7 @@ export interface paths {
         put?: never;
         /**
          * Train Game Classifier
-         * @description Validate and train an allowlisted ML classifier on uploaded CSV or dataset rows.
+         * @description Validate, fit once, HMAC-sign, and store a temporary session ML model.
          */
         post: operations["train_game_classifier_api_v1_game_train_post"];
         delete?: never;
@@ -759,6 +793,11 @@ export interface components {
             jev_key_configured: boolean;
             /** Levels */
             levels: components["schemas"]["GameLevelSchema"][];
+            /**
+             * Self Upgrade Enabled
+             * @default false
+             */
+            self_upgrade_enabled: boolean;
         };
         /** GameLevelSchema */
         GameLevelSchema: {
@@ -825,6 +864,8 @@ export interface components {
             score: components["schemas"]["WaveScoreSchema"];
             /** Traces */
             traces: components["schemas"]["MessageTraceSchema"][];
+            /** Untrained Model Nodes */
+            untrained_model_nodes?: string[];
         };
         /** GameTrainRequest */
         GameTrainRequest: {
@@ -836,9 +877,9 @@ export interface components {
             /** Csv Text */
             csv_text?: string | null;
             /** Dataset */
-            dataset?: {
-                [key: string]: unknown;
-            }[] | null;
+            dataset?: components["schemas"]["TrainingRowSchema"][] | null;
+            /** Level Id */
+            level_id?: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom" | null;
         };
         /** GameTrainResponse */
         GameTrainResponse: {
@@ -846,10 +887,13 @@ export interface components {
             accuracy: number;
             /** Algorithm */
             algorithm: string;
-            /** Dataset */
-            dataset: {
-                [key: string]: unknown;
-            }[];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Model Id */
+            model_id: string;
             /** Sample Count */
             sample_count: number;
         };
@@ -875,7 +919,7 @@ export interface components {
              * Storage Backend
              * @enum {string}
              */
-            storage_backend: "sqlite" | "supabase" | "memory";
+            storage_backend: "supabase" | "memory";
             /** Version */
             version: string;
         };
@@ -894,6 +938,18 @@ export interface components {
             latency_ms: number;
             /** Node Id */
             node_id: string;
+        };
+        /** LeaderboardRankResponse */
+        LeaderboardRankResponse: {
+            /**
+             * Difficulty
+             * @enum {string}
+             */
+            difficulty: "Easy" | "Medium" | "Hard";
+            /** Rank */
+            rank: number | null;
+            /** Total Score */
+            total_score: number | null;
         };
         /** LevelConstraintsSchema */
         LevelConstraintsSchema: {
@@ -1039,6 +1095,11 @@ export interface components {
             can_record_scores: boolean;
             /** Daily Test Limit */
             daily_test_limit?: number | null;
+            /**
+             * Daily Train Limit
+             * @default 0
+             */
+            daily_train_limit: number | null;
             /** Daily Wave Limit */
             daily_wave_limit?: number | null;
             /** Email */
@@ -1057,6 +1118,11 @@ export interface components {
              * @enum {string}
              */
             tier: "anonymous" | "free" | "paid";
+            /**
+             * Train Runs Used
+             * @default 0
+             */
+            train_runs_used: number;
             /**
              * Wave Runs Used
              * @default 0
@@ -1087,44 +1153,6 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-        };
-        /** ScoreCreateRequest */
-        ScoreCreateRequest: {
-            /** Attacks Blocked */
-            attacks_blocked: number;
-            /** Attacks Total */
-            attacks_total: number;
-            /** Avg Latency Ms */
-            avg_latency_ms: number;
-            board: components["schemas"]["BoardGraphSchema"];
-            /** False Alarms */
-            false_alarms: number;
-            /**
-             * Level Id
-             * @enum {string}
-             */
-            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
-            /**
-             * Mastered
-             * @default false
-             */
-            mastered: boolean;
-            /**
-             * Medal
-             * @enum {string}
-             */
-            medal: "none" | "bronze" | "silver" | "gold";
-            /** Player Name */
-            player_name: string;
-            /** Total Cost Usd */
-            total_cost_usd: number;
-            /** Total Score */
-            total_score: number;
-            /**
-             * Won
-             * @default false
-             */
-            won: boolean;
         };
         /** ScoreRecord */
         ScoreRecord: {
@@ -1175,6 +1203,13 @@ export interface components {
              * @default false
              */
             won: boolean;
+        };
+        /** TrainingRowSchema */
+        TrainingRowSchema: {
+            /** Label */
+            label: number | string;
+            /** Text */
+            text: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1330,12 +1365,12 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PlayerSessionStatus"];
+                    "application/json": components["schemas"]["PlayerConfirmationResponse"];
                 };
             };
             /** @description The current password is not correct. */
@@ -1571,6 +1606,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Sign-in is unavailable. */
             503: {
                 headers: {
@@ -1662,13 +1704,6 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerConfirmationResponse"];
                 };
             };
-            /** @description An account with this email already exists (local mode only). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -1751,7 +1786,7 @@ export interface operations {
                     "application/json": components["schemas"]["PlayerSessionStatus"];
                 };
             };
-            /** @description Sign in required to upgrade plan. */
+            /** @description Paid plans are disabled or sign-in is required. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1877,6 +1912,44 @@ export interface operations {
             };
         };
     };
+    get_my_leaderboard_rank_api_v1_game_leaderboard_me_get: {
+        parameters: {
+            query?: {
+                difficulty?: "Easy" | "Medium" | "Hard";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeaderboardRankResponse"];
+                };
+            };
+            /** @description Signed-in player session required. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_game_levels_api_v1_game_levels_get: {
         parameters: {
             query?: never;
@@ -1894,6 +1967,42 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GameCatalogResponse"];
                 };
+            };
+        };
+    };
+    delete_session_models_api_v1_game_models_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    purge_session_models_beacon_api_v1_game_models_purge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -1938,6 +2047,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GameRunResponse"];
                 };
+            };
+            /** @description Session required to run a level or node that uses a hosted model. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Sign in required for AI agent nodes. */
             403: {
@@ -2100,46 +2216,6 @@ export interface operations {
             };
         };
     };
-    create_game_score_api_v1_game_scores_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ScoreCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ScoreRecord"];
-                };
-            };
-            /** @description Sign in required to record leaderboard scores. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     clear_game_scores_api_v1_game_scores_delete: {
         parameters: {
             query?: never;
@@ -2165,26 +2241,6 @@ export interface operations {
             };
         };
     };
-    stream_game_scores_api_v1_game_scores_stream_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
     train_game_classifier_api_v1_game_train_post: {
         parameters: {
             query?: never;
@@ -2207,8 +2263,36 @@ export interface operations {
                     "application/json": components["schemas"]["GameTrainResponse"];
                 };
             };
-            /** @description Invalid algorithm or dataset */
+            /** @description Sign in required (paid plan for custom mode). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Training upload exceeds maximum size. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid algorithm, dataset, or oversized model. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Daily or per-minute training limit reached. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Training unavailable or timed out. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

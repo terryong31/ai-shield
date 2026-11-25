@@ -1,6 +1,7 @@
 # 0028 — Instant leaderboard
 
-- **Status:** Implemented
+- **Status:** Superseded by 0044
+- **Note:** Surviving behaviours carried into [0044](../0044-leaderboard-read-scaling/spec.md): WEB-SCORE-002 → WEB-LBOARD-007 (refetch after the player's own run or reset); WEB-SCORE-001 → WEB-LBOARD-009 (instant paint, no empty-state flash).
 - **Area:** API | WEB
 - **Owner:** Terry Ong
 - **Created:** 2026-11-15

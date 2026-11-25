@@ -812,6 +812,11 @@
             },
             "title": "Levels",
             "type": "array"
+          },
+          "self_upgrade_enabled": {
+            "default": false,
+            "title": "Self Upgrade Enabled",
+            "type": "boolean"
           }
         },
         "required": [
@@ -986,6 +991,7 @@
           "custom_message": {
             "anyOf": [
               {
+                "maxLength": 1000,
                 "type": "string"
               },
               {
@@ -1064,6 +1070,13 @@
             },
             "title": "Traces",
             "type": "array"
+          },
+          "untrained_model_nodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Untrained Model Nodes",
+            "type": "array"
           }
         },
         "required": [
@@ -1076,6 +1089,7 @@
         "type": "object"
       },
       "GameTrainRequest": {
+        "additionalProperties": false,
         "properties": {
           "algorithm": {
             "default": "logistic_regression",
@@ -1097,8 +1111,7 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/TrainingRowSchema"
                 },
                 "type": "array"
               },
@@ -1107,6 +1120,46 @@
               }
             ],
             "title": "Dataset"
+          },
+          "level_id": {
+            "anyOf": [
+              {
+                "enum": [
+                  "easy-1",
+                  "easy-2",
+                  "easy-3",
+                  "easy-4",
+                  "easy-5",
+                  "medium-1",
+                  "medium-2",
+                  "medium-3",
+                  "medium-4",
+                  "medium-5",
+                  "medium-6",
+                  "medium-7",
+                  "medium-8",
+                  "medium-9",
+                  "medium-10",
+                  "hard-1",
+                  "hard-2",
+                  "hard-3",
+                  "hard-4",
+                  "hard-5",
+                  "hard-6",
+                  "hard-7",
+                  "hard-8"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "custom",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level Id"
           }
         },
         "title": "GameTrainRequest",
@@ -1122,13 +1175,14 @@
             "title": "Algorithm",
             "type": "string"
           },
-          "dataset": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Dataset",
-            "type": "array"
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
           },
           "sample_count": {
             "title": "Sample Count",
@@ -1136,10 +1190,11 @@
           }
         },
         "required": [
+          "model_id",
           "algorithm",
           "sample_count",
           "accuracy",
-          "dataset"
+          "expires_at"
         ],
         "title": "GameTrainResponse",
         "type": "object"
@@ -1185,7 +1240,6 @@
           },
           "storage_backend": {
             "enum": [
-              "sqlite",
               "supabase",
               "memory"
             ],
@@ -1246,6 +1300,48 @@
           "detail"
         ],
         "title": "HopTraceSchema",
+        "type": "object"
+      },
+      "LeaderboardRankResponse": {
+        "properties": {
+          "difficulty": {
+            "enum": [
+              "Easy",
+              "Medium",
+              "Hard"
+            ],
+            "title": "Difficulty",
+            "type": "string"
+          },
+          "rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rank"
+          },
+          "total_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Score"
+          }
+        },
+        "required": [
+          "difficulty",
+          "rank",
+          "total_score"
+        ],
+        "title": "LeaderboardRankResponse",
         "type": "object"
       },
       "LevelConstraintsSchema": {
@@ -1681,6 +1777,18 @@
             ],
             "title": "Daily Test Limit"
           },
+          "daily_train_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0,
+            "title": "Daily Train Limit"
+          },
           "daily_wave_limit": {
             "anyOf": [
               {
@@ -1724,6 +1832,11 @@
             ],
             "title": "Tier",
             "type": "string"
+          },
+          "train_runs_used": {
+            "default": 0,
+            "title": "Train Runs Used",
+            "type": "integer"
           },
           "wave_runs_used": {
             "default": 0,
@@ -1846,106 +1959,6 @@
         "title": "SavedBoardResponse",
         "type": "object"
       },
-      "ScoreCreateRequest": {
-        "properties": {
-          "attacks_blocked": {
-            "title": "Attacks Blocked",
-            "type": "integer"
-          },
-          "attacks_total": {
-            "title": "Attacks Total",
-            "type": "integer"
-          },
-          "avg_latency_ms": {
-            "title": "Avg Latency Ms",
-            "type": "number"
-          },
-          "board": {
-            "$ref": "#/components/schemas/BoardGraphSchema"
-          },
-          "false_alarms": {
-            "title": "False Alarms",
-            "type": "integer"
-          },
-          "level_id": {
-            "enum": [
-              "easy-1",
-              "easy-2",
-              "easy-3",
-              "easy-4",
-              "easy-5",
-              "medium-1",
-              "medium-2",
-              "medium-3",
-              "medium-4",
-              "medium-5",
-              "medium-6",
-              "medium-7",
-              "medium-8",
-              "medium-9",
-              "medium-10",
-              "hard-1",
-              "hard-2",
-              "hard-3",
-              "hard-4",
-              "hard-5",
-              "hard-6",
-              "hard-7",
-              "hard-8"
-            ],
-            "title": "Level Id",
-            "type": "string"
-          },
-          "mastered": {
-            "default": false,
-            "title": "Mastered",
-            "type": "boolean"
-          },
-          "medal": {
-            "enum": [
-              "none",
-              "bronze",
-              "silver",
-              "gold"
-            ],
-            "title": "Medal",
-            "type": "string"
-          },
-          "player_name": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Player Name",
-            "type": "string"
-          },
-          "total_cost_usd": {
-            "title": "Total Cost Usd",
-            "type": "number"
-          },
-          "total_score": {
-            "title": "Total Score",
-            "type": "integer"
-          },
-          "won": {
-            "default": false,
-            "title": "Won",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "player_name",
-          "level_id",
-          "total_score",
-          "medal",
-          "attacks_blocked",
-          "attacks_total",
-          "false_alarms",
-          "avg_latency_ms",
-          "total_cost_usd",
-          "board"
-        ],
-        "title": "ScoreCreateRequest",
-        "type": "object"
-      },
       "ScoreRecord": {
         "properties": {
           "attacks_blocked": {
@@ -2058,6 +2071,32 @@
           "board"
         ],
         "title": "ScoreRecord",
+        "type": "object"
+      },
+      "TrainingRowSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Label"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "label"
+        ],
+        "title": "TrainingRowSchema",
         "type": "object"
       },
       "ValidationError": {
@@ -2284,7 +2323,7 @@
     },
     "/api/v1/auth/account/email": {
       "post": {
-        "description": "Move the account, its scores, saved boards, usage and sessions to a new email.",
+        "description": "Start a confirmed email change through Supabase Auth (spec 0042).",
         "operationId": "change_email_api_v1_auth_account_email_post",
         "requestBody": {
           "content": {
@@ -2297,11 +2336,11 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlayerSessionStatus"
+                  "$ref": "#/components/schemas/PlayerConfirmationResponse"
                 }
               }
             },
@@ -2510,6 +2549,9 @@
             },
             "description": "Validation Error"
           },
+          "429": {
+            "description": "Too many requests."
+          },
           "503": {
             "description": "Sign-in is unavailable."
           }
@@ -2537,7 +2579,7 @@
     },
     "/api/v1/auth/recover": {
       "post": {
-        "description": "Trigger a password recovery email via Supabase Auth when configured.",
+        "description": "Trigger a password recovery email via Supabase Auth.",
         "operationId": "recover_player_password_api_v1_auth_recover_post",
         "requestBody": {
           "content": {
@@ -2579,7 +2621,7 @@
     },
     "/api/v1/auth/register": {
       "post": {
-        "description": "Register a player on the free tier.\n\nWith Supabase, the player must confirm their email before signing in.",
+        "description": "Register a player on the free tier via Supabase Auth.",
         "operationId": "register_player_api_v1_auth_register_post",
         "requestBody": {
           "content": {
@@ -2611,9 +2653,6 @@
               }
             },
             "description": "Check your email: sent for every address when confirmation is on."
-          },
-          "409": {
-            "description": "An account with this email already exists (local mode only)."
           },
           "422": {
             "content": {
@@ -2712,7 +2751,7 @@
             "description": "Successful Response"
           },
           "403": {
-            "description": "Sign in required to upgrade plan."
+            "description": "Paid plans are disabled or sign-in is required."
           }
         },
         "summary": "Upgrade Player Plan",
@@ -2804,7 +2843,7 @@
     },
     "/api/v1/game/leaderboard": {
       "get": {
-        "description": "Aggregate each player's best scores across all levels in a difficulty category.",
+        "description": "Return each player's aggregated scores across all levels in a difficulty category.",
         "operationId": "get_difficulty_leaderboard_api_v1_game_leaderboard_get",
         "parameters": [
           {
@@ -2873,6 +2912,58 @@
         ]
       }
     },
+    "/api/v1/game/leaderboard/me": {
+      "get": {
+        "description": "Return the signed-in player's rank and score for one difficulty board.",
+        "operationId": "get_my_leaderboard_rank_api_v1_game_leaderboard_me_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "difficulty",
+            "required": false,
+            "schema": {
+              "default": "Easy",
+              "enum": [
+                "Easy",
+                "Medium",
+                "Hard"
+              ],
+              "title": "Difficulty",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardRankResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Signed-in player session required."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get My Leaderboard Rank",
+        "tags": [
+          "Game"
+        ]
+      }
+    },
     "/api/v1/game/levels": {
       "get": {
         "description": "Return built-in levels and placeable check definitions.",
@@ -2890,6 +2981,36 @@
           }
         },
         "summary": "List Game Levels",
+        "tags": [
+          "Game"
+        ]
+      }
+    },
+    "/api/v1/game/models": {
+      "delete": {
+        "description": "Purge the current session's server-held ML models.",
+        "operationId": "delete_session_models_api_v1_game_models_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Session Models",
+        "tags": [
+          "Game"
+        ]
+      }
+    },
+    "/api/v1/game/models/purge": {
+      "post": {
+        "description": "Beacon-compatible purge endpoint for pagehide cleanup.",
+        "operationId": "purge_session_models_beacon_api_v1_game_models_purge_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Purge Session Models Beacon",
         "tags": [
           "Game"
         ]
@@ -2941,6 +3062,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Session required to run a level or node that uses a hosted model."
           },
           "403": {
             "description": "Sign in required for AI agent nodes."
@@ -3234,74 +3358,11 @@
         "tags": [
           "Game"
         ]
-      },
-      "post": {
-        "description": "Save a completed run to the scoreboard.",
-        "operationId": "create_game_score_api_v1_game_scores_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScoreCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScoreRecord"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "403": {
-            "description": "Sign in required to record leaderboard scores."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Game Score",
-        "tags": [
-          "Game"
-        ]
-      }
-    },
-    "/api/v1/game/scores/stream": {
-      "get": {
-        "description": "Stream real-time leaderboard update notifications via Server-Sent Events.",
-        "operationId": "stream_game_scores_api_v1_game_scores_stream_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stream Game Scores",
-        "tags": [
-          "Game"
-        ]
       }
     },
     "/api/v1/game/train": {
       "post": {
-        "description": "Validate and train an allowlisted ML classifier on uploaded CSV or dataset rows.",
+        "description": "Validate, fit once, HMAC-sign, and store a temporary session ML model.",
         "operationId": "train_game_classifier_api_v1_game_train_post",
         "requestBody": {
           "content": {
@@ -3324,8 +3385,20 @@
             },
             "description": "Successful Response"
           },
+          "403": {
+            "description": "Sign in required (paid plan for custom mode)."
+          },
+          "413": {
+            "description": "Training upload exceeds maximum size."
+          },
           "422": {
-            "description": "Invalid algorithm or dataset"
+            "description": "Invalid algorithm, dataset, or oversized model."
+          },
+          "429": {
+            "description": "Daily or per-minute training limit reached."
+          },
+          "503": {
+            "description": "Training unavailable or timed out."
           }
         },
         "summary": "Train Game Classifier",

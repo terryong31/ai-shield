@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import AliasChoices, Field, SecretStr, field_validator
@@ -8,8 +7,9 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 class Settings(BaseSettings):
     """Gateway configuration, read from the environment and an optional ``.env``.
 
-    Every provider is optional; the gateway degrades instead of failing.
-    See docs/reference/configuration.md for the full table.
+    Supabase is required in every environment (spec 0046). Model providers are
+    optional; the gateway degrades instead of failing. See
+    docs/reference/configuration.md for the full table.
     """
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
@@ -23,17 +23,17 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "production"] = "production"
 
     GROQ_API_KEY: SecretStr | None = None
-    GROQ_CHAT_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_CHAT_MODEL: str = "openai/gpt-oss-120b"
 
     GOOGLE_API_KEY: SecretStr | None = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     TYPESAFE_API_KEY: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("TYPESAFE_API_KEY", "JEV_API_KEY")
     )
     # Game AI Agent models per level tier (spec 0021). Standard defaults to the Gemini
     # model (or GROQ_CHAT_MODEL without a Google key); budget runs on Groq.
     GAME_MODEL_STANDARD: str | None = None
-    GAME_MODEL_BUDGET: str = "llama-3.1-8b-instant"
+    GAME_MODEL_BUDGET: str = "openai/gpt-oss-20b"
 
     SUPABASE_URL: str = ""
     # Server-side key. The anon-key alias keeps older .env files working.
@@ -50,13 +50,18 @@ class Settings(BaseSettings):
     SESSION_TTL_MINUTES: int = Field(default=480, gt=0)
     # Browsers accept Secure cookies on http://localhost; disable only for other plain-HTTP hosts.
     SESSION_COOKIE_SECURE: bool = True
+    ALLOW_SELF_UPGRADE: bool = False
+    TRUSTED_CLIENT_IP_HEADER: str | None = None
+    TRUSTED_PROXY_SECRET: SecretStr | None = None
     CLEARANCE_MAX_ATTEMPTS: int = Field(default=5, gt=0)
     CLEARANCE_WINDOW_MINUTES: int = Field(default=10, gt=0)
 
-    # SQLite base path (one file per domain beside it) used whenever Supabase is not configured.
-    SQLITE_PATH: Path = Path("var/shield.db")
-    # Optional Redis URL for sub-millisecond leaderboard caching and Pub/Sub SSE (spec 0028).
+    # Optional Redis URL for sub-millisecond leaderboard caching (spec 0044);
+    # required in production.
     REDIS_URL: SecretStr | None = None
+    # Server secret for HMAC-signing temporary trained ML models (spec 0045);
+    # required in production for POST /game/train.
+    MODEL_SIGNING_KEY: SecretStr | None = None
     # Comma-separated in the environment. Includes IPv4/IPv6 loopback variants
     # that local dev servers (e.g. `nuxt dev` under Bun) may print.
     CORS_ORIGINS: Annotated[list[str], NoDecode] = [

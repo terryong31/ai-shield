@@ -6,6 +6,7 @@ import type {
   LevelProgressItem,
   LevelTier,
   NodeKind,
+  PlayerProgressResponse,
   PlayerSessionStatus
 } from '~/types/api'
 
@@ -104,6 +105,16 @@ export function calculateLevelStars(
 ): number {
   if (!progress || !progress.won) return 0
   return 1 + (progress.medal === 'gold' ? 1 : 0) + (progress.mastered ? 1 : 0)
+}
+
+/** The player's stored best on a level, used to seed the game header's High Score. */
+export function levelHighScore(
+  progress: PlayerProgressResponse | null | undefined,
+  levelId: string
+): { score: number | null, stars: number } {
+  const item = progress?.levels.find(level => level.level_id === levelId)
+  if (!item || item.best_score <= 0) return { score: null, stars: 0 }
+  return { score: item.best_score, stars: calculateLevelStars(item) }
 }
 
 export function buildCategorySummaries(

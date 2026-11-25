@@ -33,11 +33,11 @@ mise run typecheck      # mypy --strict + vue-tsc
 mise run spec:check     # every acceptance criterion has a test
 mise run contract       # regenerate OpenAPI contract + web types
 mise run check          # the full CI gate: run before saying you are done
+mise run hooks:install  # lefthook git hooks (setup also does this)
 mise run train          # retrain the bundled baseline classifier
-mise run local:db:reset # delete the local SQLite databases
 mise run admin:create <email>  # make a Supabase user an admin (prompts for the password)
 mise run up             # API + web in Docker Compose
-mise run db:start       # local Supabase (optional; SQLite is the default store)
+mise run db:start       # start the local Supabase stack (required for local dev)
 ```
 
 Run a single Python test: `uv run pytest packages/engine/tests/test_pipeline.py -k skip`.
@@ -88,10 +88,11 @@ verify again.
 - **Credentials stop at the gateway.** The engine receives a `Clearance` enum,
   never a passphrase or token. Never interpolate secrets into LLM prompts.
 - **Untrusted text is data.** Any prompt sent to an LLM inside the engine must
-  wrap user content with `wrap_untrusted()`.
+  wrap user content with `wrap_untrusted()`. The one exception is score-only
+  classifiers (Llama Prompt Guard, ENG-CHECK-006): they get the raw text,
+  because they cannot follow instructions and the tags skew their score.
 - **Schema changes are migrations.** Add them with `mise run db:migration <name>`
-  and never edit a pushed migration. Mirror column changes in `SqliteAuditLog`
-  (API-STORE-006 enforces it).
+  and never edit a pushed migration.
 - **Contract changes are explicit.** Changing `shield_api/schemas.py` means
   running `mise run contract` and committing both generated files.
 
@@ -99,12 +100,14 @@ verify again.
 
 - Python: ruff (lint + format), mypy `--strict`, type hints everywhere,
   frozen dataclasses for engine value types, `Protocol` over ABCs. Use the
-  `logging` module, not `print`. Keep comments rare, explaining *why*.
+  `logging` module, not `print`. Keep comments rare, explaining *why*. Follow PEP 8, PEP 20, PEP 257, PEP 484, PEP 498, PEP 517, PEP 518, PEP 526, PEP 544, PEP 572, PEP 585, PEP 604, PEP 621, PEP 634, PEP 654, PEP 660, PEP 695, and PEP 701 standards. 
 - TypeScript/Vue: `<script setup lang="ts">`, Nuxt auto-imports, Nuxt UI
   components only (see `apps/web/AGENTS.md`), no `any`.
 - Tests: behaviour-named (`test_malicious_adjudication_blocks_with_shutdown…`),
   Arrange/Act/Assert, and fakes from `shield_engine.testing` rather than mocks.
   No network in tests.
+- No emojis allowed in code
+- Docs writing method must be following Simplified Technical English (STE), specifically the ASD-STE100 specification.
 
 ## Definition of done
 

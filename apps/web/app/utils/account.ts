@@ -23,8 +23,8 @@ export function deleteConfirmed(text: string): boolean {
   return text === 'DELETE'
 }
 
-/** The gateway's error message, or a generic one. */
-export function errorDetail(err: unknown): string {
+/** The gateway's error message, or a generic/custom fallback (spec 0025, 0043). */
+export function errorDetail(err: unknown, fallback = 'Something went wrong. Try again.'): string {
   const detail = (err as { data?: { detail?: unknown } }).data?.detail
-  return typeof detail === 'string' ? detail : 'Something went wrong. Try again.'
+  return typeof detail === 'string' && detail.trim() ? detail : fallback
 }

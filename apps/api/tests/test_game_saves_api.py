@@ -4,14 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import timedelta
-from pathlib import Path
 
 import pytest
 
 from shield_api.services.players import (
     InMemoryPlayerStore,
     PlayerStore,
-    SqlitePlayerStore,
     SupabasePlayerStore,
 )
 
@@ -59,7 +57,10 @@ def _sign_in(harness: Harness, email: str, *, paid: bool = False) -> None:
     )
     assert res.status_code == 200
     if paid:
-        assert harness.client.post("/api/v1/auth/upgrade").status_code == 200
+        import asyncio
+
+        token = harness.client.cookies.get("shield_player_session")
+        asyncio.run(harness.container.players.upgrade(token))
 
 
 @pytest.mark.spec("API-SAVE-001")
@@ -155,20 +156,17 @@ def test_size_limits(harness: Harness) -> None:
 
 
 @pytest.mark.spec("API-SAVE-006")
-async def test_every_store_saves_and_loads_alike_and_sqlite_survives_restart(
-    tmp_path: Path, fake_supabase: Callable[..., FakeClient]
+async def test_every_store_saves_and_loads_alike(
+    fake_supabase: Callable[..., FakeClient],
 ) -> None:
     client = fake_supabase()
     stores: list[PlayerStore] = [
         InMemoryPlayerStore(),
-        SqlitePlayerStore(tmp_path / "p.db"),
         SupabasePlayerStore(client),
     ]
     save = {"board": {"nodes": [], "edges": []}, "positions": {}, "custom": None}
     for store in stores:
-        await store.register(
-            email="ada@example.com", password="password123", player_name="Ada", ttl=timedelta(1)
-        )
+        await store.sign_in_verified(email="ada@example.com", player_name="Ada", ttl=timedelta(1))
         assert await store.load_board("ada@example.com", "easy-1") is None
         first_at = await store.save_board("ada@example.com", "easy-1", save)
         loaded = await store.load_board("ada@example.com", "easy-1")
@@ -180,8 +178,6 @@ async def test_every_store_saves_and_loads_alike_and_sqlite_survives_restart(
         assert (await store.load_board("ada@example.com", "easy-1"))[0] == changed  # type: ignore[index]
         assert await store.load_board("grace@example.com", "easy-1") is None
 
-    reopened = SqlitePlayerStore(tmp_path / "p.db")
-    assert (await reopened.load_board("ada@example.com", "easy-1")) is not None
     assert ("game", "saved_boards") in client.accessed
     assert len(client.tables[("game", "saved_boards")].rows) == 1
 

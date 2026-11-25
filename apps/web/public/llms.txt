@@ -25,8 +25,8 @@ Players connect defence nodes between the `Input` source and the final node (`He
 - `secret_scan` (Secret scanner): Scans prompts using player-configured case-insensitive regular expressions (`Free`).
 - `ml_classifier` (ML filter): Classifies prompts with the bundled `TF-IDF` baseline or custom CSV-trained models (`logistic_regression`, `linear_svm`, `naive_bayes`, `random_forest`) and splits traffic across `pass` (`safe`) and `unclear` (`suspicious`) handles (`Free`).
 - `jev` (Jev): Evaluates a player-written boolean `noul` question via TypeSafe System One (`12 ms`, `$0.00005`).
-- `safety_check` (Safety check): Dedicated guardrail LLM classifier supporting Llama Guard 3 8B, Llama Guard 4 12B, Qwen3Guard 8B, ShieldGemma 9B, and Nemotron Safety Guard 8B (requires player sign-in).
-- `llm_review` (LLM review): General-purpose LLM reviewer (`gemini-2.5-flash`, `gemini-2.0-flash`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `gpt-4o-mini`) guided by custom review instructions (requires player sign-in).
+- `safety_check` (Safety check): Dedicated guardrail classifier running GPT-OSS Safeguard 20B, Llama Prompt Guard 2 86M, or Llama Prompt Guard 2 22M, with an optional Thinking switch for GPT-OSS Safeguard (requires player sign-in).
+- `llm_review` (LLM review): General-purpose LLM reviewer (`gemini-3.5-flash-lite`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`) guided by custom review instructions, with an optional Thinking switch (requires player sign-in).
 - `tool_filter` (Tool filter): Gates allowed and restricted agent tools unconditionally or on regex matches (`Free`).
 
 ## Optional

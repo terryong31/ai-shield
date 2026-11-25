@@ -1,0 +1,3 @@
+# Reviewed false positives in history: variable names in code samples, not keys.
+97cc4f4801c56cfa9250e01d1e965bd94d77a0ef:docs/how-to/configure-llm-providers.md:generic-api-key:102
+97cc4f4801c56cfa9250e01d1e965bd94d77a0ef:packages/engine/README.md:generic-api-key:52

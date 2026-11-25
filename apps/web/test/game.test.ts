@@ -2,7 +2,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  LLM_REVIEW_MODELS,
   NODE_CATALOG,
+  SAFETY_CHECK_MODELS,
   addCheckNode,
   applyMessageTrace,
   canUseNodeKind,
@@ -11,6 +13,7 @@ import {
   formatCheckCost,
   attemptsLeftLabel,
   makeGameNode,
+  nodeSupportsThinking,
   planCards,
   isAiAgentNode,
   nodeKeyRequirement,
@@ -44,7 +47,7 @@ describe('game landing and levels', () => {
     expect(indexSource).toContain('hard')
     expect(indexSource).toContain('useLeaderboard')
     const leaderboardSource = readFileSync(join(APP_DIR, 'composables', 'useLeaderboard.ts'), 'utf-8')
-    expect(leaderboardSource).toContain('getScores')
+    expect(leaderboardSource).toContain('getLeaderboard')
   })
 })
 
@@ -263,7 +266,7 @@ describe('admin console access and routing', () => {
     expect(existsSync(plansPath)).toBe(true)
     const plansSource = readFileSync(plansPath, 'utf-8')
     expect(plansSource).toContain('<UPricingPlans')
-    expect(plansSource).toContain('planCards(session.value)')
+    expect(plansSource).toContain('planCards(session.value,')
     expect(plansSource).toContain('upgradeToPaid')
     expect(plansSource).toMatch(/if \(session\.value\.tier === 'paid'\) await goBack\('\/'\)/)
 
@@ -603,19 +606,52 @@ describe('design hygiene and anti-slop copy standard', () => {
     const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
 
     expect(boardSource).toContain('SAFETY_CHECK_MODELS')
-    expect(boardSource).toContain('llama-guard-3-8b')
-    expect(boardSource).toContain('qwen3guard-8b')
-    expect(boardSource).toContain('shieldgemma-9b')
-    expect(boardSource).toContain('nemotron')
-
     expect(boardSource).toContain('LLM_REVIEW_MODELS')
-    expect(boardSource).toContain('gemini-2.5-flash')
-    expect(boardSource).toContain('llama-3.3-70b-versatile')
 
     expect(gameSource).toContain('safetyCheckModelItems')
     expect(gameSource).toContain('llmReviewModelItems')
     expect(gameSource).toContain('Review instructions')
     expect(gameSource).toContain('updateNodeConfig(\'prompt\'')
+  })
+
+  it('[WEB-CHECK-002] offers only models the providers still serve, and defaults to the engine defaults', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+
+    expect(SAFETY_CHECK_MODELS.map(m => m.value)).toEqual([
+      'openai/gpt-oss-safeguard-20b',
+      'meta-llama/llama-prompt-guard-2-86m',
+      'meta-llama/llama-prompt-guard-2-22m'
+    ])
+    expect(LLM_REVIEW_MODELS.map(m => m.value)).toEqual([
+      'gemini-3.5-flash-lite',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.8-27b'
+    ])
+
+    expect(makeGameNode('sc', 'safety_check', { x: 0, y: 0 }).data.config.model).toBe('openai/gpt-oss-safeguard-20b')
+    expect(makeGameNode('lr', 'llm_review', { x: 0, y: 0 }).data.config.model).toBe('gemini-3.5-flash-lite')
+
+    for (const retired of ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama-guard-3-8b', 'gpt-4o-mini']) {
+      expect(gameSource).not.toContain(`'${retired}'`)
+    }
+  })
+
+  it('[WEB-CHECK-003] lets players switch thinking on for LLM checks, never for Prompt Guard', () => {
+    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+
+    expect(makeGameNode('lr', 'llm_review', { x: 0, y: 0 }).data.config.thinking).toBe(false)
+    expect(makeGameNode('sc', 'safety_check', { x: 0, y: 0 }).data.config.thinking).toBe(false)
+
+    expect(nodeSupportsThinking('llm_review', 'gemini-3.5-flash-lite')).toBe(true)
+    expect(nodeSupportsThinking('llm_review', 'openai/gpt-oss-120b')).toBe(true)
+    expect(nodeSupportsThinking('safety_check', 'openai/gpt-oss-safeguard-20b')).toBe(true)
+    expect(nodeSupportsThinking('safety_check', 'meta-llama/llama-prompt-guard-2-86m')).toBe(false)
+    expect(nodeSupportsThinking('safety_check', 'meta-llama/llama-prompt-guard-2-22m')).toBe(false)
+    expect(nodeSupportsThinking('word_filter', '')).toBe(false)
+
+    expect(gameSource).toContain('nodeSupportsThinking(')
+    expect(gameSource).toContain('updateNodeConfig(\'thinking\'')
   })
 
   it('[WEB-ML-001] removes quick_screen and gives ml_classifier TF-IDF and safe/suspicious thresholds and handles', () => {

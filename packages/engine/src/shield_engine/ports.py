@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from shield_engine.types import Signal
 
@@ -41,7 +41,11 @@ class ChatCompletion:
 
 
 class UsageChatModel(Protocol):
-    """A chat model that also reports token usage, used to score the game's AI Agent."""
+    """A chat model that also reports token usage, used to score the game's AI Agent.
+
+    ``thinking`` asks the model to reason before answering; providers without a
+    reasoning control ignore it.
+    """
 
     async def complete_with_usage(
         self,
@@ -49,6 +53,7 @@ class UsageChatModel(Protocol):
         *,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        thinking: bool = False,
     ) -> ChatCompletion: ...
 
 
@@ -56,6 +61,12 @@ class Classifier(Protocol):
     """Fast, local, synchronous scoring (the game's ML filter)."""
 
     def score(self, text: str) -> Signal: ...
+
+
+class ProbabilityModel(Protocol):
+    """Fitted binary probability model evaluated during board traversal."""
+
+    def predict_proba(self, texts: Sequence[str]) -> Any: ...
 
 
 @dataclass(frozen=True, slots=True)

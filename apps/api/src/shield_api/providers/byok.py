@@ -88,6 +88,7 @@ class OpenAICompatibleChatModel:
         *,
         temperature: float = 0.0,
         max_tokens: int | None = None,
+        thinking: bool = False,
     ) -> ChatCompletion:
         payload: dict[str, Any] = {
             "model": self.model,

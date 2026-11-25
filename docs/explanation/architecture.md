@@ -7,7 +7,7 @@
 | Part | Role | Talks to |
 | --- | --- | --- |
 | `packages/engine` (`shield-engine`) | The game's check library: board interpreter, check nodes, levels, the AI agent, the custom sandbox and scoring, plus the bundled baseline classifier | Nothing directly; everything external comes in through ports |
-| `apps/api` (`shield-api`) | Gateway: puts the game on HTTP, owns players, quotas, saved boards, the leaderboard and admin clearance, and wires the model providers | Engine (in-process), Gemini, Groq, the player's BYOK provider, SQLite / Supabase |
+| `apps/api` (`shield-api`) | Gateway: puts the game on HTTP, owns players, quotas, saved boards, the leaderboard and admin clearance, and wires the model providers | Engine (in-process), Gemini, Groq, the player's BYOK provider, Supabase |
 | `apps/web` (`@ai-shield/web`) | Web client: main menu (`/`), defence board (`/game`), plans, settings, and the admin console (`/_console`) | The gateway only, over the published HTTP contract |
 
 The engine stays free of FastAPI, database drivers and environment variables, so
@@ -54,7 +54,7 @@ is the only place that reads provider settings. It builds:
 - the baseline classifier via `load_baseline()` (hash-verified artifacts)
 - the agent model per tier: `standard` on Gemini with `GOOGLE_API_KEY` (else Groq), `budget` on Groq with `GROQ_API_KEY`
 - the BYOK factory for the custom sandbox (fixed provider allowlist, no URL field)
-- `SupabaseScoreStore`, `SupabaseSessionStore` and `SupabasePlayerStore` when Supabase is configured, else the SQLite versions beside `SQLITE_PATH`
+- `SupabaseScoreStore`, `SupabaseSessionStore` and `SupabasePlayerStore` backed by Supabase (`SUPABASE_URL` + `SUPABASE_KEY` are required)
 
 The `Container` is stored on `app.state` and injected into routes through
 `ContainerDep`. Tests build a `Container` from fakes and pass it to
@@ -65,7 +65,7 @@ The `Container` is stored on `app.state` and injected into routes through
 | Layer | Modules | Rule |
 | --- | --- | --- |
 | Routers | `routers/health.py`, `auth.py`, `game.py`, `clearance.py` | HTTP mapping only |
-| Services | `services/players.py`, `scores.py`, `sessions.py`, `clearance.py`, `sqlite.py` | Accounts and quotas, the leaderboard, admin sessions, persistence |
+| Services | `services/players.py`, `scores.py`, `sessions.py`, `clearance.py`, `identity.py`, `admins.py` | Accounts and quotas, the leaderboard, admin sessions, persistence |
 | Providers | `providers/gemini.py`, `byok.py` | Model adapters behind `UsageChatModel` |
 | Contract | `schemas.py` | Pydantic models exported to `contracts/shield-api.openapi.json` |
 

@@ -23,7 +23,7 @@ from shield_engine.game import (
     validate_board,
 )
 from shield_engine.game.agent import new_canary
-from shield_engine.ports import Classifier, JevClient, UsageChatModel
+from shield_engine.ports import Classifier, JevClient, ProbabilityModel, UsageChatModel
 
 CUSTOM_LEVEL_ID = "custom"
 CUSTOM_MAX_ROWS = 50
@@ -125,6 +125,7 @@ async def run_custom_wave(
     jev_client: JevClient | None = None,
     check_model: UsageChatModel | None = None,
     check_model_for: Callable[[str], UsageChatModel | None] | None = None,
+    ml_models: Mapping[str, ProbabilityModel] | None = None,
 ) -> WaveResult:
     """Run every dataset message through the board and the player's agent, then score it."""
     validate_board(board)
@@ -147,6 +148,7 @@ async def run_custom_wave(
                 jev_client=jev_client,
                 check_model=check_model,
                 check_model_for=check_model_for,
+                ml_models=ml_models,
             )
         )
     budgets = _budgets(len(messages))
@@ -173,6 +175,8 @@ async def run_custom_message(
     classifier: Classifier | None = None,
     jev_client: JevClient | None = None,
     check_model: UsageChatModel | None = None,
+    check_model_for: Callable[[str], UsageChatModel | None] | None = None,
+    ml_models: Mapping[str, ProbabilityModel] | None = None,
 ) -> WaveResult:
     """Score one player-written prompt as an attack against the player's own agent."""
     single = (LevelMessage("custom", message, True, "custom"),)
@@ -184,5 +188,7 @@ async def run_custom_message(
         classifier=classifier,
         jev_client=jev_client,
         check_model=check_model,
+        check_model_for=check_model_for,
+        ml_models=ml_models,
     )
     return result

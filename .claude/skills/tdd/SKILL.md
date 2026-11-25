@@ -22,7 +22,7 @@ message; do not work around it (no shell writes, no editing `.sdd/`).
 5. **Implement** the minimum production code. Respect the boundaries in `AGENTS.md`.
    - HTTP shapes changed: `mise run contract`, then update the web client.
    - Scoring or classifier changed: record before/after game scores in the spec.
-   - Schema changed: `mise run db:migration <name>`, and mirror the columns in `SqliteAuditLog`.
+   - Schema changed: `mise run db:migration <name>`.
 6. **Green**: `mise run sdd:green`. Iterate until it passes. Refactor with the tests green.
 7. **Docs**: update `docs/reference/…` and `CHANGELOG.md` (`## [Unreleased]`).
 8. **Verify**: `mise run sdd:verify` runs `mise run check`. Fix everything it reports.

@@ -1,5 +1,7 @@
+import { BOTID_PROTECTED_ROUTES } from './botid'
+
 /**
- * Same-origin proxy from the web server to the gateway (spec 0041). Pure over
+ * Same-origin proxy from the web server to the gateway (spec 0041, 0043). Pure over
  * web-standard Request/Response so it is testable with a fake fetch.
  */
 const PREFIX = '/api/v1/'
@@ -42,7 +44,7 @@ const parseTarget = (target: string): URL | null => {
 
 const isDroppedRequestHeader = (name: string) =>
   HOP_BY_HOP.has(name) || DROPPED_REQUEST.has(name)
-  || name.startsWith('proxy-') || name.startsWith('x-forwarded-')
+  || name.startsWith('proxy-') || name.startsWith('x-forwarded-') || name.startsWith('x-shield-')
 
 export function forwardableRequestHeaders(headers: Headers): Headers {
   const out = new Headers()
@@ -50,6 +52,34 @@ export function forwardableRequestHeaders(headers: Headers): Headers {
     if (!isDroppedRequestHeader(name.toLowerCase())) out.append(name, value)
   })
   return out
+}
+
+export function clientIpFromHeaders(
+  headers: Headers | Record<string, string | string[] | undefined>,
+  headerName: string | undefined,
+  fallback: string
+): string {
+  const name = headerName?.trim().toLowerCase()
+  if (!name) return fallback
+  const raw = headers instanceof Headers
+    ? headers.get(name)
+    : headers[name] ?? headers[headerName!.trim()]
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const first = typeof value === 'string' ? value.split(',', 1)[0]?.trim() : ''
+  return first || fallback
+}
+
+export function isBotIdProtected(method: string, pathname: string): boolean {
+  const upper = method.toUpperCase()
+  return BOTID_PROTECTED_ROUTES.some(r => r.method === upper && r.path === pathname)
+}
+
+export interface ProxyGatewayOptions {
+  clientIp?: string
+  clientIpHeader?: string
+  proxySecret?: string
+  requireProxyTrust?: boolean
+  checkBot?: () => Promise<{ isBot: boolean }>
 }
 
 /** Null when the request path is not a clean path under /api/v1/. */
@@ -65,21 +95,53 @@ export function resolveUpstreamUrl(target: URL, requestUrl: string): URL | null 
 export async function proxyToGateway(
   request: Request,
   target: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  options: ProxyGatewayOptions = {}
 ): Promise<Response> {
   const targetUrl = parseTarget(target)
   const upstreamUrl = resolveUpstreamUrl(targetUrl ?? new URL('http://invalid.local'), request.url)
   if (!upstreamUrl) return notFound()
   if (!targetUrl) return unavailable()
+  if (
+    options.requireProxyTrust
+    && (!options.clientIpHeader?.trim() || !options.proxySecret?.trim() || !options.clientIp?.trim())
+  ) {
+    console.error(
+      '[shield-proxy] Missing NUXT_CLIENT_IP_HEADER, NUXT_API_PROXY_SECRET, or resolved client IP in production; refusing to proxy.'
+    )
+    return json(503, 'Gateway unavailable.')
+  }
 
   const method = request.method.toUpperCase()
+  const { pathname } = new URL(request.url)
+  const reqHeaders = forwardableRequestHeaders(request.headers)
+
+  if (options.clientIp) {
+    reqHeaders.set('x-shield-client-ip', options.clientIp)
+  }
+  if (options.proxySecret) {
+    reqHeaders.set('x-shield-proxy-secret', options.proxySecret)
+  }
+
+  if (isBotIdProtected(method, pathname) && options.checkBot) {
+    try {
+      const verdict = await options.checkBot()
+      if (verdict.isBot) {
+        return json(403, 'Request blocked.')
+      }
+      reqHeaders.set('x-shield-botid', 'pass')
+    } catch {
+      return json(503, 'Bot check unavailable. Try again.')
+    }
+  }
+
   const body = method === 'GET' || method === 'HEAD' ? undefined : await request.arrayBuffer()
 
   let upstream: Response
   try {
     upstream = await fetchImpl(upstreamUrl.href, {
       method,
-      headers: forwardableRequestHeaders(request.headers),
+      headers: reqHeaders,
       body,
       redirect: 'manual'
     })

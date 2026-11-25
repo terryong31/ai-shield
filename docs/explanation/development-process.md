@@ -63,14 +63,29 @@ The rules are checked by machines, not by memory:
 
 | Check | Enforced by | CI job |
 | --- | --- | --- |
-| Every criterion in an `Accepted` or `Implemented` spec is referenced by at least one test | `mise run spec:check` ([`scripts/check_spec_coverage.py`](../../scripts/check_spec_coverage.py)) | Specs & contract |
-| Every `Implemented` spec carries a `## Verification` record (written by `mise run sdd:done`) | `mise run spec:check` | Specs & contract |
-| The tests pass, with coverage floors (engine 90%, gateway 85%) | `mise run test:engine`, `test:api`, `test:web` | Python, Web |
-| The committed HTTP contract and generated client match the code | `mise run contract:check` and the `API-CONTRACT-001` test | Specs & contract, Python |
-| Lint and strict type checks | `mise run lint:*`, `typecheck:*` | Python, Web |
+| Every criterion in an `Accepted` or `Implemented` spec is referenced by at least one test | `mise run spec:check` ([`scripts/check_spec_coverage.py`](../../scripts/check_spec_coverage.py)) | Specs and contract |
+| Every `Implemented` spec carries a `## Verification` record (written by `mise run sdd:done`) | `mise run spec:check` | Specs and contract |
+| The tests pass, with coverage floors (engine 90%, gateway 85%) | `mise run test:engine`, `test:api`, `test:tooling`, `test:web` | Test (Python), Test (web) |
+| The committed HTTP contract and generated client match the code | `mise run contract:check` and the `API-CONTRACT-001` test | Specs and contract, Test (Python) |
+| Lint and strict type checks | `mise run lint:*`, `typecheck:*` | Lint, Typecheck |
+| The web client builds | `mise run build:web` | Build (web) |
+| No secrets in git history | `mise run secrets:scan` (gitleaks) | Secret scan |
+| Workflows have no known security problems | `mise run lint:actions` (actionlint, zizmor) | Workflow security |
+| No new dependency with a high-severity vulnerability | GitHub dependency review | Dependency review (pull requests only) |
+| No known code vulnerability patterns | CodeQL `security-extended` | CodeQL workflow |
+| The PR title is a Conventional Commit | `amannn/action-semantic-pull-request` | PR title workflow |
 
 `mise run check` runs the same gate locally
-([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs the pieces in parallel jobs).
+([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs the pieces in
+parallel jobs). The `CI OK` job fails if any other job fails, so branch
+protection needs only that one check. The reasons for this design are in
+[ADR 0007](decisions/0007-ci-pipeline-and-git-hooks.md).
+
+Git hooks ([`lefthook.yml`](../../lefthook.yml)) find most problems before CI
+does. `pre-commit` scans the staged diff for secrets and fixes lint in the
+staged files. `commit-msg` checks the Conventional Commit subject. `pre-push`
+stops pushes to `main`, then runs `mise run check`. The hooks are a fast
+signal, not the gate: a developer can skip them, but cannot skip CI.
 
 The status lifecycle keeps the check honest without blocking drafting: `Draft`
 specs are not checked, so a spec can be written and reviewed before any test

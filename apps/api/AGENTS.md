@@ -15,7 +15,7 @@ The game gateway. Root rules in [../../AGENTS.md](../../AGENTS.md) apply; these 
 | `services/clearance.py` | admin session cookie → `Clearance` (fail closed) |
 | `services/sessions.py` | Admin clearance sessions (hashed tokens) and the failed-attempt limiter |
 | `services/players.py` | Player accounts, sessions, daily quotas and saved boards |
-| `services/scores.py` | `ScoreStore` protocol (leaderboard): SQLite (default), Supabase, in-memory test double |
+| `services/scores.py` | `ScoreStore` protocol (leaderboard): Supabase (production/local), in-memory test double |
 | `providers/` | Model adapters: Gemini (standard-tier agent) and the BYOK provider allowlist |
 | `container.py` | Composition root; the only place that reads provider settings |
 | `schemas.py` | Public contract (HTTP models) |

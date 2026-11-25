@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,8 +10,7 @@ import pytest
 
 from shield_api.openapi import render
 from shield_api.schemas import ScoreCreateRequest
-from shield_api.services.scores import SqliteScoreStore, SupabaseScoreStore
-from shield_api.services.sqlite import domain_path
+from shield_api.services.scores import SupabaseScoreStore
 
 from .conftest import FakeClient, Harness
 
@@ -88,16 +86,9 @@ def test_the_game_auth_clearance_and_health_routes_still_work(
 
 
 @pytest.mark.spec("API-CLEAN-004")
-async def test_sqlite_and_supabase_never_touch_audit_requests(
-    tmp_path: Path, fake_supabase: Callable[..., FakeClient]
+async def test_supabase_never_touches_audit_requests(
+    fake_supabase: Callable[..., FakeClient],
 ) -> None:
-    db = tmp_path / "shield.db"
-    sqlite_log = SqliteScoreStore(db)
-    await sqlite_log.record_score(_score())
-    with sqlite3.connect(domain_path(db, "audit")) as conn:
-        tables = {row[0] for row in conn.execute("select name from sqlite_master")}
-    assert "requests" not in tables
-
     client = fake_supabase()
     await SupabaseScoreStore(client).record_score(_score())
     assert ("audit", "requests") not in client.accessed

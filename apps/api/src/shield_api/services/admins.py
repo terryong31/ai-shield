@@ -28,13 +28,6 @@ class AdminAuthenticator(Protocol):
         ...
 
 
-class NoAdminAuthenticator:
-    """Without Supabase there is no admin directory, so nobody is an admin."""
-
-    async def authenticate(self, email: str, password: str) -> AdminIdentity | None:
-        return None
-
-
 def is_admin_user(user: Any) -> bool:
     metadata = getattr(user, "app_metadata", None) or {}
     return isinstance(metadata, dict) and metadata.get("role") == ADMIN_ROLE

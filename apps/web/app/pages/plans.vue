@@ -12,9 +12,11 @@ useSeoMeta(buildPageSeo({
 
 // Plan picker (WEB-GAME-014): upgrade buttons across the app link here.
 const { session, loadingAuth, refreshSession, upgradeToPaid } = usePlayerAuth()
+const { getLevels } = useShieldApi()
 const goBack = useGoBack()
+const selfUpgradeEnabled = ref(false)
 
-const plans = computed(() => planCards(session.value).map((plan) => {
+const plans = computed(() => planCards(session.value, { selfUpgradeEnabled: selfUpgradeEnabled.value }).map((plan) => {
   if (plan.action !== 'upgrade' || !plan.button) return plan
   return {
     ...plan,
@@ -29,8 +31,15 @@ const plans = computed(() => planCards(session.value).map((plan) => {
   }
 }))
 
-onMounted(() => {
-  void refreshSession()
+onMounted(async () => {
+  await Promise.all([
+    refreshSession(),
+    getLevels()
+      .then((catalog) => {
+        selfUpgradeEnabled.value = Boolean(catalog.self_upgrade_enabled)
+      })
+      .catch(() => {})
+  ])
 })
 </script>
 

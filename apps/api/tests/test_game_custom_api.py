@@ -75,7 +75,10 @@ def _sign_in(harness: Harness, email: str, *, paid: bool) -> None:
     )
     assert res.status_code == 200
     if paid:
-        assert harness.client.post("/api/v1/auth/upgrade").status_code == 200
+        import asyncio
+
+        token = harness.client.cookies.get("shield_player_session")
+        asyncio.run(harness.container.players.upgrade(token))
 
 
 @pytest.mark.spec("API-SANDBOX-001")

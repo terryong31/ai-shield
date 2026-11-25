@@ -16,6 +16,7 @@ import {
   type LevelTileItem
 } from '~/utils/campaignSelect'
 import { customModeAccess } from '~/utils/customSandbox'
+import { formatRankLabel, ownRowPlacement } from '~/utils/leaderboard'
 import { TWITTER_CARD_ALT, TWITTER_CARD_PATH, resolveSiteUrl } from '~/utils/seo'
 
 const route = useRoute()
@@ -23,14 +24,14 @@ const router = useRouter()
 const { getLevels, getProgress } = useShieldApi()
 
 const {
-  scores,
   difficultyLeaderboards,
+  myRanks,
   hasLoaded,
   loading: loadingScores,
   selectedDifficulty: selectedLeaderboardDifficulty,
   refreshScores,
-  connectStream,
-  disconnectStream
+  startPolling,
+  stopPolling
 } = useLeaderboard()
 
 const {
@@ -185,7 +186,7 @@ onMounted(async () => {
       loadCatalogAndProgress(),
       ensureSession()
     ])
-    connectStream()
+    startPolling()
     void refreshScores({ background: true })
     return
   }
@@ -194,7 +195,7 @@ onMounted(async () => {
     refreshScores({ background: hasLoaded.value }),
     ensureSession()
   ])
-  connectStream()
+  startPolling()
   void loadCatalogAndProgress()
 })
 
@@ -205,18 +206,12 @@ watch(hasLoaded, (loaded) => {
 })
 
 onBeforeUnmount(() => {
-  disconnectStream()
+  stopPolling()
 })
 
 const bestScoreFor = (levelId: LevelId): number => {
   const fromProgress = progressByLevel.value[levelId]?.best_score
-  if (typeof fromProgress === 'number' && fromProgress > 0) return fromProgress
-  if (isAnonymous.value) return 0
-  const matching = scores.value.filter(
-    s => s.level_id === levelId && s.player_name === session.value.player_name
-  )
-  if (matching.length === 0) return 0
-  return Math.max(...matching.map(s => s.total_score))
+  return typeof fromProgress === 'number' && fromProgress > 0 ? fromProgress : 0
 }
 
 const leaderboardToggleItems: ToggleGroupItem[] = (['Easy', 'Medium', 'Hard'] as const).map(
@@ -235,13 +230,25 @@ const filteredScores = computed<DifficultyLeaderboardEntry[]>(() =>
   difficultyLeaderboards.value[selectedLeaderboardDifficulty.value] ?? []
 )
 
+const activeMyRank = computed(() => myRanks.value[selectedLeaderboardDifficulty.value] ?? null)
+
+const ownPlacement = computed(() =>
+  ownRowPlacement(filteredScores.value, activeMyRank.value, session.value)
+)
+
+const leaderboardTableMeta = computed(() => ({
+  class: {
+    tr: (row: { index: number }) => (
+      ownPlacement.value.kind === 'highlight' && ownPlacement.value.highlightIndex === row.index
+        ? 'bg-elevated ring-1 ring-inset ring-primary'
+        : ''
+    )
+  }
+}))
+
 const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
   { accessorKey: 'player_name', header: 'Player' },
-  { accessorKey: 'total_score', header: 'Total Score' },
-  { accessorKey: 'levels_solved', header: 'Cleared' },
-  { accessorKey: 'levels_mastered', header: 'Mastered' },
-  { accessorKey: 'avg_latency_ms', header: 'Speed' },
-  { accessorKey: 'total_cost_usd', header: 'Cost' }
+  { accessorKey: 'total_score', header: 'Total Score', meta: { class: { th: 'text-right', td: 'text-right' } } }
 ]
 </script>
 
@@ -358,49 +365,41 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
             />
           </div>
 
-          <div class="rounded-lg border border-default bg-default/90 shadow-sm backdrop-blur-md">
-            <UTable
+          <div class="overflow-hidden rounded-lg border border-default bg-default/90 shadow-sm backdrop-blur-md">
+            <div
               v-if="filteredScores.length > 0 || !hasLoaded"
-              :data="filteredScores"
-              :columns="scoreColumns"
-              :loading="loadingScores && !hasLoaded"
-              loading-color="neutral"
-              loading-animation="carousel"
+              class="max-h-96 overflow-y-auto"
             >
-              <template #loading>
-                <span class="text-sm text-muted">Loading...</span>
-              </template>
+              <UTable
+                :data="filteredScores"
+                :columns="scoreColumns"
+                :meta="leaderboardTableMeta"
+                :loading="loadingScores && !hasLoaded"
+                loading-color="neutral"
+                loading-animation="carousel"
+              >
+                <template #loading>
+                  <span class="text-sm text-muted">Loading...</span>
+                </template>
 
-              <template #total_score-cell="{ row }">
-                <span class="text-sm font-semibold tabular-nums text-highlighted">
-                  {{ row.original.total_score.toLocaleString() }}
-                </span>
-              </template>
+                <template #player_name-cell="{ row }">
+                  <div class="flex items-center gap-2">
+                    <span class="w-10 text-xs tabular-nums text-muted">
+                      {{ formatRankLabel(row.index + 1) }}
+                    </span>
+                    <span class="text-sm text-highlighted">
+                      {{ row.original.player_name }}
+                    </span>
+                  </div>
+                </template>
 
-              <template #levels_solved-cell="{ row }">
-                <span class="text-sm tabular-nums text-default">
-                  {{ row.original.levels_solved }}/{{ row.original.levels_total }}
-                </span>
-              </template>
-
-              <template #levels_mastered-cell="{ row }">
-                <span class="text-sm tabular-nums text-default">
-                  {{ row.original.levels_mastered }}/{{ row.original.levels_total }}
-                </span>
-              </template>
-
-              <template #avg_latency_ms-cell="{ row }">
-                <span class="text-sm tabular-nums text-muted">
-                  {{ row.original.avg_latency_ms.toFixed(1) }} ms
-                </span>
-              </template>
-
-              <template #total_cost_usd-cell="{ row }">
-                <span class="text-sm tabular-nums text-muted">
-                  ${{ row.original.total_cost_usd.toFixed(4) }}
-                </span>
-              </template>
-            </UTable>
+                <template #total_score-cell="{ row }">
+                  <span class="text-sm font-semibold tabular-nums text-highlighted">
+                    {{ row.original.total_score.toLocaleString() }}
+                  </span>
+                </template>
+              </UTable>
+            </div>
 
             <UEmpty
               v-else-if="hasLoaded && !loadingScores && filteredScores.length === 0"
@@ -409,6 +408,26 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
               description="Sign in and complete a level to record your score on the leaderboard."
               class="border-0 bg-transparent"
             />
+
+            <div
+              v-if="ownPlacement.kind === 'pin'"
+              class="flex items-center justify-between border-t border-default bg-elevated px-4 py-2.5 text-sm"
+            >
+              <div class="flex items-center gap-2 font-medium text-highlighted">
+                <span class="w-10 text-xs tabular-nums text-muted">{{ ownPlacement.rankLabel }}</span>
+                <span>{{ ownPlacement.playerName }}</span>
+              </div>
+              <span class="font-semibold tabular-nums text-highlighted">
+                {{ ownPlacement.totalScore.toLocaleString() }}
+              </span>
+            </div>
+
+            <div
+              v-else-if="ownPlacement.kind === 'pin-unranked'"
+              class="border-t border-default bg-elevated px-4 py-2.5 text-sm text-muted"
+            >
+              {{ ownPlacement.message }}
+            </div>
           </div>
         </div>
       </div>
@@ -531,28 +550,22 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
         <UCard
           v-if="customModeAccess(session) !== 'hidden'"
           variant="outline"
-          :ui="{ body: 'flex flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-6 sm:py-4' }"
+          :ui="{ body: 'flex flex-wrap items-center justify-between gap-4 px-5 py-4 sm:px-6 sm:py-6' }"
         >
-          <div class="flex items-center gap-3.5">
-            <div class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-default bg-elevated/50">
+          <div class="flex items-center gap-5">
+            <div class="flex size-18 shrink-0 items-center justify-center rounded-full border border-default bg-elevated/50">
               <UIcon
                 name="i-lucide-sliders-horizontal"
-                class="size-4 text-highlighted"
+                class="size-7 text-highlighted"
               />
             </div>
             <div class="space-y-0.5">
               <div class="flex items-center gap-2">
-                <h2 class="text-sm font-bold text-highlighted">
+                <h2 class="text-xl font-bold text-highlighted">
                   Custom Sandbox
                 </h2>
-                <UBadge
-                  label="Custom"
-                  color="neutral"
-                  variant="subtle"
-                  size="xs"
-                />
               </div>
-              <p class="text-xs text-muted">
+              <p class="text-sm text-muted">
                 Test a defence board against your own agent objective, tools, prompt dataset, and model API key.
               </p>
             </div>

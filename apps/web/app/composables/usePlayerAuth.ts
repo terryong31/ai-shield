@@ -1,4 +1,5 @@
 import type { PlayerSessionStatus } from '~/types/api'
+import { errorDetail } from '~/utils/account'
 import { isConfirmationSent, loginFailure } from '~/utils/playerAuth'
 
 export type RegisterOutcome = 'signed_in' | 'confirmation_sent' | 'failed'
@@ -15,7 +16,9 @@ const DEFAULT_ANONYMOUS_SESSION: PlayerSessionStatus = {
   daily_wave_limit: null,
   wave_runs_used: 0,
   daily_test_limit: null,
-  test_runs_used: 0
+  test_runs_used: 0,
+  daily_train_limit: 0,
+  train_runs_used: 0
 }
 
 export const usePlayerAuth = () => {
@@ -77,7 +80,7 @@ export const usePlayerAuth = () => {
     } catch (err) {
       const failure = loginFailure((err as { statusCode?: number }).statusCode)
       if (failure === 'unconfirmed') return 'unconfirmed'
-      const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Invalid email or password.'
+      const detail = errorDetail(err, 'Invalid email or password.')
       toast.add({
         title: 'Sign in failed',
         description: detail,
@@ -108,7 +111,7 @@ export const usePlayerAuth = () => {
       })
       return 'signed_in'
     } catch (err) {
-      const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Could not create account.'
+      const detail = errorDetail(err, 'Could not create account.')
       toast.add({
         title: 'Registration failed',
         description: detail,
@@ -135,7 +138,7 @@ export const usePlayerAuth = () => {
       console.warn('Resend failed:', err)
       toast.add({
         title: 'Could not resend',
-        description: 'Check the email address and try again.',
+        description: errorDetail(err, 'Check the email address and try again.'),
         icon: 'i-lucide-triangle-alert',
         color: 'neutral'
       })
@@ -156,7 +159,7 @@ export const usePlayerAuth = () => {
       })
       return true
     } catch (err) {
-      const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Could not send recovery email.'
+      const detail = errorDetail(err, 'Could not send recovery email.')
       toast.add({
         title: 'Recovery failed',
         description: detail,
@@ -180,7 +183,7 @@ export const usePlayerAuth = () => {
         color: 'neutral'
       })
     } catch (err) {
-      const detail = (err as { data?: { detail?: string } }).data?.detail ?? 'Sign in required to upgrade.'
+      const detail = errorDetail(err, 'Sign in required to upgrade.')
       toast.add({
         title: 'Could not upgrade',
         description: detail,

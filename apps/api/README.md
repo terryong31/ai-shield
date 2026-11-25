@@ -9,9 +9,9 @@ or scoring logic**. Its job is to:
 3. keep saved boards and the leaderboard,
 4. guard the admin console with a clearance session for Supabase users whose
    `app_metadata.role` is `"admin"` (`/api/v1/clearance`, `mise run admin:create`),
-5. wire the agent models (Gemini standard tier, Groq budget tier) and persistence:
-   SQLite under `var/` by default, or Supabase when `SUPABASE_URL` and
-   `SUPABASE_KEY` are set. The schema lives in [`supabase/migrations`](../../supabase/migrations).
+5. wire the agent models (Gemini standard tier, Groq budget tier) and persistence
+   in Supabase (`SUPABASE_URL` and `SUPABASE_KEY`). The schema lives in
+   [`supabase/migrations`](../../supabase/migrations).
 
 ```
 src/shield_api/
@@ -20,7 +20,7 @@ src/shield_api/
 ├── settings.py      # environment configuration
 ├── schemas.py       # HTTP models (the public contract)
 ├── routers/         # health, auth, game, clearance
-├── services/        # players, scores, sessions, clearance, sqlite
+├── services/        # players, scores, sessions, clearance, identity, admins
 └── providers/       # Gemini adapter, BYOK provider allowlist
 ```
 

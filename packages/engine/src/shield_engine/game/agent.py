@@ -380,7 +380,10 @@ def build_agent_graph(
         ]
         try:
             completion = await model.complete_with_usage(
-                chat_messages, temperature=0.0, max_tokens=AGENT_MAX_OUTPUT_TOKENS
+                chat_messages,
+                temperature=0.0,
+                max_tokens=AGENT_MAX_OUTPUT_TOKENS,
+                thinking=False,
             )
         except Exception as exc:  # any provider failure voids the run (API maps it to 503)
             raise AgentUnavailableError("The AI Agent model is unavailable.") from exc

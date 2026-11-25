@@ -1,0 +1,7 @@
+# Secret scanning rules for `mise run secrets:scan`, the pre-commit hook and CI.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures use fake credentials (same policy as ruff S105/S106 in tests)"
+paths = ['''(^|/)tests/''']

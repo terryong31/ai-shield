@@ -1,13 +1,13 @@
-# Persist game data (SQLite or Supabase)
+# Persist game data (Supabase)
 
 The gateway stores player accounts and sessions, daily run quotas, saved boards,
-the leaderboard and admin console sessions. Which backend it uses is decided at
-startup ([spec 0024](../../specs/0024-domain-schema-storage/spec.md)):
+the leaderboard and admin console sessions in Supabase (`SUPABASE_URL` and
+`SUPABASE_KEY` are required at startup; missing credentials raise
+`ConfigurationError` — [spec 0046](../../specs/README.md)):
 
 | Condition | Backend | `GET /api/v1/health` → `storage_backend` |
 | --- | --- | --- |
-| `SUPABASE_URL` **and** `SUPABASE_KEY` set in `apps/api/.env` | Supabase schemas `audit`, `game`, `players` | `supabase` |
-| otherwise | SQLite domain files beside `SQLITE_PATH` (default `apps/api/var/shield.db`) | `sqlite` |
+| `SUPABASE_URL` and `SUPABASE_KEY` set | Supabase schemas `audit`, `game`, `players` | `supabase` |
 
 Every table lives in a domain schema; nothing is stored in `public`:
 
@@ -17,24 +17,8 @@ Every table lives in a domain schema; nothing is stored in `public`:
 | `game` | `scores` (leaderboard), `saved_boards` (one board per player and level) |
 | `players` | `accounts`, `sessions`, `daily_usage` (run quotas) |
 
-SQLite needs no setup, and data survives restarts. Use Supabase when you want a
-hosted database, several gateway replicas, or SQL access from Studio. The
-browser never talks to either store ([ADR 0004](../explanation/decisions/0004-frontend-talks-only-to-gateway.md)).
-
-## Use SQLite (default)
-
-Do nothing. Each schema is its own SQLite file next to `SQLITE_PATH`, attached
-under the schema's name, so queries read `game.scores` exactly as in Postgres:
-`var/shield.audit.db`, `var/shield.game.db` and `var/shield.players.db`
-(`var/shield.db` itself stays empty). To move them, set
-`SQLITE_PATH=/some/dir/shield.db`. In Docker Compose the files live in the
-`shield-data` volume under `/app/var/`.
-
-To start over, stop the API and run `mise run local:db:reset` (it asks first,
-then deletes those files and their journals). The next start creates empty
-databases.
-
-To inspect: `sqlite3 apps/api/var/shield.game.db 'select player_name, level_id, total_score from scores order by total_score desc limit 10'`.
+The browser never talks directly to Supabase
+([ADR 0004](../explanation/decisions/0004-frontend-talks-only-to-gateway.md)).
 
 ## The Supabase project in this repo
 
@@ -101,9 +85,7 @@ manager. `SUPABASE_ANON_KEY` is still read as a fallback name for older `.env` f
 ## Change the schema
 
 Schema changes follow the same spec-driven rules as code: update the owning
-spec, and keep the SQLite tables in `services/scores.py`, `services/sessions.py`
-and `services/players.py` in sync. The test for API-SCHEMA-006 fails if any
-table drifts from the migrations.
+spec and add a Supabase migration.
 
 ```bash
 mise run db:migration add_score_email   # creates supabase/migrations/<timestamp>_add_score_email.sql
@@ -119,7 +101,7 @@ difference instead: `mise run db:diff -f add_score_email`.
 
 | Symptom | Cause |
 | --- | --- |
-| `storage_backend` is `sqlite` although Supabase is configured | Only one of `SUPABASE_URL` / `SUPABASE_KEY` is set, the names are misspelled (they are case-sensitive), or the file is not exactly `apps/api/.env`. |
+| `ConfigurationError: SUPABASE_URL and SUPABASE_KEY are required` | Only one of `SUPABASE_URL` / `SUPABASE_KEY` is set, the names are misspelled (they are case-sensitive), or local Supabase was not started (`mise run db:start` / `mise run infra:up`). |
 | `PGRST106 Invalid schema: players` (`Only the following schemas are exposed: public, graphql_public`) | The hosted project does not expose the domain schemas. Add `audit`, `game` and `players` under **Exposed schemas** (step 2 above). |
 | `schema "players" does not exist` or `relation … does not exist` | The migrations have not been applied (`mise run db:push` remotely, `mise run db:reset` locally). |
 | `permission denied for table …` | The gateway is using the anon/publishable key instead of the service_role/secret key. |

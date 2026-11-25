@@ -8,12 +8,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from shield_api.container import build_container
 from shield_api.openapi import render
-from shield_api.services.admins import NoAdminAuthenticator
 from shield_api.services.clearance import Clearance, clearance_for
-from shield_api.services.sessions import AttemptLimiter, InMemorySessionStore, SqliteSessionStore
-from shield_api.services.sqlite import connect_domains
+from shield_api.services.sessions import AttemptLimiter, InMemorySessionStore, SupabaseSessionStore
 from shield_api.settings import Settings
 
 COOKIE = "shield_session"
@@ -64,7 +61,6 @@ def test_every_refusal_is_the_same_generic_401(make_harness, admin_password: str
         "/api/v1/auth/register",
         json={"email": "player@example.com", "password": "PlayerPass1", "player_name": "Pat"},
     )
-    unconfigured = make_harness(supabase_auth=False)
     down = make_harness()
     down.auth.fail = True
 
@@ -74,7 +70,6 @@ def test_every_refusal_is_the_same_generic_401(make_harness, admin_password: str
         harness.grant("PlayerPass1", email="player@example.com"),
         harness.grant("sneaky-pass", email="sneaky@example.com"),
         down.grant(admin_password),
-        unconfigured.grant(admin_password),
     ]
 
     assert {r.status_code for r in refusals} == {401}
@@ -83,20 +78,13 @@ def test_every_refusal_is_the_same_generic_401(make_harness, admin_password: str
     assert not admin_allowed(harness)
 
 
-@pytest.mark.spec("API-CLEAR-015")
-def test_without_supabase_nobody_can_be_an_admin(tmp_path: Path) -> None:
-    container = build_container(Settings(_env_file=None, SQLITE_PATH=tmp_path / "shield.db"))
-
-    assert isinstance(container.admins, NoAdminAuthenticator)
-
-
 @pytest.mark.spec("API-CLEAR-016")
 def test_neither_password_nor_token_is_persisted_or_logged(
-    make_harness, admin_password: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    make_harness, admin_password: str, fake_supabase, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    db = tmp_path / "shield.db"
-    harness = make_harness(sessions=SqliteSessionStore(db))
+    client = fake_supabase()
+    harness = make_harness(sessions=SupabaseSessionStore(client))
     harness.auth.add("player@example.com", "player-pass")
 
     harness.grant("wrong guess")
@@ -104,15 +92,12 @@ def test_neither_password_nor_token_is_persisted_or_logged(
     token = harness.grant(admin_password).cookies[COOKIE]
     admin_allowed(harness)
 
-    stored = b"".join(p.read_bytes() for p in tmp_path.iterdir() if p.is_file())
+    rows = client.tables[("audit", "clearance_sessions")].rows
+    serialized = json.dumps(rows)
     for secret in (admin_password, "wrong guess", "player-pass", token):
-        assert secret.encode() not in stored
+        assert secret not in serialized
         assert secret not in caplog.text
-    # Clearance sessions live in the attached `audit` schema (spec 0024).
-    with connect_domains(db) as connection:
-        hashes = [
-            row[0] for row in connection.execute("select token_hash from audit.clearance_sessions")
-        ]
+    hashes = [row["token_hash"] for row in rows]
     assert hashes == [hashlib.sha256(token.encode()).hexdigest()]
     assert len(harness.auth.sign_ins) == 3
     assert harness.auth.open_sessions == 0
@@ -218,22 +203,6 @@ def test_status_reports_the_live_session(harness, admin_password: str) -> None:
     assert datetime.fromisoformat(status["expires_at"]) == datetime.fromisoformat(
         granted["expires_at"]
     )
-
-
-@pytest.mark.spec("API-CLEAR-007")
-def test_sqlite_sessions_survive_a_restart_and_expired_rows_are_purged(tmp_path: Path) -> None:
-    db = tmp_path / "shield.db"
-    first = SqliteSessionStore(db)
-    stale, _ = asyncio.run(first.create(timedelta(seconds=-1)))
-    live, expires_at = asyncio.run(first.create(timedelta(hours=1)))
-
-    reopened = SqliteSessionStore(db)
-
-    assert asyncio.run(reopened.lookup(live)) == expires_at
-    assert asyncio.run(reopened.lookup(stale)) is None
-    with connect_domains(db) as connection:
-        (count,) = connection.execute("select count(*) from audit.clearance_sessions").fetchone()
-    assert count == 1
 
 
 @pytest.mark.spec("API-CLEAN-003")

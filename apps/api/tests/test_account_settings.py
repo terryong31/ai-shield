@@ -12,16 +12,13 @@ from fastapi.testclient import TestClient
 from shield_api.services.players import (
     InMemoryPlayerStore,
     PlayerStore,
-    SqlitePlayerStore,
     SupabasePlayerStore,
 )
 from shield_api.services.scores import (
     InMemoryScoreStore,
     ScoreStore,
-    SqliteScoreStore,
     SupabaseScoreStore,
 )
-from shield_api.services.sqlite import connect_domains
 
 from .conftest import FakeClient, Harness
 from .test_game_api import _valid_board_payload
@@ -65,23 +62,28 @@ def delete_account(client: TestClient, current: str = PASSWORD, confirm: str = "
     return client.request("DELETE", ACCOUNT, json={"current_password": current, "confirm": confirm})
 
 
-def record_score(client: TestClient, name: str, level: str = "easy-1", total: int = 5000):
-    response = client.post(
-        "/api/v1/game/scores",
-        json={
-            "player_name": name,
-            "level_id": level,
-            "total_score": total,
-            "medal": "gold",
-            "attacks_blocked": 4,
-            "attacks_total": 4,
-            "false_alarms": 0,
-            "avg_latency_ms": 4.0,
-            "total_cost_usd": 0.0,
-            "board": _valid_board_payload(),
-        },
+def record_score(harness: Harness, email: str, name: str, level: str = "easy-1", total: int = 5000):
+    from shield_api.schemas import ScoreCreateRequest
+
+    asyncio.run(
+        harness.scores.record_score(
+            ScoreCreateRequest.model_validate(
+                {
+                    "player_name": name,
+                    "level_id": level,
+                    "total_score": total,
+                    "medal": "gold",
+                    "attacks_blocked": 4,
+                    "attacks_total": 4,
+                    "false_alarms": 0,
+                    "avg_latency_ms": 4.0,
+                    "total_cost_usd": 0.0,
+                    "board": _valid_board_payload(),
+                }
+            ),
+            email=email,
+        )
     )
-    assert response.status_code == 200, response.text
 
 
 def leaderboard(client: TestClient, level: str = "easy-1") -> list[str]:
@@ -142,7 +144,7 @@ def test_change_password_revokes_the_other_sessions(harness: Harness) -> None:
 @pytest.mark.spec("API-ACCOUNT-003")
 def test_change_email_moves_everything_to_the_new_address(harness: Harness) -> None:
     register(harness.client, "ada@example.com")
-    record_score(harness.client, "Ada")
+    record_score(harness, "ada@example.com", "Ada")
     save_board(harness, "ada@example.com")
     use_runs(harness, 2)
     other = TestClient(harness.client.app)
@@ -150,9 +152,14 @@ def test_change_email_moves_everything_to_the_new_address(harness: Harness) -> N
 
     response = change_email(harness.client, "  Ada.New@Example.com ")
 
-    assert response.status_code == 200
-    assert response.json()["email"] == "ada.new@example.com"
-    assert response.json()["wave_runs_used"] == 2
+    assert response.status_code == 202
+    assert session(harness.client)["email"] == "ada@example.com"
+    harness.auth.confirm_email_change("ada.new@example.com")
+
+    confirmed = login(harness.client, "ada.new@example.com")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["email"] == "ada.new@example.com"
+    assert confirmed.json()["wave_runs_used"] == 2
     assert session(other)["email"] == "ada.new@example.com"
     assert board(harness, "ada.new@example.com") is not None
     assert board(harness, "ada@example.com") is None
@@ -187,20 +194,26 @@ def test_moving_onto_leftover_usage_keeps_the_larger_count(harness: Harness) -> 
     use_runs(harness, 1)
 
     response = change_email(harness.client, "old@example.com")
+    assert response.status_code == 202
+    harness.auth.confirm_email_change("old@example.com")
+    signed_in = login(harness.client, "old@example.com")
 
-    assert response.status_code == 200
-    assert response.json()["wave_runs_used"] == 3
+    assert signed_in.status_code == 200
+    assert signed_in.json()["wave_runs_used"] == 3
 
 
 # --- reset progress ------------------------------------------------------------
 
 
 @pytest.mark.spec("API-ACCOUNT-006")
-def test_reset_progress_removes_scores_and_boards_only(harness: Harness) -> None:
+def test_reset_progress_removes_scores_and_boards_only(
+    make_harness: Callable[..., Harness],
+) -> None:
+    harness = make_harness(allow_self_upgrade=True)
     register(harness.client, "ada@example.com")
-    harness.client.post("/api/v1/auth/upgrade")
-    record_score(harness.client, "Ada", "easy-1")
-    record_score(harness.client, "Ada", "medium-1")
+    assert harness.client.post("/api/v1/auth/upgrade").status_code == 200
+    record_score(harness, "ada@example.com", "Ada", "easy-1")
+    record_score(harness, "ada@example.com", "Ada", "medium-1")
     save_board(harness, "ada@example.com", "easy-1")
     use_runs(harness, 2)
 
@@ -218,10 +231,10 @@ def test_reset_progress_removes_scores_and_boards_only(harness: Harness) -> None
 def test_reset_progress_never_touches_another_players_score(harness: Harness) -> None:
     other = TestClient(harness.client.app)
     register(other, "twin@example.com", name="Ada")
-    record_score(other, "Ada", total=4000)
+    record_score(harness, "twin@example.com", "Ada", total=4000)
     asyncio.run(_record_legacy_score(harness.scores))
     register(harness.client, "ada@example.com", name="Ada")
-    record_score(harness.client, "Ada", total=6000)
+    record_score(harness, "ada@example.com", "Ada", total=6000)
     assert leaderboard(harness.client) == ["Ada", "Ada", "Legacy"]
 
     assert reset_progress(harness.client).json()["scores_removed"] == 1
@@ -257,7 +270,7 @@ async def _record_legacy_score(scores: ScoreStore) -> None:
 @pytest.mark.spec("API-ACCOUNT-008")
 def test_delete_account_removes_the_account_and_its_data(harness: Harness) -> None:
     register(harness.client, "ada@example.com")
-    record_score(harness.client, "Ada")
+    record_score(harness, "ada@example.com", "Ada")
     save_board(harness, "ada@example.com")
     other = TestClient(harness.client.app)
     login(other, "ada@example.com")
@@ -321,7 +334,7 @@ def test_account_endpoints_need_a_signed_in_player(harness: Harness) -> None:
 @pytest.mark.spec("API-ACCOUNT-012")
 def test_a_wrong_password_changes_nothing_and_is_rate_limited(harness: Harness) -> None:
     register(harness.client, "ada@example.com")
-    record_score(harness.client, "Ada")
+    record_score(harness, "ada@example.com", "Ada")
     wrong = "not my password"
 
     responses = [
@@ -381,7 +394,7 @@ def test_no_password_is_echoed_or_logged(
         reset_progress(harness.client, current=NEW_PASSWORD),
         delete_account(harness.client, current=NEW_PASSWORD),
     ]
-    assert [r.status_code for r in responses] == [401, 200, 200, 200, 204]
+    assert [r.status_code for r in responses] == [401, 200, 202, 200, 204]
     bodies = [r.text for r in responses]
 
     for secret in (PASSWORD, NEW_PASSWORD, "wrong one"):
@@ -405,7 +418,12 @@ def test_a_store_failure_midway_leaves_the_old_login_working(
     harness = make_harness(players=ExplodingMoves())
     register(harness.client, "ada@example.com")
 
-    moved = change_email(harness.client, "new@example.com")
+    assert change_email(harness.client, "new@example.com").status_code == 202
+    harness.auth.confirm_email_change("new@example.com")
+    moved = login(harness.client, "new@example.com")
+    user = harness.auth.by_email("new@example.com")
+    assert user is not None
+    user.email = "ada@example.com"
     deleted = delete_account(harness.client)
 
     assert moved.status_code == deleted.status_code == 503
@@ -420,7 +438,7 @@ def test_a_store_failure_midway_leaves_the_old_login_working(
 def _run_sequence(harness: Harness) -> list[Any]:
     client = harness.client
     register(client, "ada@example.com")
-    record_score(client, "Ada")
+    record_score(harness, "ada@example.com", "Ada")
     save_board(harness, "ada@example.com")
     use_runs(harness, 1)
     other = TestClient(client.app)
@@ -428,11 +446,15 @@ def _run_sequence(harness: Harness) -> list[Any]:
     steps: list[Any] = [
         change_password(client).json()["email"],
         session(other)["authenticated"],
-        change_email(client, "new@example.com", current=NEW_PASSWORD).json()["wave_runs_used"],
+    ]
+    assert change_email(client, "new@example.com", current=NEW_PASSWORD).status_code == 202
+    harness.auth.confirm_email_change("new@example.com")
+    steps += [
+        login(client, "new@example.com", NEW_PASSWORD).json()["wave_runs_used"],
         board(harness, "new@example.com") is not None,
         reset_progress(client, current=NEW_PASSWORD).json(),
     ]
-    record_score(client, "Ada")
+    record_score(harness, "new@example.com", "Ada")
     steps += [
         delete_account(client, current=NEW_PASSWORD).status_code,
         leaderboard(client),
@@ -443,13 +465,10 @@ def _run_sequence(harness: Harness) -> list[Any]:
 
 
 @pytest.mark.spec("API-ACCOUNT-016")
-def test_every_store_behaves_the_same(
-    make_harness: Callable[..., Harness], tmp_path: Path, fake_supabase
-) -> None:
+def test_every_store_behaves_the_same(make_harness: Callable[..., Harness], fake_supabase) -> None:
     client: FakeClient = fake_supabase()
     stores: list[tuple[PlayerStore, ScoreStore]] = [
         (InMemoryPlayerStore(), InMemoryScoreStore()),
-        (SqlitePlayerStore(tmp_path / "shield.db"), SqliteScoreStore(tmp_path / "shield.db")),
         (SupabasePlayerStore(client), SupabaseScoreStore(client)),
     ]
 
@@ -467,39 +486,34 @@ def test_every_store_behaves_the_same(
         1,
     ]
     assert results[1] == results[0]
-    assert results[2] == results[0]
 
 
 @pytest.mark.spec("API-ACCOUNT-017")
-def test_scores_are_owned_by_email(tmp_path: Path, make_harness: Callable[..., Harness]) -> None:
+def test_scores_are_owned_by_email(make_harness: Callable[..., Harness], fake_supabase) -> None:
     sql = "\n".join(p.read_text(encoding="utf-8").lower() for p in sorted(MIGRATIONS.glob("*.sql")))
     assert "alter table game.scores add column if not exists email text" in sql
     assert "on game.scores (email, level_id, score_version)" in sql
 
-    db = tmp_path / "shield.db"
-    harness = make_harness(scores=SqliteScoreStore(db))
+    client: FakeClient = fake_supabase()
+    harness = make_harness(scores=SupabaseScoreStore(client))
     register(harness.client, "ada@example.com")
-    record_score(harness.client, "Ada", total=1000)
-    record_score(harness.client, "Ada", total=3000)
-    record_score(harness.client, "Ada", total=2000)
+    record_score(harness, "ada@example.com", "Ada", total=1000)
+    record_score(harness, "ada@example.com", "Ada", total=3000)
+    record_score(harness, "ada@example.com", "Ada", total=2000)
 
-    with connect_domains(db) as connection:
-        rows = connection.execute("select email, total_score from game.scores").fetchall()
+    rows = [(r["email"], r["total_score"]) for r in client.tables[("game", "scores")].rows]
     assert rows == [("ada@example.com", 3000)]
 
 
 @pytest.mark.spec("API-ACCOUNT-018")
 def test_the_leaderboard_never_shows_emails(
-    tmp_path: Path, make_harness: Callable[..., Harness]
+    make_harness: Callable[..., Harness], fake_supabase
 ) -> None:
-    db = tmp_path / "shield.db"
-    harness = make_harness(scores=SqliteScoreStore(db))
+    client: FakeClient = fake_supabase()
+    harness = make_harness(scores=SupabaseScoreStore(client))
     register(harness.client, "ada@example.com")
-    record_score(harness.client, "Ada")
-    with connect_domains(db) as connection:
-        assert connection.execute("select email from game.scores").fetchall() == [
-            ("ada@example.com",)
-        ]
+    record_score(harness, "ada@example.com", "Ada")
+    assert [r["email"] for r in client.tables[("game", "scores")].rows] == ["ada@example.com"]
 
     response = harness.client.get("/api/v1/game/scores")
 
@@ -511,7 +525,7 @@ def test_the_leaderboard_never_shows_emails(
 
 
 def supabase_harness(make_harness: Callable[..., Harness]) -> Harness:
-    harness = make_harness(supabase_players=True)
+    harness = make_harness()
     harness.auth.confirm_email = False
     register(harness.client, "ada@example.com")
     harness.auth.calls.clear()
@@ -531,7 +545,7 @@ def test_supabase_password_change(make_harness: Callable[..., Harness]) -> None:
     assert login(fresh, "ada@example.com", NEW_PASSWORD).status_code == 200
     store = harness.container.players
     assert isinstance(store, InMemoryPlayerStore)
-    assert store._accounts["ada@example.com"].password_hash is None
+    assert not hasattr(store._accounts["ada@example.com"], "password_hash")
 
 
 @pytest.mark.spec("API-ACCOUNT-020")
@@ -540,19 +554,25 @@ def test_supabase_email_change(make_harness: Callable[..., Harness]) -> None:
     harness.auth.add("grace@example.com", "grace password")
 
     taken = change_email(harness.client, "grace@example.com")
-    moved = change_email(harness.client, "new@example.com")
+    requested = change_email(harness.client, "new@example.com")
 
     assert taken.status_code == 409
+    assert requested.status_code == 202
+    assert harness.auth.by_email("ada@example.com") is not None
+    assert harness.auth.by_email("new@example.com") is None
+
+    harness.auth.confirm_email_change("new@example.com")
+    moved = login(harness.client, "new@example.com")
     assert moved.status_code == 200
     assert harness.auth.by_email("new@example.com") is not None
     assert harness.auth.by_email("ada@example.com") is None
 
-    failing = make_harness(supabase_players=True, players=ExplodingMoves())
+    failing = make_harness(players=ExplodingMoves())
     failing.auth.confirm_email = False
     register(failing.client, "ada@example.com")
-    assert change_email(failing.client, "new@example.com").status_code == 503
-    assert failing.auth.by_email("ada@example.com") is not None
-    assert failing.auth.by_email("new@example.com") is None
+    assert change_email(failing.client, "new@example.com").status_code == 202
+    failing.auth.confirm_email_change("new@example.com")
+    assert login(failing.client, "new@example.com").status_code == 503
 
 
 @pytest.mark.spec("API-ACCOUNT-021")

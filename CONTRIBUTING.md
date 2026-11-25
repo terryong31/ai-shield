@@ -10,6 +10,16 @@ mise install && mise run setup
 mise run check     # should be green on a fresh clone
 ```
 
+`mise run setup` also installs the git hooks (`lefthook.yml`):
+
+- **pre-commit** scans the staged diff for secrets, then lints and fixes the
+  staged Python and web files.
+- **commit-msg** checks that the subject is a Conventional Commit.
+- **pre-push** stops pushes to `main`, then runs `mise run check`.
+
+CI (`.github/workflows/ci.yml`) runs the same mise tasks. The `CI OK` check
+must pass before a PR can merge.
+
 ## The workflow
 
 1. **Open or find an issue** describing the problem.

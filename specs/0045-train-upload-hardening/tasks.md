@@ -1,0 +1,63 @@
+# 0045 — Training upload hardening and server-held models: tasks
+
+Run as one SDD cycle (or several, one per slice of IDs). `mise run sdd:done`
+ticks the criterion lines automatically.
+
+- [ ] `mise run sdd:start 0045 [IDs…]`
+- [x] **ENG-TRAIN-001**: write failing test
+- [x] **ENG-TRAIN-002**: write failing test
+- [x] **ENG-TRAIN-003**: write failing test
+- [x] **ENG-TRAIN-004**: write failing test
+- [x] **ENG-TRAIN-005**: write failing test
+- [x] **ENG-TRAIN-006**: write failing test
+- [x] **ENG-TRAIN-007**: write failing test
+- [x] **ENG-TRAIN-008**: write failing test
+- [x] **ENG-TRAIN-009**: write failing test
+- [x] **ENG-TRAIN-011**: write failing test
+- [x] **ENG-TRAIN-012**: write failing test
+- [x] **ENG-TRAIN-013**: write failing test
+- [x] **ENG-TRAIN-014**: write failing test
+- [x] **ENG-TRAIN-015**: write failing test
+- [x] **ENG-TRAIN-016**: write failing test
+- [x] **API-TRAIN-001**: write failing test
+- [x] **API-TRAIN-002**: write failing test
+- [x] **API-TRAIN-003**: write failing test
+- [x] **API-TRAIN-005**: write failing test
+- [x] **API-TRAIN-006**: write failing test
+- [x] **API-TRAIN-007**: write failing test
+- [x] **API-TRAIN-008**: write failing test
+- [x] **API-TRAIN-009**: write failing test
+- [x] **API-TRAIN-012**: write failing test
+- [x] **API-TRAIN-013**: write failing test
+- [x] **API-TRAIN-014**: write failing test
+- [x] **API-TRAIN-015**: write failing test
+- [x] **API-TRAIN-016**: write failing test
+- [x] **API-TRAIN-017**: write failing test
+- [x] **API-TRAIN-018**: write failing test
+- [x] **API-TRAIN-019**: write failing test
+- [x] **API-TRAIN-030**: write failing test
+- [x] **API-TRAIN-031**: write failing test
+- [x] **API-TRAIN-032**: write failing test
+- [x] **API-TRAIN-021**: write failing test
+- [x] **API-TRAIN-022**: write failing test
+- [x] **API-TRAIN-023**: write failing test
+- [x] **API-TRAIN-024**: write failing test
+- [x] **API-TRAIN-025**: write failing test
+- [x] **API-TRAIN-026**: write failing test
+- [x] **API-TRAIN-027**: write failing test
+- [x] **API-TRAIN-028**: write failing test
+- [x] **API-TRAIN-029**: write failing test
+- [x] **WEB-TRAIN-001**: write failing test
+- [x] **WEB-TRAIN-002**: write failing test
+- [x] **WEB-TRAIN-003**: write failing test
+- [x] **WEB-TRAIN-004**: write failing test
+- [x] **WEB-TRAIN-005**: write failing test
+- [x] **WEB-TRAIN-006**: write failing test
+- [x] **WEB-TRAIN-007**: write failing test
+- [x] **WEB-TRAIN-009**: write failing test
+- [x] **WEB-TRAIN-008**: write failing test
+- [ ] `mise run sdd:red` accepted
+- [ ] Implement; `mise run sdd:green` accepted
+- [ ] Update reference docs (`docs/reference/…`) and `CHANGELOG.md`
+- [ ] Regenerate the API contract if HTTP shapes changed (`mise run contract`)
+- [ ] `mise run sdd:verify`, then `mise run sdd:done`

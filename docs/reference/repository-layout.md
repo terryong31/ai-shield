@@ -11,7 +11,9 @@ ai-shield/
 ├── bun.lock                     # JavaScript lockfile
 ├── AGENTS.md, CLAUDE.md         # instructions for AI coding agents (see how-to/work-with-ai-agents.md)
 ├── .claude/                     # Claude Code settings, subagents, skills
-├── .github/                     # issue and pull request templates, dependabot
+├── .github/                     # CI workflows, setup action, templates, dependabot
+├── lefthook.yml                 # git hooks: pre-commit, commit-msg, pre-push
+├── .gitleaks.toml, .gitleaksignore  # secret scan rules and reviewed false positives
 ├── .dockerignore, .editorconfig, .gitignore
 │
 ├── packages/
@@ -48,7 +50,7 @@ ai-shield/
 │   │   │   ├── dependencies.py  # ContainerDep, ClearanceDep
 │   │   │   ├── openapi.py       # shield-api-export-openapi
 │   │   │   ├── routers/         # health, auth, game, clearance
-│   │   │   ├── services/        # players.py, scores.py, sessions.py, clearance.py, sqlite.py
+│   │   │   ├── services/        # players.py, scores.py, sessions.py, clearance.py, identity.py, admins.py
 │   │   │   └── providers/       # gemini.py (standard-tier agent), byok.py (custom sandbox)
 │   │   └── tests/
 │   │
@@ -69,13 +71,13 @@ ai-shield/
 ├── contracts/
 │   └── shield-api.openapi.json  # generated HTTP contract (committed)
 ├── supabase/                    # `supabase init` project: config.toml, migrations/, seed.sql
-├── compose.yaml                 # Docker Compose: api + web, SQLite volume
+├── compose.yaml                 # Docker Compose: redis, api, web
 ├── specs/                       # spec-driven development: README, _templates/, NNNN-slug/spec.md
-├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py
+├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, local_env.py
 └── docs/                        # this documentation (Diátaxis)
 ```
 
-Git-ignored runtime and local paths: `apps/api/var/` (SQLite databases),
+Git-ignored runtime and local paths:
 `.env*` (except `.env.example`), `*.csv`, `*.pkl`, `company_document/`,
 `injection_dataset/`, `.claude/settings.local.json`.
 

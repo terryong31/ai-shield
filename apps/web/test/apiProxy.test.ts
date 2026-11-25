@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { LEADERBOARD_STREAM_PATH, SHIELD_API_PREFIX } from '../app/utils/apiPaths'
+import { SHIELD_API_PREFIX } from '../app/utils/apiPaths'
 import { proxyToGateway } from '../shared/utils/apiProxy'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
@@ -44,10 +44,12 @@ describe('same-origin API proxy (spec 0041)', () => {
     expect(readFileSync(join(APP_DIR, 'composables', 'useShieldApi.ts'), 'utf-8')).toContain('SHIELD_API_PREFIX')
   })
 
-  it('[WEB-PROXY-002] the leaderboard stream opens the same-origin stream path', () => {
-    expect(LEADERBOARD_STREAM_PATH).toBe('/api/v1/game/scores/stream')
+  it('[WEB-PROXY-002] useLeaderboard reads only through useShieldApi and has no stream path', () => {
     const composable = readFileSync(join(APP_DIR, 'composables', 'useLeaderboard.ts'), 'utf-8')
-    expect(composable).toContain('new EventSource(LEADERBOARD_STREAM_PATH)')
+    expect(composable).toContain('useShieldApi()')
+    expect(composable).not.toContain('EventSource')
+    expect(composable).not.toContain('/game/scores/stream')
+    expect(composable).not.toMatch(/https?:\/\//)
   })
 
   it('[WEB-PROXY-003] forwards to the target with path and query, with or without a trailing slash', async () => {

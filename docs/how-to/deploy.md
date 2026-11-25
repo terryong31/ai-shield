@@ -15,10 +15,8 @@ mise run up                              # docker compose up --build
 
 - web: http://localhost:3000; api: http://localhost:8000/api/v1/health (Compose runs `APP_ENV=production`, so `/api/v1/docs` is off; start with `APP_ENV=development mise run up` to enable it)
 - `web` starts once `api` passes its health check.
-- Game data is SQLite in the named volume `shield-data` (mounted at
-  `/app/var`), so it survives `mise run down` and rebuilds. `docker compose down -v` deletes it.
 - To use the local Supabase stack from the container, set
-  `SUPABASE_URL=http://host.docker.internal:54321` in `apps/api/.env`.
+  `SUPABASE_URL=http://host.docker.internal:54321` and `SUPABASE_KEY` in `apps/api/.env`.
 - The browser only talks to `web`; it proxies `/api/v1/**` to `api` over the
   Compose network (`NUXT_API_PROXY_TARGET=http://api:8000`).
 
@@ -50,17 +48,13 @@ Pass configuration as environment variables. The image contains no `.env`
 | `CORS_ORIGINS` | Optional. The browser calls the web server, which proxies to the gateway server-to-server, so CORS is not exercised. Set it only if a browser calls the gateway directly |
 | `GOOGLE_API_KEY`, `GEMINI_MODEL` | The standard-tier agent (Medium) |
 | `GROQ_API_KEY`, `GAME_MODEL_BUDGET` | The budget-tier agent (Hard), and Medium without Gemini ([how-to](configure-llm-providers.md)) |
-| `SUPABASE_URL`, `SUPABASE_KEY` | Persistent game data ([how-to](persist-game-data.md)) and admin accounts; without them nobody can open the admin console |
+| `SUPABASE_URL`, `SUPABASE_KEY` | **Required.** Persistent game data ([how-to](persist-game-data.md)), player accounts, and admin clearance |
 | `WEB_BASE_URL` | The web client's public origin, for the email confirmation link (add `<WEB_BASE_URL>/auth/confirmed` to Supabase **Redirect URLs**) |
 | `APP_ENV` | Leave unset (`production`) so Swagger UI and `/openapi.json` stay off |
 | `LOG_LEVEL` | Optional |
 
-Without Supabase, mount a volume on `/app/var` so the SQLite files survive
-restarts, and run a single replica (SQLite is a single-writer file):
-
 ```bash
 docker run -d --name shield-api -p 8000:8000 \
-  -v shield-data:/app/var \
   -e GROQ_API_KEY="$GROQ_API_KEY" \
   -e SUPABASE_URL="$SUPABASE_URL" -e SUPABASE_KEY="$SUPABASE_KEY" \
   ai-shield-api
@@ -93,11 +87,7 @@ Create two Vercel projects from the same repository:
 | API | `apps/api` | FastAPI preset; entrypoint comes from `[tool.vercel]` in `apps/api/pyproject.toml`. Keep "Include files outside the Root Directory" on (the engine and `uv.lock` live outside it) |
 | Web | `apps/web` | Nuxt preset. Set `NUXT_API_PROXY_TARGET` to the API project's production URL and `NUXT_PUBLIC_SITE_URL` to the web URL |
 
-API environment: `SUPABASE_URL` and `SUPABASE_KEY` are **required** (Vercel's
-filesystem is read-only apart from an ephemeral `/tmp`, so SQLite does not
-persist), plus `WEB_BASE_URL` (the web URL), `GOOGLE_API_KEY` / `GROQ_API_KEY`,
-and optionally `REDIS_URL` for live leaderboard updates across instances. Leave
-`APP_ENV` unset.
+API environment: `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, and `TRUSTED_PROXY_SECRET` are **required** in production, along with `TRUSTED_CLIENT_IP_HEADER=x-shield-client-ip`, `WEB_BASE_URL` (the web URL), and `GOOGLE_API_KEY` / `GROQ_API_KEY`. On Web Vercel, set `NUXT_API_PROXY_SECRET` to match the API secret, confirm `NUXT_CLIENT_IP_HEADER=x-vercel-forwarded-for` (also the Nuxt default; production fails closed without a resolved header IP), and keep Vercel BotID enabled on the project (spec 0043). Leave `APP_ENV` unset (`production`).
 
 ## 4. Health check
 
@@ -137,9 +127,7 @@ Before exposing the game beyond a trusted network:
 - [ ] **Rate-limit `POST /api/v1/auth/*` and `POST /api/v1/game/run`** per client
       at the proxy. Daily quotas cap runs per session, but anonymous sessions are
       cheap to create, and login is not throttled by the gateway.
-- [ ] **Pick the storage backend deliberately.** SQLite is a single-writer file:
-      fine for one replica with a persistent volume at `/app/var`. For several
-      replicas or managed backups, use Supabase ([persist game data](persist-game-data.md)).
+- [ ] **Expose the Supabase domain schemas** (`audit`, `game`, `players`) in Data API settings ([persist game data](persist-game-data.md)).
 - [ ] Store secrets in your platform's secret manager, not in image layers or
       committed files.
 - [ ] Review [Threat model](../explanation/threat-model.md) known gaps.

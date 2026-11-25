@@ -1,3 +1,4 @@
+import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -8,7 +9,8 @@ from fastapi.testclient import TestClient
 
 from shield_api.container import Container
 from shield_api.main import create_app
-from shield_api.services.admins import NoAdminAuthenticator, SupabaseAdminAuthenticator
+from shield_api.services.admins import SupabaseAdminAuthenticator
+from shield_api.services.identity import SupabasePlayerIdentity
 from shield_api.services.players import InMemoryPlayerStore
 from shield_api.services.scores import InMemoryScoreStore
 from shield_api.settings import Settings
@@ -64,6 +66,8 @@ class FakeAuthDirectory:
     sign_ins: list[str] = field(default_factory=list)
     sign_ups: list[dict[str, Any]] = field(default_factory=list)
     resends: list[dict[str, Any]] = field(default_factory=list)
+    reset_passwords: list[str] = field(default_factory=list)
+    pending_emails: dict[str, str] = field(default_factory=dict)
     open_sessions: int = 0
     fail: bool = False
     writes: int = 0
@@ -78,6 +82,16 @@ class FakeAuthDirectory:
         user = self.by_email(email)
         assert user is not None
         self.email_confirmed[user.id] = True
+
+    def confirm_email_change(self, new_email: str) -> None:
+        target = new_email.strip().lower()
+        uid = next(
+            (k for k, v in self.pending_emails.items() if v.strip().lower() == target),
+            None,
+        )
+        assert uid is not None, f"no pending email change for {new_email!r}"
+        self.users[uid].email = self.pending_emails.pop(uid)
+        self.email_confirmed[uid] = True
 
     def add(
         self,
@@ -155,13 +169,15 @@ class FakeAuthAdmin:
 class FakeAuth:
     directory: FakeAuthDirectory
     signed_in: bool = False
+    current_uid: str | None = None
 
     @property
     def admin(self) -> FakeAuthAdmin:
         return FakeAuthAdmin(self.directory)
 
-    def _open_session(self) -> FakeAuthSession:
+    def _open_session(self, uid: str | None = None) -> FakeAuthSession:
         self.signed_in = True
+        self.current_uid = uid
         self.directory.open_sessions += 1
         return FakeAuthSession()
 
@@ -176,7 +192,7 @@ class FakeAuth:
             raise FakeAuthError("Invalid login credentials", "invalid_credentials")
         if directory.email_confirmed.get(user.id, True) is False:
             raise FakeAuthError("Email not confirmed", "email_not_confirmed")
-        return FakeUserResponse(user, self._open_session())
+        return FakeUserResponse(user, self._open_session(user.id))
 
     def sign_up(self, credentials: dict[str, Any]) -> FakeUserResponse:
         directory = self.directory
@@ -196,7 +212,22 @@ class FakeAuth:
         directory.email_confirmed[user.id] = not directory.confirm_email
         if directory.confirm_email:
             return FakeUserResponse(user)
-        return FakeUserResponse(user, self._open_session())
+        return FakeUserResponse(user, self._open_session(user.id))
+
+    def update_user(self, attributes: dict[str, Any]) -> FakeUserResponse:
+        directory = self.directory
+        directory.calls.append("update_user")
+        if directory.fail:
+            raise RuntimeError("auth service down")
+        if not self.signed_in or self.current_uid is None:
+            raise RuntimeError("not authenticated")
+        if "email" in attributes:
+            new_email = str(attributes["email"])
+            taken = directory.by_email(new_email)
+            if taken is not None and taken.id != self.current_uid:
+                raise FakeAuthError("Email address already registered", "email_exists")
+            directory.pending_emails[self.current_uid] = new_email
+        return FakeUserResponse(directory.users[self.current_uid])
 
     def resend(self, credentials: dict[str, Any]) -> object:
         directory = self.directory
@@ -210,10 +241,18 @@ class FakeAuth:
         self.directory.calls.append("sign_in_anonymously")
         return object()
 
+    def reset_password_for_email(self, email: str) -> object:
+        self.directory.calls.append("reset_password_for_email")
+        self.directory.reset_passwords.append(email)
+        if self.directory.fail:
+            raise RuntimeError("auth service down")
+        return object()
+
     def sign_out(self) -> None:
         self.directory.calls.append("sign_out")
         if self.signed_in:
             self.signed_in = False
+            self.current_uid = None
             self.directory.open_sessions -= 1
 
 
@@ -257,45 +296,46 @@ def make_harness() -> Iterator[Callable[..., Harness]]:
         verdict: Verdict = Verdict.SAFE,
         probability: float = 0.05,
         sessions: "SessionStore | None" = None,
-        supabase_auth: bool = True,
-        supabase_players: bool = False,
         players: "PlayerStore | None" = None,
         scores: "ScoreStore | None" = None,
+        confirm_email: bool = False,
+        allow_self_upgrade: bool = False,
     ) -> Harness:
+        from shield_api.services.leaderboard import LeaderboardService
+        from shield_api.services.models import InMemoryTrainedModelStore
         from shield_api.services.sessions import AttemptLimiter, InMemorySessionStore
 
         classifier = StaticClassifier(verdict, probability)
         scores = scores or InMemoryScoreStore()
         sessions = sessions or InMemorySessionStore()
         clock = FakeClock()
-        auth = FakeAuthDirectory()
+        auth = FakeAuthDirectory(confirm_email=confirm_email)
         auth.add(ADMIN_EMAIL, ADMIN_PASSWORD, app_metadata={"provider": "email", "role": "admin"})
         settings = Settings(
             _env_file=None,
+            APP_ENV="development",
             # TestClient speaks plain http://testserver, which drops Secure cookies.
             SESSION_COOKIE_SECURE=False,
+            ALLOW_SELF_UPGRADE=allow_self_upgrade,
         )
         container = Container(
             settings=settings,
             classifier=classifier,
             scores=scores,
+            admins=SupabaseAdminAuthenticator(auth.client),
+            identity=SupabasePlayerIdentity(
+                auth.client, redirect_to=f"{settings.WEB_BASE_URL}/auth/confirmed"
+            ),
+            leaderboard=LeaderboardService(scores, clock=clock),
+            models=InMemoryTrainedModelStore(clock=clock),
             sessions=sessions,
             attempts=AttemptLimiter(
                 max_attempts=settings.CLEARANCE_MAX_ATTEMPTS,
                 window=timedelta(minutes=settings.CLEARANCE_WINDOW_MINUTES),
                 clock=clock,
             ),
-            admins=(
-                SupabaseAdminAuthenticator(auth.client) if supabase_auth else NoAdminAuthenticator()
-            ),
             players=players or InMemoryPlayerStore(),
         )
-        if supabase_players:
-            from shield_api.services.identity import SupabasePlayerIdentity
-
-            container.identity = SupabasePlayerIdentity(
-                auth.client, redirect_to=f"{settings.WEB_BASE_URL}/auth/confirmed"
-            )
         client = TestClient(create_app(container))
         client.__enter__()
         clients.append(client)
@@ -448,6 +488,81 @@ class FakeTable:
         return FakeQuery(self, "select").select(*columns, **kwargs)
 
 
+_KIND_COLUMN = {
+    "wave": "wave_runs",
+    "test": "test_runs",
+    "train": "train_runs",
+}
+
+
+@dataclass
+class FakeRpcQuery:
+    schema: "FakeSchema"
+    fn: str
+    params: dict[str, Any]
+
+    def execute(self) -> Result:
+        client = self.schema.client
+        client.rpc_calls.append((self.schema.name, self.fn))
+        table = self.schema.table("daily_usage")
+        if table.fail:
+            raise RuntimeError("network down")
+        p_email = str(self.params["p_email"])
+        p_date = str(self.params["p_usage_date"])
+        p_kind = str(self.params["p_kind"])
+        col = _KIND_COLUMN[p_kind]
+        with client._rpc_lock:
+            row = next(
+                (
+                    r
+                    for r in table.rows
+                    if r.get("email") == p_email and r.get("usage_date") == p_date
+                ),
+                None,
+            )
+            if self.fn == "reserve_daily_usage":
+                p_limit = int(self.params["p_limit"])
+                if row is None:
+                    row = {
+                        "email": p_email,
+                        "usage_date": p_date,
+                        "wave_runs": 0,
+                        "test_runs": 0,
+                        "train_runs": 0,
+                    }
+                    table.rows.append(row)
+                current = int(row.get(col, 0))
+                if current < p_limit:
+                    row[col] = current + 1
+                    reserved = True
+                else:
+                    reserved = False
+                return Result(
+                    data=[
+                        {
+                            "reserved": reserved,
+                            "wave_runs": int(row.get("wave_runs", 0)),
+                            "test_runs": int(row.get("test_runs", 0)),
+                            "train_runs": int(row.get("train_runs", 0)),
+                        }
+                    ]
+                )
+            if self.fn == "release_daily_usage":
+                if row is None:
+                    return Result(data=[])
+                row[col] = max(0, int(row.get(col, 0)) - 1)
+                return Result(
+                    data=[
+                        {
+                            "wave_runs": int(row.get("wave_runs", 0)),
+                            "test_runs": int(row.get("test_runs", 0)),
+                            "train_runs": int(row.get("train_runs", 0)),
+                        }
+                    ]
+                )
+        raise ValueError(f"Unknown RPC function: {self.fn}")
+
+
 @dataclass
 class FakeSchema:
     client: "FakeClient"
@@ -457,6 +572,9 @@ class FakeSchema:
         self.client.accessed.append((self.name, name))
         return self.client.tables.setdefault((self.name, name), FakeTable(fail=self.client.fail))
 
+    def rpc(self, fn: str, params: dict[str, Any] | None = None) -> FakeRpcQuery:
+        return FakeRpcQuery(self, fn, dict(params or {}))
+
 
 @dataclass
 class FakeClient:
@@ -465,6 +583,8 @@ class FakeClient:
     fail: bool = False
     tables: dict[tuple[str, str], FakeTable] = field(default_factory=dict)
     accessed: list[tuple[str, str]] = field(default_factory=list)
+    rpc_calls: list[tuple[str, str]] = field(default_factory=list)
+    _rpc_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     def schema(self, name: str) -> FakeSchema:
         return FakeSchema(self, name)

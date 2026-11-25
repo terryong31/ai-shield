@@ -16,6 +16,7 @@ supersedes the old one and update the old one's status to
 | [0004](0004-frontend-talks-only-to-gateway.md) | The frontend talks only to the gateway | Accepted | 2026-09-23 |
 | [0005](0005-ndjson-event-stream.md) | NDJSON event stream for `/chat` | Superseded by spec 0026 | 2026-09-23 |
 | [0006](0006-hash-verified-model-artifacts.md) | Hash-verified model artifacts | Accepted | 2026-09-23 |
+| [0007](0007-ci-pipeline-and-git-hooks.md) | CI pipeline and git hooks | Accepted | 2026-11-24 |
 
 ## Template
 

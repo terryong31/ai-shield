@@ -23,26 +23,27 @@ quadrant that matches what you need right now:
 ## How-to guides
 
 - [Configure LLM providers](how-to/configure-llm-providers.md): enable Groq and Gemini for the game's AI agent tiers.
-- [Persist game data](how-to/persist-game-data.md): SQLite by default; run, migrate and deploy the Supabase project in `supabase/`.
+- [Persist game data](how-to/persist-game-data.md): run, migrate and deploy the Supabase project in `supabase/`.
 - [Retrain the classifier](how-to/retrain-the-classifier.md): retrain the `Quick screen` baseline, verify digests, update the model card.
 - [Change the HTTP contract](how-to/change-the-http-contract.md): edit schemas, regenerate the contract and client types.
 - [Write a spec](how-to/write-a-spec.md): checklist for IDs, status, traceability and review.
 - [Deploy](how-to/deploy.md): build the Docker images, configure them, and harden for production.
 - [Work with AI agents](how-to/work-with-ai-agents.md): use AGENTS.md, Claude Code permissions, subagents and skills.
+- [Work with CI and the git hooks](how-to/work-with-ci-and-git-hooks.md): install the hooks, fix a failed hook or CI job, change the pipeline.
 
 ## Reference
 
 - [Engine API](reference/engine-api.md): every public class, function and field of `shield_engine`.
 - [HTTP API](reference/http-api.md): gateway routes, request and response fields, status codes.
 - [Configuration](reference/configuration.md): environment variables for the gateway and web client, engine options.
-- [CLI and tasks](reference/cli-and-tasks.md): `shield-engine train`, `shield-api-export-openapi`, every `mise` task and script.
+- [CLI and tasks](reference/cli-and-tasks.md): `shield-engine train`, `shield-api-export-openapi`, every `mise` task and script, the git hooks and the GitHub Actions workflows.
 - [Repository layout](reference/repository-layout.md): annotated tree and dependency rules.
 
 ## Explanation
 
 - [Architecture](explanation/architecture.md): the three deployables, ports and adapters, the composition root, the life of a wave run.
 - [Threat model](explanation/threat-model.md): assets, actors, trust boundaries, threats, mitigations and known gaps.
-- [Development process](explanation/development-process.md): why spec-driven plus test-driven, traceability, CI, AI agents.
+- [Development process](explanation/development-process.md): why spec-driven plus test-driven, traceability, CI and git hooks, AI agents.
 - [Architecture decision records](explanation/decisions/README.md): the recorded decisions and their consequences.
 
 ## Elsewhere in the repository
