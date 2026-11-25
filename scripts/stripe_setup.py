@@ -10,8 +10,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 
 EVENTS = (
     "checkout.session.completed",
@@ -26,22 +24,29 @@ EVENTS = (
 )
 
 
-def _run(args: list[str], env: dict[str, str] | None = None) -> str:
-    done = subprocess.run(args, capture_output=True, text=True, check=False, env=env)
+def _run(args: list[str], env: dict[str, str] | None = None, stdin: str | None = None) -> str:
+    done = subprocess.run(args, input=stdin, capture_output=True, text=True, check=False, env=env)
     if done.returncode != 0:
         # Output can hold secrets, so it is not shown.
         raise SystemExit(f"`{args[0]} {args[1]}` failed with exit code {done.returncode}.")
     return done.stdout.strip()
 
 
-def _store(environment: str, values: dict[str, str]) -> None:
-    with tempfile.TemporaryDirectory() as folder:
-        path = Path(folder) / "secrets.env"
-        path.touch(mode=0o600)
-        path.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
-        scope = [f"--env={environment}", "--path=/api"]
-        _run(["infisical", "secrets", "set", f"--file={path}", *scope, "--silent"])
-    print(f"Stored {', '.join(values)} in Infisical {environment} /api.")
+def _store(environment: str, key: str, webhook_secret: str) -> None:
+    # Through stdin: the values are never on disk or in the process list.
+    _run(
+        [
+            "infisical",
+            "secrets",
+            "set",
+            "--file=/dev/stdin",
+            f"--env={environment}",
+            "--path=/api",
+            "--silent",
+        ],
+        stdin=f"STRIPE_SECRET_KEY={key}\nSTRIPE_WEBHOOK_SECRET={webhook_secret}\n",
+    )
+    print(f"Stored both Stripe variables in Infisical {environment} /api.")
 
 
 def _update_events(endpoint: str) -> int:
@@ -73,7 +78,7 @@ def main() -> int:
     env = {**os.environ, "STRIPE_API_KEY": key}
 
     local_hook = _run(["stripe", "listen", "--print-secret"], env)
-    _store("dev", {"STRIPE_SECRET_KEY": key, "STRIPE_WEBHOOK_SECRET": local_hook})
+    _store("dev", key, local_hook)
 
     listing = json.loads(_run(["stripe", "webhook_endpoints", "list", "--limit", "100"], env))
     if any(item.get("url") == endpoint for item in listing.get("data", [])):
@@ -87,7 +92,7 @@ def main() -> int:
     created = json.loads(
         _run(["stripe", "webhook_endpoints", "create", "--url", endpoint, *flags], env)
     )
-    _store("prod", {"STRIPE_SECRET_KEY": key, "STRIPE_WEBHOOK_SECRET": str(created["secret"])})
+    _store("prod", key, str(created["secret"]))
     return 0
 
 
