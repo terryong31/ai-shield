@@ -1,6 +1,9 @@
 # The CI gate. Every job runs the same mise task a developer runs locally,
 # so "green locally" and "green in CI" mean the same thing.
 # Branch protection needs only one required check: "CI OK".
+# A pull request runs only the jobs for the parts that it changes (scripts/affected.sh).
+# All other events run every job. Do not use `paths:` here: a workflow that does not
+# start leaves the required check pending.
 name: CI
 
 on:
@@ -25,8 +28,43 @@ defaults:
     shell: bash
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      web: ${{ steps.affected.outputs.web }}
+      python: ${{ steps.affected.outputs.python }}
+      database: ${{ steps.affected.outputs.database }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request checks out a merge commit; its first parent is the base.
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Find the affected parts
+        id: affected
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          for part in web python database; do
+            affected=true
+            if [ "$EVENT" = "pull_request" ]; then
+              status=0
+              scripts/affected.sh "ci-$part" HEAD^1 || status=$?
+              case "$status" in
+                0) ;;
+                1) affected=false ;;
+                *) exit "$status" ;;
+              esac
+            fi
+            echo "$part=$affected" | tee -a "$GITHUB_OUTPUT" "$GITHUB_STEP_SUMMARY"
+          done
+
   lint:
     name: Lint
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -34,11 +72,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: mise run lint:py
-      - run: mise run lint:web
+        with:
+          python: ${{ needs.changes.outputs.python }}
+          javascript: ${{ needs.changes.outputs.web }}
+      - if: needs.changes.outputs.python == 'true'
+        run: mise run lint:py
+      - if: needs.changes.outputs.web == 'true'
+        run: mise run lint:web
 
   typecheck:
     name: Typecheck
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.web == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -46,11 +91,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - run: mise run typecheck:py
-      - run: mise run typecheck:web
+        with:
+          python: ${{ needs.changes.outputs.python }}
+          javascript: ${{ needs.changes.outputs.web }}
+      - if: needs.changes.outputs.python == 'true'
+        run: mise run typecheck:py
+      - if: needs.changes.outputs.web == 'true'
+        run: mise run typecheck:web
 
   test-python:
     name: Test (Python)
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -62,10 +114,11 @@ jobs:
           javascript: "false"
       - run: mise run test:engine
       - run: mise run test:api
-      - run: mise run test:tooling
 
   test-web:
     name: Test (web)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -77,22 +130,33 @@ jobs:
           python: "false"
       - run: mise run test:web
 
+  # Always runs: these checks read specs, docs and other files in the whole repository.
   spec-contract:
     name: Specs and contract
+    needs: changes
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      CONTRACT: ${{ needs.changes.outputs.python == 'true' || needs.changes.outputs.web == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+        with:
+          javascript: ${{ env.CONTRACT }}
+      - name: Repository tooling tests
+        run: mise run test:tooling
       - name: Every accepted criterion has a test
         run: mise run spec:check
       - name: Committed contract and generated types are current
+        if: env.CONTRACT == 'true'
         run: mise run contract:check
 
   build-web:
     name: Build (web)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -106,6 +170,8 @@ jobs:
 
   migrations:
     name: Migrations
+    needs: changes
+    if: needs.changes.outputs.database == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -120,6 +186,7 @@ jobs:
       - name: Every migration applies to a fresh database
         run: mise run db:check
 
+  # The security jobs always run: a secret can be in any file.
   workflows:
     name: Workflow security
     runs-on: ubuntu-24.04
@@ -180,10 +247,13 @@ jobs:
           fail-on-severity: high
           comment-summary-in-pr: never
 
+  # A skipped job is a pass. A failed "changes" job is a failure, so a broken filter
+  # cannot skip the gate.
   ci-ok:
     name: CI OK
     if: always()
     needs:
+      - changes
       - lint
       - typecheck
       - test-python

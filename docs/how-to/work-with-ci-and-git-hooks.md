@@ -95,9 +95,10 @@ Each CI job runs a mise task. Run the same task on your computer:
 | --- | --- |
 | `Lint` | `mise run lint:py` and `mise run lint:web` |
 | `Typecheck` | `mise run typecheck:py` and `mise run typecheck:web` |
-| `Test (Python)` | `mise run test:engine`, `mise run test:api`, `mise run test:tooling` |
+| `Detect changes` | `scripts/affected.sh <target> origin/main` |
+| `Test (Python)` | `mise run test:engine`, `mise run test:api` |
 | `Test (web)` | `mise run test:web` |
-| `Specs and contract` | `mise run spec:check` and `mise run contract:check` |
+| `Specs and contract` | `mise run test:tooling`, `mise run spec:check` and `mise run contract:check` |
 | `Build (web)` | `mise run build:web` |
 | `Migrations` | `mise run db:check` |
 | `Workflow security` | `mise run lint:actions` |
@@ -110,10 +111,30 @@ dependency to a fixed version.
 
 `CI OK` fails when a different job fails or is cancelled. Fix that job first.
 
+### A job is skipped
+
+On a pull request, `Detect changes` selects the jobs for the parts that changed. A skipped
+job is a pass. A push to `main`, the merge queue and a manual run do all the jobs.
+
+| Change | Jobs that run, with the jobs that always run |
+| --- | --- |
+| Web client | `Lint`, `Typecheck`, `Test (web)`, `Build (web)` |
+| Gateway, engine or `scripts/` | `Lint`, `Typecheck`, `Test (Python)` |
+| `supabase/` | `Lint`, `Typecheck`, `Test (Python)`, `Migrations` |
+| `contracts/` | `Lint`, `Typecheck`, `Test (Python)`, `Test (web)`, `Build (web)` |
+| `.github/`, `mise.toml` or `scripts/affected.sh` | All jobs |
+| Docs, specs and other files | No more jobs |
+
+`Specs and contract` and the security jobs always run. `Specs and contract` checks the
+contract only if Python or web files changed.
+
 ## 7. Change the pipeline
 
 - **Add a check.** Add a mise task in `mise.toml` first. Then add a CI job that
   runs the task, and add the job to the `needs` list of `CI OK`.
+- **Add a part, or a file that a part reads.** Change `scripts/affected.sh`, and add a case
+  to `scripts/tests/test_affected.py`. Do not add `paths:` to `ci.yml`: the required
+  check stays pending when a workflow does not start.
 - **Add a third-party action.** Pin it to a full commit SHA and put the version
   in a comment:
 
@@ -138,6 +159,24 @@ this repository. It has two projects: `ai-shield` (web client) and
 
 - Each push to a branch makes a preview deployment.
 - Each push to `main` makes a production deployment.
+
+Vercel builds a project only if its files changed. Each `vercel.json` runs
+`scripts/vercel_ignore.sh`, which uses the paths in `scripts/affected.sh`:
+
+| Change | `ai-shield` (web) | `ai-shield-backend` (gateway) |
+| --- | --- | --- |
+| `apps/web`, root `package.json`, `bun.lock` | Builds | Skipped |
+| `apps/api`, `packages/engine`, root `pyproject.toml`, `uv.lock` | Skipped | Builds |
+| Docs, specs, tests, Dockerfiles, CI, `contracts/`, `supabase/` | Skipped | Skipped |
+
+The comparison starts at the last successful deployment of the branch. The first preview of
+a branch starts at the commit where the branch left `main`. If the comparison is not
+possible, Vercel builds. A skipped build shows as **Canceled** in Vercel.
+
+To deploy with no file change (for example, after you change an environment variable), select
+**Redeploy** in Vercel and clear **Use project's Ignore Build Step**.
+
+Apply a migration with `mise run db:remote:push`. A migration alone does not start a build.
 
 No GitHub workflow deploys. Vercel shows the result of each deployment as a
 commit status on the pull request.

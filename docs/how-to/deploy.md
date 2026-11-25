@@ -89,7 +89,8 @@ Create two Vercel projects from the same repository. Keep the secrets in Infisic
 `/web`) and bring them to the Vercel projects ([Manage secrets](manage-secrets.md)).
 
 **Apply database migrations before you merge to `main`** (`mise run db:remote:plan`, then
-`mise run db:remote:push`). Vercel deploys `main` immediately.
+`mise run db:remote:push`). Vercel deploys `main` immediately, but only the projects that changed
+([what starts a build](work-with-ci-and-git-hooks.md#8-deploy)).
 
 | Project | Root Directory | Notes |
 | --- | --- | --- |
