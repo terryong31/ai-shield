@@ -84,4 +84,26 @@ describe('Stripe pass checkout (spec 0049)', () => {
     expect(page).toMatch(/useEventListener\('pageshow'[\s\S]*?redirecting\.value = false/)
     expect(page).toMatch(/Sign in to see your pass/)
   })
+
+  it('[WEB-BILL-007] links every signed-in player to the plans from the main menu', () => {
+    expect(read('pages', 'index.vue')).toMatch(
+      /v-if="isLoggedIn"\s*:label="isPaid \? 'Manage Plan' : 'Upgrade Plan'"[\s\S]{0,200}?to="\/plans"/
+    )
+  })
+
+  it('[WEB-BILL-006] keeps the price and features stable until the billing state is known', () => {
+    const known = planCards(FREE, { billingEnabled: true })[1]!
+    const pending = planCards(FREE, { pending: true })[1]!
+    expect([pending.price, pending.billingCycle]).toEqual(['$5', '/30 days'])
+    expect(pending.features).toEqual(known.features)
+    expect(pending.button).toMatchObject({ label: known.button!.label, loading: true, disabled: true })
+    expect(pending.action).toBeUndefined()
+    expect(planCards(PASS, { billingEnabled: true, pending: true })[1]!.button).toMatchObject({ loading: true })
+    expect(planCards(DEFAULT_ANONYMOUS_SESSION, { pending: true })[1]!.button).toMatchObject({ label: 'Sign in', to: '/auth/login' })
+
+    const page = read('pages', 'plans.vue')
+    expect(page).toMatch(/onServerPrefetch\([\s\S]*?loadBilling\(withSsrTimeout\(getLevels\(\)\)\)/)
+    expect(page).toContain('useState<BillingFlags | null>')
+    expect(page).toMatch(/pending: .*billing\.value === null|const pending = computed/)
+  })
 })

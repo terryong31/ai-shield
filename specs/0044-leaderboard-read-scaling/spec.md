@@ -210,9 +210,10 @@ and post-run refetch, and decides with a pure function
 | Situation | Result |
 | --- | --- |
 | Anonymous or signed out | `none`: no pinned row, no highlight |
-| Signed in, ranked, rank ≤ rows shown | `highlight`: their row in the list is highlighted (Nuxt UI semantic tokens, e.g. `bg-elevated` + `ring-primary`) and nothing is pinned |
-| Signed in, ranked, rank > rows shown | `pin`: a row pinned at the bottom of the leaderboard card, always visible without scrolling, styled like a list row but visually distinct (`bg-elevated`, top border `border-default`), showing rank, name and total score |
-| Signed in, unranked (`rank: null`) | `pin`: the pinned row shows `-`, the player name and a total score of 0 |
+| Signed in, ranked, rank ≤ rows shown | `highlight`: one own row, in the list. It sticks to the bottom edge of the list while its place is below the visible rows. When the player scrolls to its place, it stays between the players above and below it |
+| Signed in, ranked, rank > rows shown | `pin`: the last row of the list, which always sticks to the bottom edge, and shows rank, name and total score |
+| Signed in, unranked (`rank: null`) | `pin`: the same row shows `#-`, the player name and a total score of 0 |
+| Signed in, rank not loaded | The same row shows the player name, with `#-` for the rank and `-` for the score (WEB-LBOARD-019) |
 
 Rank labels come from a pure `formatRankLabel(rank)`: exact below 1,000
 (`"#999"`), compact above (`"1K+"` for 1,000–1,999, `"2K+"`, …, `"10K+"`).
@@ -230,7 +231,7 @@ The pinned row follows the active tab and refreshes with it.
 
 - **API-LBOARD-011**: Given seeded random data (≥ 1,000 owners, many equal `total_score` and `levels_mastered` values, random latencies and costs) loaded into a fake async Redis through the write path, when `GET /game/leaderboard` is read for each board and limits 1, 10, 25 and 100, then the rows equal `aggregate_difficulty_leaderboard` over the same store rows exactly (same order and same field values).
 - **API-LBOARD-012**: Given a board with 5,000 owners in the fake Redis, when the leaderboard is read with `limit=25`, then the store is not read and the Redis commands issued are one `ZREVRANGEBYSCORE`, at most one `ZRANGEBYSCORE` and one `HMGET` (command count independent of the number of owners).
-- **API-LBOARD-013**: Given members whose primary scores tie at the N-th position, when the leaderboard is read with `limit=N`, then the boundary tie group is fetched and ordered by `avg_latency_ms`, `total_cost_usd`, `player_name`, matching the Python aggregation.
+- **API-LBOARD-013**: Given members whose primary scores tie at the N-th position, when the leaderboard is read with `limit=N`, then the boundary tie group is fetched and ordered by `avg_latency_ms`, `total_cost_usd`, `player_name`, matching the Python aggregation. Replaced by API-FAIR-005 (0050).
 - **API-LBOARD-014**: Given any stored score, then no Redis key, ZSET member or hash field/value contains the owner's email (members are SHA-256 of `_owner_key`).
 - **API-LBOARD-015**: Given an owner whose only rows are lost runs, or whose total is 0, then they are not listed (min primary score 32).
 - **API-LBOARD-032**: Given more than 250 players tied at the boundary primary score on a Redis leaderboard board, when `get_leaderboard(limit=25)` or `get_player_rank` resolves ties, then `ZRANGEBYSCORE` is invoked with `start=0, num=250` and `HMGET` fetches at most `limit + 250` entries (`250` for `get_player_rank`).
@@ -263,7 +264,7 @@ The pinned row follows the active tab and refreshes with it.
 
 ### My rank
 
-- **API-LBOARD-029**: Given a signed-in player ranked 3rd on `Easy` (with a tie on primary score resolved by latency), when they call `GET /game/leaderboard/me?difficulty=Easy`, then the answer is `{difficulty: "Easy", rank: 3, total_score: …}` with `Cache-Control: private, no-store`; with no won `Easy` level, `rank` and `total_score` are `null`; anonymous or no session gets `403`.
+- **API-LBOARD-029**: Given a signed-in player ranked 3rd on `Easy` (with a tie on primary score resolved by latency), when they call `GET /game/leaderboard/me?difficulty=Easy`, then the answer is `{difficulty: "Easy", rank: 3, total_score: …}` with `Cache-Control: private, no-store`; with no won `Easy` level, `rank` and `total_score` are `null`; anonymous or no session gets `403`. Replaced by API-FAIR-005 (0050).
 
 ### Removed structures and routes
 
@@ -278,20 +279,25 @@ The pinned row follows the active tab and refreshes with it.
 - **WEB-LBOARD-008**: Given a tab whose data is older than 20 s, when the user switches to it, then it is fetched once; switching to a tab fetched less than 20 s ago makes no request.
 - **WEB-LBOARD-009**: Given leaderboard data in `sessionStorage`, when the home page mounts, then the cached rows render on the first frame with no "No scores yet" flash.
 - **WEB-LBOARD-011**: Given `formatRankLabel`, then `1` → `"#1"`, `999` → `"#999"`, `1000` → `"1K+"`, `1999` → `"1K+"`, `2500` → `"2K+"`, `10000` → `"10K+"`.
-- **WEB-LBOARD-012**: Given `ownRowPlacement` with the 25 shown entries, then: anonymous or signed out → `none`; signed in with `rank` 7 → `highlight` (row 7); `rank` 40 → `pin` with label `"#40"`; `rank: null` → `pin` with label `"-"` and score 0; own rank not loaded yet → `none`.
-- **WEB-LBOARD-013**: Given the leaderboard card with `pin` placement and 25 rows, when it renders, then the pinned row is outside the scrolling list (always visible), shows rank label, player name and total score, and the list has no highlighted row; with `highlight`, no pinned row renders and exactly one list row carries the highlight class.
-- **WEB-LBOARD-014**: Given a signed-in player with no rank (also with no plays), then the pinned row shows `-`, the player name and a total score of 0.
+- **WEB-LBOARD-012**: Given `ownRowPlacement` with the 25 shown entries, then: anonymous or signed out → `none`; signed in with `rank` 7 → `highlight` (row 7); `rank` 40 → `pin` with label `"#40"`; `rank: null` → `pin` with label `"#-"` and score 0; own rank not loaded yet → `none`.
+- **WEB-LBOARD-013**: Given the leaderboard and a signed-in player, when it renders, then the player has exactly one row. With `highlight`, it is the list row, highlighted and sticky to the bottom edge of the scroll area until the player scrolls to its place. In all other cases it is a row after the list, sticky to the same edge. The own row has the inverted background (white in dark mode, black in light mode) and no border. The table itself is the only scroll area, and its header row stays at the top while the list scrolls.
+- **WEB-LBOARD-014**: Given a signed-in player with no rank (also with no plays), then the own row shows `#-`, the player name and a total score of 0.
 - **WEB-LBOARD-015**: Given a signed-in player, when the active tab changes, after each 20 s poll, and right after their own run records a score, then `/game/leaderboard/me` is fetched for the active difficulty only; for anonymous players it is never fetched.
 - **WEB-LBOARD-016**: Given the leaderboard table, then the rank is its own column before `Player`, player names align with the `Player` header, and the pinned row uses the same alignment.
-- **WEB-LBOARD-017**: Given a difficulty with no scores, then the leaderboard table stays visible with its column headers and shows `No scores yet` in the `UTable` empty state (no `UEmpty`); before the first load it does not show `No scores yet`.
+- **WEB-LBOARD-017**: Given a difficulty with no scores, then the leaderboard table stays visible with its column headers and shows `No scores yet` in the `UTable` empty state (no `UEmpty`); before the first load it does not show `No scores yet`. A signed-in player sees their own row instead of the empty state, also during the first load.
+- **WEB-LBOARD-018**: Given a page load of `/`, then the server render contains the active leaderboard rows; if the gateway does not answer in 800 ms, the page renders without them and the browser loads them.
+- **WEB-LBOARD-019**: Given a signed-in player, when the page is refreshed, then the first server render has the pinned row with the display name, `#-` for the rank and `-` for the score. When the rank loads, the same row shows the real values. Sign-out or a change of player clears the rank. The row has no skeleton.
+- **WEB-LBOARD-020**: Given a refresh, then the rows and the own rank load in parallel, and a session that is confirmed after the first load triggers the rank load immediately, not at the next poll.
+- **WEB-LBOARD-021**: Given the Vercel projects, then the web and gateway functions run in `sin1`, the same region as Redis and the nearest to the players and Supabase (Tokyo).
 - **WEB-LBOARD-010**: Given the web sources, then nothing under `apps/web/app` or `apps/web/shared` creates an `EventSource` or references `/game/scores/stream` or `LEADERBOARD_STREAM_PATH`, and `useLeaderboard` exposes no `refreshRawScores`.
 
-### Retired IDs (never implemented)
+### Retired IDs
 
 | ID | Reason |
 | --- | --- |
 | API-LBOARD-001 to 007 | Replaced the "cache the aggregated list, invalidate on write" design with incremental ZSETs (API-LBOARD-011 to 028). |
 | WEB-LBOARD-001 to 004 | Assumed SSE events with jittered refetch; SSE is removed in favour of polling (WEB-LBOARD-005 to 008). |
+| WEB-LBOARD-022 | Skeleton rows; removed at the owner's request, the empty state of WEB-LBOARD-017 stays. |
 | API-LBOARD-008 | SQLite removed by 0046 (the Supabase path reads summary columns only, covered by API-LBOARD-009). |
 
 ## Test changes
@@ -382,4 +388,53 @@ accepted; CDN caching on `/game/leaderboard` is kept on top of Upstash.
 - Criteria: WEB-LBOARD-017
 - Red: 1 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-017] index.vue keeps the table and uses its own empty state`)
 - Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-018, WEB-LBOARD-019, WEB-LBOARD-020, WEB-LBOARD-021
+- Red: 4 failing test(s) before implementation (`instant first render (spec 0044) [WEB-LBOARD-018] loads the rows in the server render with a time limit`, `instant first render (spec 0044) [WEB-LBOARD-019] restores the own row from a hint of the same player only`, `instant first render (spec 0044) [WEB-LBOARD-020] loads the rank in parallel and as soon as the session is confirmed`)
+- Green: 4 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-018
+- Red: 2 failing test(s) before implementation (`instant first render (spec 0044) [WEB-LBOARD-018] loads the rows in the server render with a time limit`, `instant first render (spec 0044) [WEB-LBOARD-018] stops waiting for a gateway that does not answer`)
+- Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-022
+- Red: 1 failing test(s) before implementation (`instant first render (spec 0044) [WEB-LBOARD-022] shows skeleton rows for a difficulty that has not loaded`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-013, WEB-LBOARD-019
+- Red: 3 failing test(s) before implementation (`instant first render (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-019] pins the display name first and fills in the rank when it loads`, `leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-014] index.vue renders pinned row outside table and highlights in-list row`, `instant first render (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-019] pins the display name first and fills in the rank when it loads`)
+- Green: 3 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-013
+- Red: 1 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-014] index.vue shows one own row that sticks to the bottom edge until its place in the list`)
+- Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-013
+- Red: 1 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-014] index.vue shows one own row that sticks to the bottom edge until its place in the list`)
+- Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-LBOARD-012, WEB-LBOARD-013, WEB-LBOARD-014, WEB-LBOARD-017, WEB-LBOARD-019
+- Red: 9 failing test(s) before implementation (`leaderboard read scaling & my rank (spec 0044) [WEB-LBOARD-012] ownRowPlacement chooses none, highlight, or pin`, `instant first render (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-019] pins the display name first and fills in the rank when it loads`, `instant first render (spec 0044) [WEB-LBOARD-013] [WEB-LBOARD-014] [WEB-LBOARD-017] [WEB-LBOARD-019] gives a signed-in player exactly one row, in every state`)
+- Green: 10 passing test(s)
 - Gate: `mise run check` passed

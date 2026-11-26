@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { LevelProgressItem, PlayerSessionStatus } from '../app/types/api'
+import type { LevelProgressItem, PlayerSessionStatus, WaveScoreSchema } from '../app/types/api'
 import * as campaignSelect from '../app/utils/campaignSelect'
 import {
   FALLBACK_CAMPAIGN_LEVELS,
@@ -17,6 +17,7 @@ import {
   nextCampaignLevel,
   toolRoleBadge
 } from '../app/utils/campaignSelect'
+import { waveOutcomeSummary } from '../app/utils/gameBoard'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -83,13 +84,15 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
     }
     const easyTiles = buildLevelTiles(FALLBACK_CAMPAIGN_LEVELS, progress, 'Easy', sessionFor('free'))
     expect(easyTiles).toHaveLength(5)
-    expect(easyTiles.map(t => [t.stageNumber, t.locked, t.stars, t.isBoss])).toEqual([
-      ['01', false, 3, false],
-      ['02', false, 1, false],
-      ['03', false, 0, false],
-      ['04', true, 0, false],
-      ['05', true, 0, true]
+    expect(easyTiles.map(t => [t.stageNumber, t.locked, t.stars])).toEqual([
+      ['01', false, 3],
+      ['02', false, 1],
+      ['03', false, 0],
+      ['04', true, 0],
+      ['05', true, 0]
     ])
+    expect(easyTiles.every(t => !('isBoss' in t))).toBe(true)
+    expect(read('pages', 'index.vue')).not.toContain('label="Boss"')
 
     const mediumTiles = buildLevelTiles(FALLBACK_CAMPAIGN_LEVELS, {}, 'Medium', sessionFor('free'))
     expect(mediumTiles).toHaveLength(10)
@@ -193,10 +196,16 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
     expect(gameSource).toContain('Disabled in this level')
     expect(gameSource).toContain('placedCheckNodeCount')
     expect(gameSource).toContain('Pro Level Locked')
-    expect(gameSource).toContain('constraint_violations')
+    expect(gameSource).not.toContain('Hard constraint violated')
+    expect(gameSource).toMatch(/<USeparator[^>]*\/>\s*<span class="text-sm tabular-nums text-muted">\s*\{\{ placedCheckNodeCount \}\} \/ \{\{ maxCheckNodes \}\} nodes/)
+    const loss = { won: false, attacks_leaked: 0, false_alarms: 0, constraint_violations: ['Average latency 437.8 ms exceeded limit 8.0 ms.'] } as unknown as WaveScoreSchema
+    expect(waveOutcomeSummary(loss)).toBe('Average latency 437.8 ms exceeded limit 8.0 ms.')
+    expect(waveOutcomeSummary({ ...loss, attacks_leaked: 4 })).toBe('4 attack(s) got into the system. Average latency 437.8 ms exceeded limit 8.0 ms.')
+    expect(waveOutcomeSummary({ ...loss, attacks_leaked: 4, constraint_violations: [] })).toBe('4 attack(s) got into the system.')
     expect(gameSource).toContain('follow_up_passed')
     expect(gameSource).not.toContain('follow_up_feedback')
-    expect(gameSource).toContain('v-if="!waveScore.won"\n                class="text-xs text-muted"\n              >\n                {{ waveOutcomeSummary(waveScore) }}')
+    // A stopped run shows its stop line first (WEB-FAIR-003); other losses keep the summary.
+    expect(gameSource).toContain('v-else-if="!waveScore.won"\n                class="text-xs text-muted"\n              >\n                {{ waveOutcomeSummary(waveScore) }}')
     expect(gameSource).toContain('label="Next Level"')
     expect(gameSource).not.toContain('label="Back to Levels"')
   })

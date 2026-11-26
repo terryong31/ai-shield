@@ -15,6 +15,7 @@ from shield_api.services.admins import (
     AdminAuthenticator,
     SupabaseAdminAuthenticator,
 )
+from shield_api.services.agent_cache import AgentResultCache
 from shield_api.services.auth_flows import (
     AuthFlowStore,
     InMemoryAuthFlowStore,
@@ -50,6 +51,7 @@ from shield_api.services.sessions import (
     SessionStore,
     SupabaseSessionStore,
 )
+from shield_api.services.spend import SpendLedger
 from shield_api.services.train_worker import TrainWorkerRunner
 from shield_api.settings import Settings
 from shield_engine import UsageChatModel
@@ -95,6 +97,11 @@ class Container:
     attempts: AttemptLimiter = field(default_factory=AttemptLimiter)
     rate_limiter: RateLimiter = field(default_factory=RateLimiter)
     auth_flows: AuthFlowStore = field(default_factory=InMemoryAuthFlowStore)
+    # Daily provider spend per player (spec 0050).
+    spend: SpendLedger = field(default_factory=SpendLedger)
+    # Stored agent results and the seed of each level's fixed canary (spec 0050).
+    agent_cache: AgentResultCache = field(default_factory=AgentResultCache)
+    canary_seed: str = field(default_factory=lambda: secrets.token_hex(16))
     # The game's AI Agent model per tier (spec 0021). A tier missing here falls back to
     # ``game_agent``, and with neither the level runs the offline stand-in.
     game_agents: dict[AgentTier, UsageChatModel] = field(default_factory=dict)
@@ -217,6 +224,7 @@ def build_container(settings: Settings) -> Container:
     models: TrainedModelStore = InMemoryTrainedModelStore()
     rate_limiter = RateLimiter()
     auth_flows: AuthFlowStore = InMemoryAuthFlowStore()
+    spend = SpendLedger()
     if settings.REDIS_URL and settings.REDIS_URL.get_secret_value().strip():
         try:
             import redis.asyncio as aioredis
@@ -228,6 +236,7 @@ def build_container(settings: Settings) -> Container:
             models = RedisTrainedModelStore(redis_client)
             rate_limiter = RateLimiter(redis_client=redis_client)
             auth_flows = RedisAuthFlowStore(redis_client)
+            spend = SpendLedger(redis_client=redis_client)
             logger.info("Redis leaderboard service and rate limiter enabled")
         except Exception as exc:
             logger.warning("Redis unavailable; falling back to %s: %s", scores.backend, exc)
@@ -252,4 +261,5 @@ def build_container(settings: Settings) -> Container:
         ),
         rate_limiter=rate_limiter,
         auth_flows=auth_flows,
+        spend=spend,
     )

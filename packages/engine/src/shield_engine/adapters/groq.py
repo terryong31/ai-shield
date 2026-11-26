@@ -5,15 +5,38 @@ Requires ``shield-engine[groq]``.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from typing import Any
 
 from shield_engine.ports import ChatCompletion, ChatMessage
 
 try:
-    from groq import AsyncGroq
+    from groq import AsyncGroq, BadRequestError
 except ImportError as exc:  # pragma: no cover
     raise ImportError("Install the Groq extra: pip install 'shield-engine[groq]'") from exc
+
+
+def _rejected_tool_call(exc: BadRequestError) -> str | None:
+    """The native tool call Groq rejected, or ``None`` for any other bad request.
+
+    GPT-OSS sometimes calls a tool that the prompt only describes. Groq answers 400 and
+    puts the call in ``failed_generation``. The pseudo-tool ``json`` holds a JSON answer.
+    """
+    body = exc.body if isinstance(exc.body, dict) else {}
+    error = body.get("error", body)
+    if not isinstance(error, dict) or error.get("code") != "tool_use_failed":
+        return None
+    text = error.get("failed_generation")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        call = json.loads(text)
+    except ValueError:
+        return text
+    if isinstance(call, dict) and call.get("name") == "json" and "arguments" in call:
+        return json.dumps(call["arguments"])
+    return text
 
 
 class GroqChatModel:
@@ -53,13 +76,19 @@ class GroqChatModel:
     ) -> ChatCompletion:
         # The SDK's per-role TypedDicts can't be inferred from a dynamic role.
         messages_payload: list[Any] = [{"role": m.role, "content": m.content} for m in messages]
-        response = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages_payload,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **self._reasoning_options(thinking),
-        )
+        try:
+            response = await self._client.chat.completions.create(
+                model=self.model,
+                messages=messages_payload,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **self._reasoning_options(thinking),
+            )
+        except BadRequestError as exc:
+            rejected = _rejected_tool_call(exc)
+            if rejected is None:
+                raise
+            return ChatCompletion(text=rejected)
         usage = response.usage
         return ChatCompletion(
             text=response.choices[0].message.content or "",

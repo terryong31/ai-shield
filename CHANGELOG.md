@@ -7,11 +7,26 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
+- **Fair scoring and the scored run (spec 0050):**
+  - Each campaign run is a scored attempt, and the best attempt is kept. There is no practice run, and campaign levels take no single test message (`422`); the custom sandbox keeps it.
+  - New campaign score: a run that does not clear scores at most 4,999; a cleared run scores 5,000 plus accuracy (2,500), speed (750), cost (750) and simplicity (1,000). Gold starts at 9,250 and needs near-perfect accuracy. Speed and cost use the catalogue list prices, so the same board always gets the same score. The custom sandbox keeps its old score.
+  - A run stops at the first prompt over the level's latency limit or cost budget, scores 0, and names the prompt, the path and the node that went over. A board holds at most 8 check nodes and at most 2 model nodes.
+  - The run response and the level catalogue hold no prompt text, agent reply or free-text detail. Each trace has its family (`category`), and a scoring hop has its `score`. The agent result of a prompt is stored and used again for the same board.
+  - Daily limits: paid 50 runs and 20 trainings. Each player has a daily provider budget ($0.10 paid, $0.02 free) that stops model runs with `429` until the next UTC day.
+  - A board may wire Input straight to the final node. A switched-off tool no longer blocks a prompt that names it. A mixed request is helped when its expected tool ran.
+  - Leaderboard ties sort by mastery stars, then the earlier date, not by latency. Score version 4 starts an empty leaderboard (migration `20261126120000_score_version_4.sql`).
+  - Game page: no `Test a message` box on campaign levels, `42 / 50 runs left today`, only the score parts that count on the level, a stop line with the path, and result cells that list the prompt number, family and stopping node.
+- The custom sandbox dataset shows its count and row errors as zod field errors, with no row preview, and its example is a placeholder. The browser does not read a dataset file over 256 KB (WEB-SANDBOX-003). The Protected Agent modal subtitle reads `This is the agent you need to protect. Only let safe prompts get through here.` (WEB-LEVEL-005). `System Instruction` has a red star and a resizable box (WEB-SANDBOX-002).
+- Run results state a broken hard constraint in the plain loss line, level tiles have no `Boss` badge, and the node counter is plain text (WEB-CAMP-002, WEB-CAMP-004).
 - CI on a pull request runs only the jobs of the parts that changed, and Vercel builds only the changed project (`scripts/affected.sh`, `scripts/vercel_ignore.sh`). Docs-only changes deploy nothing.
 - New README, based on Best-README-Template.
 - New Twitter card: a close-up of the defence board. The image alt text matches it.
 
 ### Fixed
+- A Groq model that makes a native tool call no longer stops the wave with `503` (ENG-AGENT-012).
+- Paid players can open `/plans` from the main menu (WEB-BILL-007).
+- The leaderboard is in the first server render. A signed-in player always has one own row, with the display name first and the rank and score when they load. It sticks to the bottom edge until the player scrolls to its place in the list, and the header row stays at the top (WEB-LBOARD-013, WEB-LBOARD-018 to 020). The Vercel functions run in `sin1`, near the data (WEB-LBOARD-021).
+- `/plans` no longer shows `$0` or a short feature list before the billing state loads (WEB-BILL-006).
 - `llms.txt`, `robots.txt` and `sitemap.xml` use the production site URL and list the current 23 levels, pass price and private pages; named AI crawlers get the same blocked paths as all others (WEB-GAME-017).
 - Auth: a resent link keeps auto sign-in (the browser cookie is renewed), a Redis outage no longer fails registration or recovery after the email is sent, and password reset no longer reports a reused or weak password as an expired link (API-AUTH-016, API-AUTH-017, WEB-AUTH-013).
 - The leaderboard shows the rank in its own column, so player names align with the `Player` header (WEB-LBOARD-016). A signed-in player with no rank is pinned with a score of 0 (WEB-LBOARD-014), and a board with no scores keeps the table headers (WEB-LBOARD-017).

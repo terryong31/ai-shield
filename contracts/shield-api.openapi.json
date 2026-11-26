@@ -709,6 +709,18 @@
             "title": "Player Name",
             "type": "string"
           },
+          "reached_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reached At"
+          },
           "total_cost_usd": {
             "title": "Total Cost Usd",
             "type": "number"
@@ -1134,6 +1146,16 @@
           "score": {
             "$ref": "#/components/schemas/WaveScoreSchema"
           },
+          "stop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunStopSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "traces": {
             "items": {
               "$ref": "#/components/schemas/MessageTraceSchema"
@@ -1360,6 +1382,17 @@
           "node_id": {
             "title": "Node Id",
             "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
           }
         },
         "required": [
@@ -1616,6 +1649,11 @@
               }
             ]
           },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
           "hops": {
             "items": {
               "$ref": "#/components/schemas/HopTraceSchema"
@@ -1681,6 +1719,34 @@
           "y"
         ],
         "title": "NodePositionSchema",
+        "type": "object"
+      },
+      "PathStepSchema": {
+        "properties": {
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "latency_ms": {
+            "title": "Latency Ms",
+            "type": "number"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "kind",
+          "latency_ms",
+          "cost_usd"
+        ],
+        "title": "PathStepSchema",
         "type": "object"
       },
       "PlayerConfirmRequest": {
@@ -2095,6 +2161,52 @@
         "title": "PlayerSessionStatus",
         "type": "object"
       },
+      "RunStopSchema": {
+        "description": "A run that a limit stopped (spec 0050): the prompt, the path and the node that went over.",
+        "properties": {
+          "limit": {
+            "title": "Limit",
+            "type": "number"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "$ref": "#/components/schemas/PathStepSchema"
+            },
+            "title": "Path",
+            "type": "array"
+          },
+          "prompt_index": {
+            "title": "Prompt Index",
+            "type": "integer"
+          },
+          "reason": {
+            "enum": [
+              "time_limit",
+              "budget"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "used": {
+            "title": "Used",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reason",
+          "prompt_index",
+          "node_id",
+          "limit",
+          "used",
+          "path"
+        ],
+        "title": "RunStopSchema",
+        "type": "object"
+      },
       "SavedBoardRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2381,6 +2493,11 @@
       },
       "WaveScoreSchema": {
         "properties": {
+          "accuracy_points": {
+            "default": 0,
+            "title": "Accuracy Points",
+            "type": "integer"
+          },
           "attacks_leaked": {
             "title": "Attacks Leaked",
             "type": "integer"
@@ -2403,6 +2520,11 @@
           },
           "benign_total": {
             "title": "Benign Total",
+            "type": "integer"
+          },
+          "cleared_points": {
+            "default": 0,
+            "title": "Cleared Points",
             "type": "integer"
           },
           "constraint_violations": {
@@ -2438,6 +2560,16 @@
             "title": "Leak Penalty",
             "type": "integer"
           },
+          "list_cost_usd": {
+            "default": 0.0,
+            "title": "List Cost Usd",
+            "type": "number"
+          },
+          "list_latency_ms": {
+            "default": 0.0,
+            "title": "List Latency Ms",
+            "type": "number"
+          },
           "medal": {
             "enum": [
               "none",
@@ -2450,6 +2582,16 @@
           },
           "protection_points": {
             "title": "Protection Points",
+            "type": "integer"
+          },
+          "quality": {
+            "default": 0.0,
+            "title": "Quality",
+            "type": "number"
+          },
+          "simplicity_points": {
+            "default": 0,
+            "title": "Simplicity Points",
             "type": "integer"
           },
           "speed_points": {

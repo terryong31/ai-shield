@@ -26,6 +26,7 @@ import {
   isNewRecord,
   nextHighStars,
   waveStars,
+  breakdownStats,
   scoreBreakdown,
   summarizeNodeTraffic,
   toApiBoard,
@@ -130,8 +131,8 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-015] shows attempts left beside the score and runs without a sign-in prompt', () => {
-    expect(attemptsLeftLabel(anonSession)).toBe('1/1 attempts left today')
-    expect(attemptsLeftLabel({ ...anonSession, wave_runs_used: 1 })).toBe('0/1 attempts left today')
+    expect(attemptsLeftLabel(anonSession)).toBe('1 / 1 runs left today')
+    expect(attemptsLeftLabel({ ...anonSession, wave_runs_used: 1 })).toBe('0 / 1 runs left today')
     expect(attemptsLeftLabel({ ...anonSession, daily_wave_limit: null })).toBe('')
 
     const gameSource = read('pages', 'game.vue')
@@ -180,9 +181,8 @@ describe('game AI agent (spec 0020)', () => {
     expect(header).toMatch(/<UInputRating[\s\S]*?readonly[\s\S]*?\/>/)
 
     expect(results).toContain('scoreBreakdown(waveScore, currentLevelId)')
-    expect(results).toContain('waveScore.avg_latency_ms')
-    expect(results).toContain('waveScore.total_cost_usd')
-    expect(results).toContain('waveScore.total_tokens')
+    // The stat boxes come from breakdownStats, which leaves out tokens on Easy (WEB-FAIR-002).
+    expect(results).toContain('breakdownStats(waveScore, currentLevelId)')
 
     expect(gameSource).toMatch(/highScore\.value = nextHighScore\(highScore\.value, response\.score\.total_score\)/)
   })
@@ -250,15 +250,18 @@ describe('game AI agent (spec 0020)', () => {
     expect(breakdown).not.toContain('border-t border-default pt-4')
     expect(breakdown).not.toContain('<USeparator')
     expect(breakdown).toMatch(/<UTooltip text="Click a cell to see the prompts">/)
-    for (const icon of ['i-lucide-timer', 'i-lucide-coins', 'i-lucide-cpu']) expect(breakdown).toContain(icon)
+    expect(breakdown).toContain('breakdownStats(waveScore, currentLevelId)')
+    const icons = breakdownStats({ avg_latency_ms: 1, total_cost_usd: 0, total_tokens: 5 } as WaveScoreSchema, 'medium-1').map(s => s.icon)
+    expect(icons).toEqual(['i-lucide-timer', 'i-lucide-coins', 'i-lucide-cpu'])
   })
 
-  it('[WEB-AGENT-022] lists only the prompt text in a matrix cell modal', () => {
+  it('[WEB-AGENT-022] lists the prompts of a matrix cell modal without hop details', () => {
     const gameSource = read('pages', 'game.vue')
     const start = gameSource.indexOf('v-model:open="isResultCellOpen"')
     const cellModal = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
 
-    expect(cellModal).toMatch(/v-for="item in selectedResultCell\.items"[\s\S]*?\{\{ item\.text \}\}/)
+    // WEB-FAIR-004 replaced the prompt text with the number, family and stopping node.
+    expect(cellModal).toMatch(/v-for="row in promptRows\(selectedResultCell\.items, traces, nodeLabel\)"/)
     expect(cellModal).not.toContain('lastHopDetail')
     expect(gameSource).not.toContain('lastHopDetail')
   })
@@ -284,7 +287,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(gameSource).toContain('v-model:open="isBreakdownOpen"')
     expect(gameSource).toContain('title="Score breakdown"')
     expect(gameSource).toContain('v-model:open="isResultCellOpen"')
-    expect(gameSource).toMatch(/v-for="item in selectedResultCell\.items"/)
+    expect(gameSource).toMatch(/v-for="row in promptRows\(selectedResultCell\.items/)
     expect(gameSource).toMatch(/newRecord\.value = isNewRecord\(highScore\.value, response\.score\.total_score\)/)
   })
 
@@ -309,19 +312,22 @@ describe('game AI agent (spec 0020)', () => {
       avg_latency_ms: 400,
       total_cost_usd: 0.002
     }
-    expect(scoreBreakdown(score)).toEqual([
-      { label: 'Protection', points: 3200 },
-      { label: 'Helpfulness', points: 1300 },
-      { label: 'Tool use', points: 500 },
-      { label: 'Tokens', points: 1125 },
+    // Spec 0050 replaced these parts: a loss shows one part, a clear shows five.
+    expect(scoreBreakdown({ ...score, won: false, total_score: 2100 })).toEqual([
+      { label: 'Attacks and normal prompts', points: 2100 }
+    ])
+    const cleared = { ...score, won: true, cleared_points: 5000, accuracy_points: 2000, simplicity_points: 500 }
+    expect(scoreBreakdown(cleared)).toEqual([
+      { label: 'Cleared', points: 5000 },
+      { label: 'Accuracy', points: 2000 },
       { label: 'Speed', points: 600 },
       { label: 'Cost', points: 600 },
-      { label: 'Leak penalty', points: -1000 }
+      { label: 'Simplicity', points: 500 }
     ])
 
     const gameSource = read('pages', 'game.vue')
     expect(gameSource).toContain('scoreBreakdown(waveScore, currentLevelId)')
-    expect(gameSource).toContain('waveScore.total_tokens')
+    expect(gameSource).toContain('breakdownStats(waveScore, currentLevelId)')
   })
 
   it('[WEB-AGENT-005] renders nodes with labelled ports and traffic counts, without status, info or unwired clutter', () => {
@@ -522,7 +528,7 @@ describe('game AI agent (spec 0020)', () => {
 
     const gameSource = read('pages', 'game.vue')
     // The wording under the title is now the wiring hint (WEB-LEVEL-005, spec 0021).
-    expect(gameSource).toContain('Wire your last check here.')
+    expect(gameSource).toContain('This is the agent you need to protect. Only let safe prompts get through here.')
     expect(gameSource).not.toContain('Latency and cost are measured on the first run')
   })
 

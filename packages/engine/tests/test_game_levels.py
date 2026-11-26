@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
 
@@ -228,7 +227,7 @@ def test_agent_reply_parser_accepts_fenced_or_chatty_json() -> None:
 
 @pytest.mark.spec("ENG-LEVEL-007")
 def test_final_node_is_the_protected_agent_and_validation_names_the_final_node() -> None:
-    from shield_engine.game import BoardValidationError, validate_board
+    from shield_engine.game import validate_board
 
     assert get_level("medium-1").final_node_label == "Protected Agent"
     assert get_level("hard-1").final_node_label == "Protected Agent"
@@ -238,8 +237,4 @@ def test_final_node_is_the_protected_agent_and_validation_names_the_final_node()
         nodes=(BoardNode(id="in", kind="incoming"), BoardNode(id="ast", kind="assistant")),
         edges=(BoardEdge(id="e1", source="in", source_handle="out", target="ast"),),
     )
-    with pytest.raises(
-        BoardValidationError,
-        match=re.escape("Place at least one tool node between Input and the final node."),
-    ):
-        validate_board(direct)
+    validate_board(direct)  # ENG-FAIR-007 replaced the rule that rejected this board

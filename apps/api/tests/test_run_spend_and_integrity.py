@@ -196,7 +196,9 @@ def test_custom_message_is_capped_at_1000_chars(harness: Harness) -> None:
         "/api/v1/game/run",
         json={"level_id": "medium-1", "board": _simple_board(), "custom_message": "x" * 1000},
     )
-    assert at_limit.status_code == 200
+    # API-FAIR-002: campaign levels take no single message at any length.
+    assert at_limit.status_code == 422
+    assert "custom sandbox" in at_limit.json()["detail"]
 
 
 @pytest.mark.spec("API-SPEND-010")

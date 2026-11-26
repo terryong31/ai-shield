@@ -889,6 +889,8 @@ export interface components {
             max_possible_score: number;
             /** Player Name */
             player_name: string;
+            /** Reached At */
+            reached_at?: string | null;
             /** Total Cost Usd */
             total_cost_usd: number;
             /** Total Score */
@@ -1017,6 +1019,7 @@ export interface components {
             /** Level Id */
             level_id: string;
             score: components["schemas"]["WaveScoreSchema"];
+            stop?: components["schemas"]["RunStopSchema"] | null;
             /** Traces */
             traces: components["schemas"]["MessageTraceSchema"][];
             /** Untrained Model Nodes */
@@ -1093,6 +1096,8 @@ export interface components {
             latency_ms: number;
             /** Node Id */
             node_id: string;
+            /** Score */
+            score?: number | null;
         };
         /** LeaderboardRankResponse */
         LeaderboardRankResponse: {
@@ -1161,6 +1166,11 @@ export interface components {
         /** MessageTraceSchema */
         MessageTraceSchema: {
             agent?: components["schemas"]["AgentRunSchema"] | null;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /** Hops */
             hops: components["schemas"]["HopTraceSchema"][];
             /** Is Attack */
@@ -1185,6 +1195,17 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+        };
+        /** PathStepSchema */
+        PathStepSchema: {
+            /** Cost Usd */
+            cost_usd: number;
+            /** Kind */
+            kind: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Node Id */
+            node_id: string;
         };
         /**
          * PlayerConfirmRequest
@@ -1341,6 +1362,27 @@ export interface components {
              */
             wave_runs_used: number;
         };
+        /**
+         * RunStopSchema
+         * @description A run that a limit stopped (spec 0050): the prompt, the path and the node that went over.
+         */
+        RunStopSchema: {
+            /** Limit */
+            limit: number;
+            /** Node Id */
+            node_id: string;
+            /** Path */
+            path: components["schemas"]["PathStepSchema"][];
+            /** Prompt Index */
+            prompt_index: number;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "time_limit" | "budget";
+            /** Used */
+            used: number;
+        };
         /** SavedBoardRequest */
         SavedBoardRequest: {
             board: components["schemas"]["BoardGraphSchema"];
@@ -1438,6 +1480,11 @@ export interface components {
         };
         /** WaveScoreSchema */
         WaveScoreSchema: {
+            /**
+             * Accuracy Points
+             * @default 0
+             */
+            accuracy_points: number;
             /** Attacks Leaked */
             attacks_leaked: number;
             /** Attacks Protected */
@@ -1450,6 +1497,11 @@ export interface components {
             benign_helped: number;
             /** Benign Total */
             benign_total: number;
+            /**
+             * Cleared Points
+             * @default 0
+             */
+            cleared_points: number;
             /** Constraint Violations */
             constraint_violations?: string[];
             /** Cost Points */
@@ -1471,12 +1523,32 @@ export interface components {
             /** Leak Penalty */
             leak_penalty: number;
             /**
+             * List Cost Usd
+             * @default 0
+             */
+            list_cost_usd: number;
+            /**
+             * List Latency Ms
+             * @default 0
+             */
+            list_latency_ms: number;
+            /**
              * Medal
              * @enum {string}
              */
             medal: "none" | "bronze" | "silver" | "gold";
             /** Protection Points */
             protection_points: number;
+            /**
+             * Quality
+             * @default 0
+             */
+            quality: number;
+            /**
+             * Simplicity Points
+             * @default 0
+             */
+            simplicity_points: number;
             /** Speed Points */
             speed_points: number;
             /** Token Points */

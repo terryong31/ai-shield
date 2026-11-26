@@ -35,11 +35,8 @@ export interface LevelTileItem {
   mastered: boolean
   bestScore: number
   locked: boolean
-  isBoss: boolean
   level: GameLevelSchema
 }
-
-const BOSS_LEVEL_IDS = new Set<string>(['easy-5', 'medium-10', 'hard-8'])
 
 export const CAMPAIGN_DIFFICULTY_COUNTS: Record<DifficultyCategory, number> = {
   Easy: 5,
@@ -197,7 +194,6 @@ export function buildLevelTiles(
       mastered,
       bestScore,
       locked: canAccessLevel(lvl, session) === 'pro_locked',
-      isBoss: BOSS_LEVEL_IDS.has(lvl.id),
       level: lvl
     }
   })

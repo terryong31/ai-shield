@@ -274,7 +274,7 @@ def test_paid_event_grants_thirty_days_once(shop: Harness, stripe: FakeStripe, k
     assert days_left(shop) == 30
     assert paid_until(shop) == first
     status = session(shop.client)
-    assert (status["tier"], status["daily_wave_limit"]) == ("paid", 300)
+    assert (status["tier"], status["daily_wave_limit"]) == ("paid", 50)
 
 
 @pytest.mark.spec("API-BILL-004")

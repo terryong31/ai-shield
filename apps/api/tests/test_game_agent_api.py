@@ -69,23 +69,23 @@ async def test_daily_limits_are_one_five_and_three_hundred_waves_by_tier(
     assert (anon["daily_wave_limit"], anon["daily_test_limit"]) == (1, 3)
     assert _wave(harness) == 200
     assert _wave(harness) == 429
-    assert [_test(harness, n) for n in range(4)] == [200, 200, 200, 429]
+    assert _test(harness, 0) == 422  # API-FAIR-002: no single tests on campaign levels
 
     # Free: 5 waves and 20 tests per day
     _register(harness, "free@example.com")
     assert [_wave(harness) for _ in range(6)] == [200] * 5 + [429]
-    assert [_test(harness, n) for n in range(21)] == [200] * 20 + [429]
+    assert _test(harness, 0) == 422
     limited = harness.client.post(
         "/api/v1/game/run", json={"level_id": "medium-1", "board": _board()}
     )
     assert "Upgrade" in limited.json()["detail"]
 
-    # Paid: 300 waves and 1000 tests per day
+    # Paid: 50 waves per day (spec 0050)
     _register(harness, "paid@example.com")
     paid = harness.client.post("/api/v1/auth/upgrade").json()
-    assert (paid["daily_wave_limit"], paid["daily_test_limit"]) == (300, 1000)
+    assert (paid["daily_wave_limit"], paid["daily_test_limit"]) == (50, 1000)
     token = harness.client.cookies.get("shield_player_session")
-    for _ in range(300):
+    for _ in range(50):
         await store.consume_run(token, is_custom_test=False)
     with pytest.raises(QuotaExceededError):
         await store.consume_run(token, is_custom_test=False)

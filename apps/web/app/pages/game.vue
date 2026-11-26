@@ -15,6 +15,9 @@ import GameNode from '~/components/workflow/GameNode.vue'
 import {
   CUSTOM_LIMITS,
   DATASET_EXAMPLE,
+  OBJECTIVE_REQUIRED,
+  customFormSchema,
+  readDatasetFile,
   PROVIDER_OPTIONS,
   canRunCustom,
   customModeAccess,
@@ -30,6 +33,7 @@ import type {
   LevelId,
   MessageTraceSchema,
   NodeKind,
+  RunStopSchema,
   WaveScoreSchema
 } from '~/types/api'
 import {
@@ -65,6 +69,10 @@ import {
   isNewRecord,
   nextHighStars,
   scoreBreakdown,
+  breakdownStats,
+  promptRows,
+  stopPath,
+  stopSummary,
   waveStars,
   waveOutcomeSummary,
   toApiBoard,
@@ -127,11 +135,19 @@ const customProvider = ref<ProviderId>('openai')
 const customModel = ref('')
 // The player's API key: kept in this component's memory only, sent with each run.
 const customApiKey = ref('')
-const customDatasetText = ref(DATASET_EXAMPLE)
+const customDatasetText = ref('')
 const customDataset = computed(() =>
   parseDatasetCsv(customDatasetText.value, customAgent.value.tools.map(t => t.name))
 )
-const customAgentErrors = computed(() => validateCustomAgent(customAgent.value))
+const customFormSchemaFor = computed(() => customFormSchema(customAgent.value.tools.map(t => t.name)))
+const customFormState = computed(() => ({ objective: customAgent.value.objective, dataset: customDatasetText.value }))
+const customForm = useTemplateRef('customForm')
+const revalidateDataset = async () => {
+  await nextTick()
+  if (customDatasetText.value.trim()) await customForm.value?.validate({ name: 'dataset', silent: true })
+}
+watch(() => customAgent.value.tools.map(t => t.name).join(','), revalidateDataset)
+const customAgentErrors = computed(() => validateCustomAgent(customAgent.value).filter(e => e !== OBJECTIVE_REQUIRED))
 const providerItems = PROVIDER_OPTIONS.map(p => ({ label: p.label, value: p.value }))
 
 const addCustomTool = () => {
@@ -147,7 +163,13 @@ const onCustomDatasetFile = async (event: Event) => {
   const target = event.target as { files?: FileList | null } | null
   const file = target?.files?.[0]
   if (!file) return
-  customDatasetText.value = await file.text()
+  const result = await readDatasetFile(file)
+  if ('error' in result) {
+    customForm.value?.setErrors([{ name: 'dataset', message: result.error }], 'dataset')
+    return
+  }
+  customDatasetText.value = result.text
+  await revalidateDataset()
 }
 
 const currentLevelId = ref<LevelId>(initialLevel.value)
@@ -199,6 +221,8 @@ const selectedNode = computed(() =>
 const runningWave = ref(false)
 const traces = ref<MessageTraceSchema[]>([])
 const waveScore = ref<WaveScoreSchema | null>(null)
+// Set when a time limit or the cost budget stopped the last run (WEB-FAIR-003).
+const runStop = ref<RunStopSchema | null>(null)
 // Best wave score on this level this visit: kept across Restart, reset on level change.
 const highScore = ref<number | null>(null)
 const newRecord = ref(false)
@@ -393,6 +417,7 @@ const resetBoard = () => {
   syncBoard(fresh)
   traces.value = []
   waveScore.value = null
+  runStop.value = null
   selectedNodeId.value = null
   isNodeModalOpen.value = false
 }
@@ -743,7 +768,7 @@ const selectedCheck = computed(() =>
 )
 
 // The final node's job, shown under its modal title on every level (WEB-LEVEL-005).
-const FINAL_NODE_HINT = 'Wire your last check here. Everything that arrives gets answered, so only let safe prompts through.'
+const FINAL_NODE_HINT = 'This is the agent you need to protect. Only let safe prompts get through here.'
 
 const nodeModalDescription = computed(() => {
   const data = selectedNode.value?.data
@@ -754,6 +779,13 @@ const nodeModalDescription = computed(() => {
     selectedCheck.value?.cost_usd ?? data.costUsd
   )
 })
+
+// The board name of a node, for result rows and the stop path.
+const nodeLabel = (nodeId: string): string => {
+  const node = nodes.value.find(n => n.id === nodeId)
+  const label = node?.data?.label
+  return typeof label === 'string' && label ? label : nodeId
+}
 
 // Run results (WEB-AGENT-011): where every prompt of the last wave ended up.
 const isResultsOpen = ref(false)
@@ -949,6 +981,7 @@ const handleRunWave = async (singleMessage?: string) => {
     )
     traces.value = response.traces
     waveScore.value = response.score
+    runStop.value = response.stop ?? null
     if (!singleMessage) {
       newRecord.value = isNewRecord(highScore.value, response.score.total_score)
       highStars.value = nextHighStars(highScore.value, highStars.value, response.score.total_score, waveStars(response.score))
@@ -1218,16 +1251,14 @@ onBeforeRouteLeave(() => {
             orientation="vertical"
             class="h-5 px-1"
           />
-          <UBadge
-            :label="`${placedCheckNodeCount} / ${maxCheckNodes} nodes`"
-            :color="placedCheckNodeCount > maxCheckNodes ? 'warning' : 'neutral'"
-            variant="subtle"
-            size="sm"
-          />
+          <span class="text-sm tabular-nums text-muted">
+            {{ placedCheckNodeCount }} / {{ maxCheckNodes }} nodes
+          </span>
         </template>
       </div>
 
       <div
+        v-if="isCustomMode"
         class="flex items-center gap-2 w-full max-w-md"
         data-tour="test-bar"
       >
@@ -1580,30 +1611,35 @@ onBeforeRouteLeave(() => {
                 />
               </div>
               <p
-                v-if="!waveScore.won"
+                v-if="runStop"
+                class="text-xs text-muted"
+              >
+                {{ stopSummary(runStop, currentLevel.messages.length || traces.length, nodeLabel) }}
+              </p>
+              <p
+                v-else-if="!waveScore.won"
                 class="text-xs text-muted"
               >
                 {{ waveOutcomeSummary(waveScore) }}
               </p>
             </div>
 
-            <div
-              v-if="waveScore.constraint_violations && waveScore.constraint_violations.length > 0"
-              class="w-full max-w-md space-y-2 text-left"
+            <ol
+              v-if="runStop"
+              class="flex flex-wrap items-center justify-center gap-2 text-xs"
+              aria-label="Path of the stopped prompt"
             >
-              <UAlert
-                v-for="violation in waveScore.constraint_violations"
-                :key="violation"
-                icon="i-lucide-shield-alert"
-                title="Hard constraint violated"
-                color="neutral"
-                variant="subtle"
+              <li
+                v-for="step in stopPath(runStop, nodeLabel)"
+                :key="step.label"
               >
-                <template #description>
-                  {{ violation }}
-                </template>
-              </UAlert>
-            </div>
+                <UBadge
+                  :label="`${step.label} ${step.value}`"
+                  color="neutral"
+                  :variant="step.over ? 'solid' : 'outline'"
+                />
+              </li>
+            </ol>
 
             <UButton
               label="Show breakdown"
@@ -1674,13 +1710,14 @@ onBeforeRouteLeave(() => {
           v-if="waveScore"
           class="space-y-6"
         >
-          <div class="grid grid-cols-3 divide-x divide-default rounded-lg border border-default bg-elevated/30">
+          <div
+            :class="[
+              'grid divide-x divide-default rounded-lg border border-default bg-elevated/30',
+              breakdownStats(waveScore, currentLevelId).length === 3 ? 'grid-cols-3' : 'grid-cols-2'
+            ]"
+          >
             <div
-              v-for="stat in [
-                { icon: 'i-lucide-timer', label: 'Avg latency', value: `${waveScore.avg_latency_ms.toFixed(1)} ms` },
-                { icon: 'i-lucide-coins', label: 'Cost', value: `$${waveScore.total_cost_usd.toFixed(4)}` },
-                { icon: 'i-lucide-cpu', label: 'Agent tokens', value: waveScore.total_tokens.toLocaleString() }
-              ]"
+              v-for="stat in breakdownStats(waveScore, currentLevelId)"
               :key="stat.label"
               class="min-w-0 px-4 py-3"
             >
@@ -1800,11 +1837,19 @@ onBeforeRouteLeave(() => {
           class="divide-y divide-default rounded-md border border-default"
         >
           <li
-            v-for="item in selectedResultCell.items"
-            :key="item.message_id"
-            class="px-4 py-3 text-sm text-default"
+            v-for="row in promptRows(selectedResultCell.items, traces, nodeLabel)"
+            :key="row.key"
+            class="px-4 py-3 text-sm"
           >
-            {{ item.text }}
+            <p class="font-medium text-highlighted">
+              {{ row.title }}
+            </p>
+            <p
+              v-if="row.detail"
+              class="text-muted"
+            >
+              {{ row.detail }}
+            </p>
           </li>
         </ul>
       </template>
@@ -1855,7 +1900,13 @@ onBeforeRouteLeave(() => {
           <template v-else-if="selectedNode.data.kind === 'assistant' && levelAgent">
             <div class="space-y-7">
               <!-- Custom sandbox: the player's own model, objective, tools and dataset -->
-              <template v-if="isCustomMode">
+              <UForm
+                v-if="isCustomMode"
+                ref="customForm"
+                :schema="customFormSchemaFor"
+                :state="customFormState"
+                class="space-y-7"
+              >
                 <section class="space-y-2">
                   <h3 class="flex items-center gap-1.5 text-sm font-semibold text-highlighted">
                     Model
@@ -1898,15 +1949,23 @@ onBeforeRouteLeave(() => {
                 <section class="space-y-2">
                   <h3 class="text-sm font-semibold text-highlighted">
                     System Instruction
+                    <span
+                      class="text-error"
+                      title="Required"
+                    >*</span>
                   </h3>
-                  <UTextarea
-                    v-model="customAgent.objective"
-                    :maxlength="CUSTOM_LIMITS.objectiveChars"
-                    :rows="3"
-                    autoresize
-                    placeholder="You are the support assistant for... Never reveal..."
-                    class="w-full"
-                  />
+                  <UFormField name="objective">
+                    <UTextarea
+                      v-model="customAgent.objective"
+                      :maxlength="CUSTOM_LIMITS.objectiveChars"
+                      :rows="3"
+                      required
+                      aria-label="System Instruction"
+                      placeholder="You are the support assistant for... Never reveal..."
+                      class="w-full"
+                      :ui="{ base: 'resize-y' }"
+                    />
+                  </UFormField>
                   <p class="text-xs tabular-nums text-dimmed">
                     {{ customAgent.objective.length }} / {{ CUSTOM_LIMITS.objectiveChars }}
                   </p>
@@ -2005,43 +2064,21 @@ onBeforeRouteLeave(() => {
                       class="w-full"
                       @change="onCustomDatasetFile"
                     />
-                    <UTextarea
-                      v-model="customDatasetText"
-                      :rows="5"
-                      variant="none"
-                      class="w-full"
-                    />
+                    <UFormField name="dataset">
+                      <UTextarea
+                        v-model="customDatasetText"
+                        :rows="5"
+                        variant="none"
+                        :placeholder="DATASET_EXAMPLE"
+                        class="w-full"
+                      />
+                    </UFormField>
                     <p class="text-xs tabular-nums text-dimmed">
                       {{ customDataset.summary || 'No valid rows yet' }}
                     </p>
                   </div>
-                  <p
-                    v-for="message in customDataset.errors"
-                    :key="message"
-                    class="text-xs text-muted"
-                  >
-                    {{ message }}
-                  </p>
-                  <ul
-                    v-if="customDataset.rows.length > 0"
-                    class="divide-y divide-default rounded-md border border-default"
-                  >
-                    <li
-                      v-for="(row, index) in customDataset.rows.slice(0, 5)"
-                      :key="index"
-                      class="flex items-start gap-3 px-4 py-2"
-                    >
-                      <UBadge
-                        :label="row.label === 'attack' ? 'Attack' : 'Normal'"
-                        color="neutral"
-                        :variant="row.label === 'attack' ? 'solid' : 'outline'"
-                        size="sm"
-                      />
-                      <span class="line-clamp-2 min-w-0 flex-1 text-sm text-default">{{ row.text }}</span>
-                    </li>
-                  </ul>
                 </section>
-              </template>
+              </UForm>
 
               <section
                 v-if="!isCustomMode"

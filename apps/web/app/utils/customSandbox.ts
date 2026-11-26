@@ -1,3 +1,4 @@
+import * as z from 'zod'
 // Custom sandbox (spec 0022): the player's own agent, dataset and model, for paid players.
 // The API key lives only in a component ref in memory; nothing here persists it.
 import type { PlayerSessionStatus } from '../types/api'
@@ -64,10 +65,13 @@ export function customModeAccess(session: PlayerSessionStatus): CustomModeAccess
 
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,39}$/
 
+/** The form marks this one with a star on the field title, so it does not list it. */
+export const OBJECTIVE_REQUIRED = 'The objective is required.'
+
 export function validateCustomAgent(agent: CustomAgent): string[] {
   const errors: string[] = []
   const objective = agent.objective.trim()
-  if (!objective) errors.push('The objective is required.')
+  if (!objective) errors.push(OBJECTIVE_REQUIRED)
   if (objective.length > CUSTOM_LIMITS.objectiveChars) errors.push('The objective must be at most 1,000 characters.')
   if (agent.tools.length > CUSTOM_LIMITS.tools) errors.push('The agent accepts at most 10 tools.')
   const names = agent.tools.map(t => t.name)
@@ -123,6 +127,7 @@ const ATTACK_LABELS = new Set(['attack', '1'])
 
 /** Mirrors the gateway's dataset rules so players see errors before running. */
 export function parseDatasetCsv(text: string, toolNames: string[]): ParsedDataset {
+  if (!text.trim()) return { rows: [], errors: [], summary: '' }
   const [header, ...body] = csvRecords(text)
   const columns = (header ?? []).map(c => c.trim().toLowerCase())
   const textAt = columns.indexOf('text')
@@ -147,7 +152,7 @@ export function parseDatasetCsv(text: string, toolNames: string[]): ParsedDatase
       return errors.push(`Row ${n}: label must be normal or attack.`)
     }
     if (tool && !toolNames.includes(tool)) {
-      return errors.push(`Row ${n}: expected_tool must be one of the agent's tools.`)
+      return errors.push(`Row ${n}: you must add ${tool} to your agent's tools.`)
     }
     const isAttack = ATTACK_LABELS.has(label)
     rows.push({ text: rowText, label: isAttack ? 'attack' : 'normal', expected_tool: isAttack || !tool ? null : tool })
@@ -166,10 +171,30 @@ function csvField(value: string): string {
 
 /** Rebuild CSV text from saved rows so a loaded dataset can be edited again. */
 export function datasetRowsToCsv(rows: DatasetRow[]): string {
+  if (rows.length === 0) return ''
   return [
     'text,label,expected_tool',
     ...rows.map(r => [r.text, r.label, r.expected_tool ?? ''].map(csvField).join(','))
   ].join('\n')
+}
+
+/** Shows dataset row errors on the custom form's dataset field. */
+export function customFormSchema(toolNames: string[]) {
+  return z.object({
+    objective: z.string().max(CUSTOM_LIMITS.objectiveChars, 'The objective must be at most 1,000 characters.'),
+    dataset: z.string().superRefine((text, ctx) => {
+      for (const message of parseDatasetCsv(text, toolNames).errors) ctx.addIssue({ code: 'custom', message })
+    })
+  })
+}
+
+// 50 rows of 1,000 characters fit well inside this; a bigger file would only stall the tab.
+export const DATASET_FILE_MAX_BYTES = 256 * 1024
+
+/** Reads a chosen dataset file in the browser, refusing one that is too big to be valid. */
+export async function readDatasetFile(file: { size: number, text: () => Promise<string> }): Promise<{ text: string } | { error: string }> {
+  if (file.size > DATASET_FILE_MAX_BYTES) return { error: 'The file is over 256 KB.' }
+  return { text: await file.text() }
 }
 
 export function canRunCustom(agent: CustomAgent, dataset: ParsedDataset, apiKey: string): boolean {

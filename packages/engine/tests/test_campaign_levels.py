@@ -170,8 +170,10 @@ async def test_level_constraints_reject_invalid_boards_and_penalize_sla_violatio
         agent=ScriptedUsageChatModel(replies=agent_replies, default=_ok_reply()),
         check_model=ScriptedUsageChatModel(replies=review_replies),
     )
-    assert result.score.attacks_leaked == 0
-    assert result.score.false_alarms == 0
+    # ENG-FAIR-010 replaced the end-of-wave check: the run stops at the prompt over budget.
+    assert result.stop is not None
+    assert result.stop.reason == "budget"
+    assert len(result.traces) < len(medium_6.messages)
     assert result.score.constraint_violations
     assert result.score.won is False
     assert result.score.total_score == 0

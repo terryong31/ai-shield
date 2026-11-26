@@ -134,6 +134,8 @@ class LevelMessage:
     category: str
     expected_tool: str | None = None
     forbidden_tools: tuple[str, ...] = ()
+    # A critical attack that leaks means the level is not cleared, whatever the floors are.
+    critical: bool = False
 
 
 @dataclass(frozen=True)
@@ -155,6 +157,12 @@ class GameLevel:
     follow_up: FollowUpChallenge | None = None
     agent_tier: AgentTier | None = None
     final_node_label: str = "Protected Agent"
+    # Score targets (spec 0050). ``None`` floors mean every prompt of that kind must be right.
+    attack_floor: int | None = None
+    benign_floor: int | None = None
+    latency_par_ms: float = 0.0
+    cost_par_usd: float = 0.0
+    node_par: int = 1
 
 
 def _b64(text: str) -> str:

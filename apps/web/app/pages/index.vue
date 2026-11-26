@@ -16,7 +16,7 @@ import {
   type LevelTileItem
 } from '~/utils/campaignSelect'
 import { customModeAccess } from '~/utils/customSandbox'
-import { formatRankLabel, ownRowPlacement } from '~/utils/leaderboard'
+import { leaderboardRows, type LeaderboardRow } from '~/utils/leaderboard'
 import { TWITTER_CARD_ALT, TWITTER_CARD_PATH, resolveSiteUrl } from '~/utils/seo'
 
 const route = useRoute()
@@ -30,6 +30,8 @@ const {
   loading: loadingScores,
   selectedDifficulty: selectedLeaderboardDifficulty,
   refreshScores,
+  refreshMyRank,
+  prefetchScores,
   startPolling,
   stopPolling
 } = useLeaderboard()
@@ -180,6 +182,14 @@ const loadCatalogAndProgress = async () => {
   }
 }
 
+onServerPrefetch(async () => {
+  if (!showLevelSelect.value) await prefetchScores()
+})
+
+watch(() => isLoggedIn.value && session.value.player_name, (player) => {
+  if (player) void refreshMyRank(selectedLeaderboardDifficulty.value)
+})
+
 onMounted(async () => {
   if (showLevelSelect.value) {
     await Promise.all([
@@ -232,21 +242,18 @@ const filteredScores = computed<DifficultyLeaderboardEntry[]>(() =>
 
 const activeMyRank = computed(() => myRanks.value[selectedLeaderboardDifficulty.value] ?? null)
 
-const ownPlacement = computed(() =>
-  ownRowPlacement(filteredScores.value, activeMyRank.value, session.value)
-)
+const boardRows = computed(() => leaderboardRows(filteredScores.value, activeMyRank.value, session.value))
 
-const leaderboardTableMeta = computed(() => ({
+// Sticky keeps the row on the bottom edge until its own place in the list scrolls into view.
+const OWN_ROW_CLASS = 'sticky bottom-0 z-1 bg-inverted [&>td]:py-2.5'
+
+const leaderboardTableMeta = {
   class: {
-    tr: (row: { index: number }) => (
-      ownPlacement.value.kind === 'highlight' && ownPlacement.value.highlightIndex === row.index
-        ? 'bg-elevated ring-1 ring-inset ring-primary'
-        : ''
-    )
+    tr: (row: { original: LeaderboardRow }) => row.original.own ? OWN_ROW_CLASS : ''
   }
-}))
+}
 
-const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
+const scoreColumns: TableColumn<LeaderboardRow>[] = [
   { id: 'rank', header: 'Rank', meta: { class: { th: 'w-16 pr-0', td: 'w-16 pr-0' } } },
   { accessorKey: 'player_name', header: 'Player' },
   { accessorKey: 'total_score', header: 'Total Score', meta: { class: { th: 'text-right', td: 'text-right' } } }
@@ -299,8 +306,8 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
             />
 
             <UButton
-              v-if="isLoggedIn && !isPaid"
-              label="Upgrade Plan"
+              v-if="isLoggedIn"
+              :label="isPaid ? 'Manage Plan' : 'Upgrade Plan'"
               icon="i-lucide-sparkles"
               color="neutral"
               variant="link"
@@ -367,52 +374,48 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
           </div>
 
           <div class="overflow-hidden rounded-lg border border-default bg-default/90 shadow-sm backdrop-blur-md">
-            <div class="max-h-96 overflow-y-auto">
-              <UTable
-                :data="filteredScores"
-                :columns="scoreColumns"
-                :meta="leaderboardTableMeta"
-                :loading="loadingScores && !hasLoaded"
-                :empty="hasLoaded ? 'No scores yet' : 'Loading...'"
-                loading-color="neutral"
-                loading-animation="carousel"
-              >
-                <template #loading>
-                  <span class="text-sm text-muted">Loading...</span>
-                </template>
-
-                <template #rank-cell="{ row }">
-                  <span class="text-sm tabular-nums text-muted">
-                    {{ formatRankLabel(row.index + 1) }}
-                  </span>
-                </template>
-
-                <template #player_name-cell="{ row }">
-                  <span class="text-sm text-highlighted">
-                    {{ row.original.player_name }}
-                  </span>
-                </template>
-
-                <template #total_score-cell="{ row }">
-                  <span class="text-sm font-semibold tabular-nums text-highlighted">
-                    {{ row.original.total_score.toLocaleString() }}
-                  </span>
-                </template>
-              </UTable>
-            </div>
-
-            <div
-              v-if="ownPlacement.kind === 'pin'"
-              class="flex items-center justify-between border-t border-default bg-elevated px-4 py-2.5 text-sm"
+            <UTable
+              class="max-h-96"
+              sticky="header"
+              :data="boardRows"
+              :columns="scoreColumns"
+              :meta="leaderboardTableMeta"
+              :loading="loadingScores && !hasLoaded"
+              :empty="hasLoaded ? 'No scores yet' : 'Loading...'"
+              loading-color="neutral"
+              loading-animation="carousel"
             >
-              <div class="flex items-center gap-4 font-medium text-highlighted">
-                <span class="w-12 font-normal tabular-nums text-muted">{{ ownPlacement.rankLabel }}</span>
-                <span>{{ ownPlacement.playerName }}</span>
-              </div>
-              <span class="font-semibold tabular-nums text-highlighted">
-                {{ ownPlacement.totalScore.toLocaleString() }}
-              </span>
-            </div>
+              <template #loading>
+                <span class="text-sm text-muted">Loading...</span>
+              </template>
+
+              <template #rank-cell="{ row }">
+                <span
+                  class="text-sm tabular-nums"
+                  :class="row.original.own ? 'text-inverted' : 'text-muted'"
+                >
+                  {{ row.original.rankLabel }}
+                </span>
+              </template>
+
+              <template #player_name-cell="{ row }">
+                <span
+                  class="text-sm"
+                  :class="row.original.own ? 'text-inverted' : 'text-highlighted'"
+                >
+                  {{ row.original.player_name }}
+                </span>
+              </template>
+
+              <template #total_score-cell="{ row }">
+                <span
+                  class="text-sm font-semibold tabular-nums"
+                  :class="row.original.own ? 'text-inverted' : 'text-highlighted'"
+                >
+                  {{ row.original.total_score }}
+                </span>
+              </template>
+            </UTable>
           </div>
         </div>
       </div>
@@ -640,20 +643,13 @@ const scoreColumns: TableColumn<DifficultyLeaderboardEntry>[] = [
               class="flex h-full flex-col justify-between gap-3"
               :class="lvl.locked ? 'blur-[4px] opacity-35 select-none pointer-events-none' : ''"
             >
-              <!-- Top Row: Level Kicker + Cleared Check or Boss Pill -->
+              <!-- Top Row: Level Kicker + Cleared Check -->
               <div class="flex items-center justify-between gap-1.5">
                 <span class="text-xs font-medium text-muted">
                   {{ lvl.kicker }}
                 </span>
-                <UBadge
-                  v-if="lvl.isBoss"
-                  label="Boss"
-                  color="neutral"
-                  variant="subtle"
-                  size="xs"
-                />
                 <UIcon
-                  v-else-if="lvl.won"
+                  v-if="lvl.won"
                   name="i-lucide-circle-check"
                   class="size-4 shrink-0 text-highlighted"
                 />

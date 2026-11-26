@@ -441,6 +441,7 @@ class HopTraceSchema(BaseModel):
     latency_ms: float
     cost_usd: float
     detail: str
+    score: float | None = None
 
 
 class AgentRunSchema(BaseModel):
@@ -464,6 +465,7 @@ class MessageTraceSchema(BaseModel):
     total_cost_usd: float
     hops: list[HopTraceSchema]
     agent: AgentRunSchema | None = None
+    category: str = ""
 
 
 class WaveScoreSchema(BaseModel):
@@ -489,6 +491,30 @@ class WaveScoreSchema(BaseModel):
     constraint_violations: list[str] = Field(default_factory=list)
     follow_up_passed: bool = False
     follow_up_feedback: str = ""
+    cleared_points: int = 0
+    accuracy_points: int = 0
+    simplicity_points: int = 0
+    quality: float = 0.0
+    list_latency_ms: float = 0.0
+    list_cost_usd: float = 0.0
+
+
+class PathStepSchema(BaseModel):
+    node_id: str
+    kind: str
+    latency_ms: float
+    cost_usd: float
+
+
+class RunStopSchema(BaseModel):
+    """A run that a limit stopped (spec 0050): the prompt, the path and the node that went over."""
+
+    reason: Literal["time_limit", "budget"]
+    prompt_index: int
+    node_id: str
+    limit: float
+    used: float
+    path: list[PathStepSchema]
 
 
 class GameRunResponse(BaseModel):
@@ -497,6 +523,7 @@ class GameRunResponse(BaseModel):
     score: WaveScoreSchema
     agent_mode: AgentMode
     untrained_model_nodes: list[str] = Field(default_factory=list)
+    stop: RunStopSchema | None = None
 
 
 class ScoreCreateRequest(BaseModel):
@@ -543,6 +570,8 @@ class DifficultyLeaderboardEntry(BaseModel):
     levels_total: int
     avg_latency_ms: float
     total_cost_usd: float
+    # When the player last raised this total; the earlier date wins a tie (spec 0050).
+    reached_at: datetime | None = None
 
 
 class LeaderboardRankResponse(BaseModel):

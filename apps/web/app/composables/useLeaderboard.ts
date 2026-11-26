@@ -8,6 +8,7 @@ import {
   LEADERBOARD_POLL_INTERVAL_MS,
   LEADERBOARD_STALE_AFTER_MS
 } from '~/utils/leaderboard'
+import { withSsrTimeout } from '~/utils/ssr'
 
 const CACHE_KEY = 'shield_leaderboard_cache_v5'
 
@@ -15,6 +16,12 @@ let inFlightRefresh: Promise<void> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let visibilityListenerAttached = false
 let subscribers = 0
+
+export const useMyRanks = () =>
+  useState<Partial<Record<DifficultyCategory, LeaderboardRankResponse>>>(
+    'shield_leaderboard_my_ranks',
+    () => ({})
+  )
 
 export const useLeaderboard = () => {
   const { getLeaderboard, getMyLeaderboardRank } = useShieldApi()
@@ -28,10 +35,7 @@ export const useLeaderboard = () => {
       Hard: []
     })
   )
-  const myRanks = useState<Partial<Record<DifficultyCategory, LeaderboardRankResponse>>>(
-    'shield_leaderboard_my_ranks',
-    () => ({})
-  )
+  const myRanks = useMyRanks()
   const lastFetchedAt = useState<Partial<Record<DifficultyCategory, number>>>(
     'shield_leaderboard_fetched_at',
     () => ({})
@@ -105,7 +109,10 @@ export const useLeaderboard = () => {
 
     inFlightRefresh = (async () => {
       try {
-        const activeRows = await getLeaderboard(activeDiff, 25)
+        const [activeRows] = await Promise.all([
+          getLeaderboard(activeDiff, 25),
+          refreshMyRank(activeDiff)
+        ])
         difficultyLeaderboards.value = {
           ...difficultyLeaderboards.value,
           [activeDiff]: activeRows
@@ -116,7 +123,6 @@ export const useLeaderboard = () => {
         }
         hasLoaded.value = true
         persistToCache()
-        await refreshMyRank(activeDiff)
       } catch (err) {
         console.warn('Scoreboard unavailable:', err)
       } finally {
@@ -126,6 +132,19 @@ export const useLeaderboard = () => {
     })()
 
     return inFlightRefresh
+  }
+
+  // Server render only: a slow gateway must not delay the page, the browser retries on mount.
+  const prefetchScores = async () => {
+    const diff = selectedDifficulty.value
+    try {
+      const rows = await withSsrTimeout(getLeaderboard(diff, 25))
+      difficultyLeaderboards.value = { ...difficultyLeaderboards.value, [diff]: rows }
+      lastFetchedAt.value = { ...lastFetchedAt.value, [diff]: Date.now() }
+      hasLoaded.value = true
+    } catch (err) {
+      console.warn('Scoreboard prefetch skipped:', (err as Error).message)
+    }
   }
 
   const handleVisibilityChange = () => {
@@ -180,6 +199,8 @@ export const useLeaderboard = () => {
     selectedTab,
     selectedDifficulty,
     refreshScores,
+    refreshMyRank,
+    prefetchScores,
     startPolling,
     stopPolling
   }

@@ -28,7 +28,7 @@ export function ownRowPlacement(
   }
   if (!me) return { kind: 'none' }
   if (me.rank === null || me.total_score === null) {
-    return { kind: 'pin', rank: null, rankLabel: '-', playerName: session.player_name, totalScore: 0 }
+    return { kind: 'pin', rank: null, rankLabel: '#-', playerName: session.player_name, totalScore: 0 }
   }
   if (me.rank <= entries.length && entries.length > 0) {
     return {
@@ -44,6 +44,51 @@ export function ownRowPlacement(
     playerName: session.player_name,
     totalScore: me.total_score
   }
+}
+
+export interface PinnedRow {
+  playerName: string
+  rankLabel: string
+  scoreLabel: string
+}
+
+/** The signed-in player's own row: the name is known first, the rank and score fill in when they load. */
+export function pinnedRow(
+  me: LeaderboardRankResponse | null,
+  session: Pick<PlayerSessionStatus, 'authenticated' | 'is_anonymous' | 'player_name'>
+): PinnedRow | null {
+  if (!session.authenticated || session.is_anonymous) return null
+  if (!me) return { playerName: session.player_name, rankLabel: '#-', scoreLabel: '-' }
+  return {
+    playerName: session.player_name,
+    rankLabel: me.rank === null ? '#-' : formatRankLabel(me.rank),
+    scoreLabel: (me.total_score ?? 0).toLocaleString('en-US')
+  }
+}
+
+export interface LeaderboardRow {
+  rankLabel: string
+  player_name: string
+  total_score: string
+  own: boolean
+}
+
+/** The table rows. A signed-in player has exactly one own row: at their rank, or last when it is not in the list. */
+export function leaderboardRows(
+  entries: DifficultyLeaderboardEntry[],
+  me: LeaderboardRankResponse | null,
+  session: Pick<PlayerSessionStatus, 'authenticated' | 'is_anonymous' | 'player_name'>
+): LeaderboardRow[] {
+  const placement = ownRowPlacement(entries, me, session)
+  const rows = entries.map((entry, index) => ({
+    rankLabel: formatRankLabel(index + 1),
+    player_name: entry.player_name,
+    total_score: entry.total_score.toLocaleString('en-US'),
+    own: placement.kind === 'highlight' && placement.highlightIndex === index
+  }))
+  const pinned = placement.kind === 'highlight' ? null : pinnedRow(me, session)
+  if (!pinned) return rows
+  return [...rows, { rankLabel: pinned.rankLabel, player_name: pinned.playerName, total_score: pinned.scoreLabel, own: true }]
 }
 
 export interface LeaderboardPollerDeps {

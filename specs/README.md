@@ -122,6 +122,8 @@ Check locally with `mise run spec:check`.
 | 0047 | [Auth flows and hardening](0047-auth-flows-and-hardening/spec.md) | API, WEB | Implemented |
 | 0048 | [Display name](0048-display-name/spec.md) | API, WEB | Implemented |
 | 0049 | [Stripe pass checkout (sandbox)](0049-stripe-pass-checkout/spec.md) | API, WEB | Implemented |
+| 0050 | [Fair scoring and the scored run](0050-campaign-redesign/spec.md) | ENG, API, WEB | Implemented |
+| 0051 | [Campaign levels v2](0051-campaign-levels-v2/spec.md) | ENG, API, WEB | Draft |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

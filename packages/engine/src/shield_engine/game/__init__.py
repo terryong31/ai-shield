@@ -20,6 +20,7 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
 
 from shield_engine.game.agent import (
+    AGENT_COST_PER_1K_TOKENS,
     AGENT_RULE_LIMIT,
     AGENT_RULE_MAX_CHARS,
     TOOL_BAIT_CATEGORIES,
@@ -33,6 +34,7 @@ from shield_engine.game.agent import (
     _first_json_object,
     build_agent_graph,
     clean_rules,
+    native_tool_call,
     new_canary,
     rules_error,
     run_live_agent,
@@ -145,6 +147,8 @@ class HopTrace:
     latency_ms: float
     cost_usd: float
     detail: str
+    # The probability a scoring node gave, when it gives one (jev, ml_classifier).
+    score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +161,7 @@ class MessageTrace:
     total_cost_usd: float
     hops: tuple[HopTrace, ...]
     agent: AgentRun | None = None
+    category: str = ""
 
 
 @dataclass(frozen=True)
@@ -183,6 +188,52 @@ class WaveScore:
     constraint_violations: tuple[str, ...] = ()
     follow_up_passed: bool = False
     follow_up_feedback: str = ""
+    cleared_points: int = 0
+    accuracy_points: int = 0
+    simplicity_points: int = 0
+    quality: float = 0.0
+    list_latency_ms: float = 0.0
+    list_cost_usd: float = 0.0
+
+
+@dataclass(frozen=True)
+class FairScore:
+    """The campaign score of one run (spec 0050)."""
+
+    total_score: int
+    medal: MedalKind
+    cleared: bool
+    quality: float
+    cleared_points: int
+    accuracy_points: int
+    speed_points: int
+    cost_points: int
+    simplicity_points: int
+
+
+@dataclass(frozen=True)
+class PathStep:
+    """One node of a prompt's path, with its list latency and list cost."""
+
+    node_id: str
+    kind: str
+    latency_ms: float
+    cost_usd: float
+
+
+StopReason = Literal["time_limit", "budget"]
+
+
+@dataclass(frozen=True)
+class RunStop:
+    """Why a run stopped early (ENG-FAIR-009, ENG-FAIR-010)."""
+
+    reason: StopReason
+    prompt_index: int
+    node_id: str
+    limit: float
+    used: float
+    path: tuple[PathStep, ...]
 
 
 @dataclass(frozen=True)
@@ -191,6 +242,7 @@ class WaveResult:
     traces: tuple[MessageTrace, ...]
     score: WaveScore
     agent_mode: AgentMode = "simulated"
+    stop: RunStop | None = None
 
 
 @dataclass(frozen=True)
@@ -692,13 +744,6 @@ def validate_board(board: BoardGraph) -> None:
     if not outgoing[incoming_node.id]:
         raise BoardValidationError("The 'input' node must have at least one outgoing wire.")
 
-    for edge in outgoing[incoming_node.id]:
-        target_kind = node_by_id[edge.target].kind
-        if target_kind == "assistant":
-            raise BoardValidationError(
-                "Place at least one tool node between Input and the final node."
-            )
-
     queue: deque[str] = deque(nid for nid, deg in in_degree.items() if deg == 0)
     visited = 0
     while queue:
@@ -727,6 +772,16 @@ def validate_board_for_level(board: BoardGraph, level: GameLevel) -> None:
             raise BoardValidationError(
                 f"Check node '{node.kind}' is disabled in level '{level.id}'."
             )
+    if len(check_nodes) > _DEFAULT_NODE_CAP:
+        raise BoardValidationError(
+            f"A board holds at most {_DEFAULT_NODE_CAP} check nodes (got {len(check_nodes)})."
+        )
+    model_nodes = sum(1 for n in check_nodes if n.kind in MODEL_NODE_KINDS)
+    if model_nodes > MAX_MODEL_NODES:
+        raise BoardValidationError(
+            f"A board holds at most {MAX_MODEL_NODES} model nodes "
+            f"(jev, safety check, LLM review); got {model_nodes}."
+        )
     max_checks = level.constraints.max_check_nodes
     if max_checks is not None and len(check_nodes) > max_checks:
         raise BoardValidationError(
@@ -794,6 +849,8 @@ def _parse_guard_score(text: str) -> bool:
 
 
 def _parse_safety_verdict(text: str) -> bool:
+    if native_tool_call(text) is not None:
+        return True
     parsed = _first_json_object(text)
     if parsed is not None:
         return bool(parsed.get("flagged", parsed.get("violation")))
@@ -899,6 +956,7 @@ async def evaluate_message(
             total_cost_usd=round(total_cost, 8),
             hops=tuple(hops),
             agent=run,
+            category=message_category,
         )
 
     for _ in range(len(board.nodes) + 2):
@@ -960,6 +1018,7 @@ async def evaluate_message(
         handle: HandleKind = "out"
         cost = 0.0
         detail = ""
+        hop_score: float | None = None
         hop_started = time.perf_counter()
 
         if node.kind == "incoming":
@@ -1039,6 +1098,7 @@ async def evaluate_message(
             )
             if prob_model is not None:
                 proba = float(prob_model.predict_proba([working_text])[0][1])
+                hop_score = round(proba, 4)
                 handle = _route_ml_score(proba, safe_t=safe_t, block_t=block_t)
                 detail = f"{algo} risk: {proba * 100:.0f}%"
             else:
@@ -1059,6 +1119,7 @@ async def evaluate_message(
                 except Exception as exc:
                     raise AgentUnavailableError("The Jev model is unavailable.") from exc
                 prob = max(0.0, min(1.0, float(jev_res.probability)))
+                hop_score = round(prob, 4)
                 cost = round(
                     max(0, int(jev_res.input_tokens)) * JEV_INPUT_RATE_PER_1M / 1_000_000, 8
                 )
@@ -1184,7 +1245,10 @@ async def evaluate_message(
             except Exception as exc:
                 raise AgentUnavailableError("The LLM review model is unavailable.") from exc
             lr_parsed = _first_json_object(lr_comp.text)
-            detected = bool(lr_parsed.get("blocked")) if lr_parsed else False
+            # A reviewer has no tools: a native call means it followed the untrusted prompt.
+            detected = native_tool_call(lr_comp.text) is not None or (
+                bool(lr_parsed.get("blocked")) if lr_parsed else False
+            )
             cost = _llm_hop_cost(
                 lr_model_name,
                 lr_comp.input_tokens,
@@ -1228,14 +1292,11 @@ async def evaluate_message(
                     ts = str(t).strip()
                     if ts:
                         rules_list.append((ts, "always", ""))
-            lowered = working_text.lower()
             blocked_reason: str | None = None
             for t_name, cond, pat in rules_list:
                 if cond == "always":
+                    # Switching a tool off never blocks the prompt itself (ENG-FAIR-008).
                     gated_tools.add(t_name.lower())
-                    if t_name.lower() in lowered:
-                        blocked_reason = f"Blocked restricted tool call: {t_name}"
-                        break
                 elif cond == "match" and pat and re.search(pat, working_text, re.IGNORECASE):
                     blocked_reason = f"Blocked tool {t_name}: matched {pat}"
                     break
@@ -1256,6 +1317,7 @@ async def evaluate_message(
                 latency_ms=latency,
                 cost_usd=cost,
                 detail=detail,
+                score=hop_score,
             )
         )
 
@@ -1593,6 +1655,275 @@ def _apply_campaign_rules(
     )
 
 
+_THINKING_LIST_COST_USD = 0.006
+_CATALOG_BY_KIND: dict[str, CheckDefinition] = {c.kind: c for c in CHECK_CATALOG}
+_DEFAULT_NODE_CAP = 8
+MODEL_NODE_KINDS: frozenset[str] = frozenset({"jev", "safety_check", "llm_review"})
+MAX_MODEL_NODES = 2
+
+
+def _clamp01(value: float) -> float:
+    return min(1.0, max(0.0, value))
+
+
+def _efficiency(used: float, cap: float, par: float) -> float:
+    """1 at or below par, falling linearly to 0 at the cap."""
+    if cap <= par:
+        return 1.0 if used <= cap else 0.0
+    return _clamp01((cap - used) / (cap - par))
+
+
+def fair_score(
+    *,
+    attacks_protected: int,
+    attacks_total: int,
+    benign_helped: int,
+    benign_total: int,
+    attack_floor: int | None = None,
+    benign_floor: int | None = None,
+    critical_leak: bool = False,
+    limits_kept: bool = True,
+    latency_ms: float = 0.0,
+    latency_cap_ms: float = 1.0,
+    latency_par_ms: float = 0.0,
+    cost_usd: float = 0.0,
+    cost_cap_usd: float = 1.0,
+    cost_par_usd: float = 0.0,
+    check_nodes: int = 1,
+    node_cap: int = _DEFAULT_NODE_CAP,
+    node_par: int = 1,
+) -> FairScore:
+    """Score one campaign run (spec 0050).
+
+    Not cleared: ``min(4999, 4999 x A/At x N/Nt)``. Cleared: 5,000 plus quality (2,500),
+    efficiency (750 speed, 750 cost) and simplicity (1,000).
+    """
+    a_floor = attacks_total if attack_floor is None else attack_floor
+    n_floor = benign_total if benign_floor is None else benign_floor
+    cleared = (
+        attacks_protected >= a_floor
+        and benign_helped >= n_floor
+        and not critical_leak
+        and limits_kept
+    )
+    if not cleared:
+        a_ratio = attacks_protected / attacks_total if attacks_total else 1.0
+        n_ratio = benign_helped / benign_total if benign_total else 1.0
+        return FairScore(
+            total_score=min(4999, round(4999 * a_ratio * n_ratio)),
+            medal="none",
+            cleared=False,
+            quality=0.0,
+            cleared_points=0,
+            accuracy_points=0,
+            speed_points=0,
+            cost_points=0,
+            simplicity_points=0,
+        )
+    spread = (attacks_total + benign_total) - (a_floor + n_floor)
+    quality = (
+        1.0
+        if spread <= 0
+        else _clamp01(((attacks_protected + benign_helped) - (a_floor + n_floor)) / spread)
+    )
+    simplicity = (
+        1.0 if node_cap <= node_par else _clamp01((node_cap - check_nodes) / (node_cap - node_par))
+    )
+    accuracy_points = round(2500 * quality)
+    speed_points = round(750 * _efficiency(latency_ms, latency_cap_ms, latency_par_ms))
+    cost_points = round(750 * _efficiency(cost_usd, cost_cap_usd, cost_par_usd))
+    simplicity_points = round(1000 * simplicity)
+    total = 5000 + accuracy_points + speed_points + cost_points + simplicity_points
+    medal: MedalKind
+    if total >= 9250 and quality >= 0.7:
+        medal = "gold"
+    elif total >= 8000:
+        medal = "silver"
+    else:
+        medal = "bronze"
+    return FairScore(
+        total_score=total,
+        medal=medal,
+        cleared=True,
+        quality=quality,
+        cleared_points=5000,
+        accuracy_points=accuracy_points,
+        speed_points=speed_points,
+        cost_points=cost_points,
+        simplicity_points=simplicity_points,
+    )
+
+
+def _hop_list_price(node: BoardNode) -> tuple[float, float]:
+    definition = _CATALOG_BY_KIND.get(str(node.kind))
+    if definition is None:
+        return 0.0, 0.0
+    cost = definition.cost_usd
+    if node.kind in {"safety_check", "llm_review"} and bool(node.config.get("thinking")):
+        cost = _THINKING_LIST_COST_USD
+    return definition.latency_ms, cost
+
+
+def _rules_list_cost(board: BoardGraph) -> float:
+    final = next((n for n in board.nodes if n.kind == "assistant"), None)
+    rules = final.config.get("rules") if final is not None else None
+    text = " ".join(str(r) for r in rules) if isinstance(rules, list) else ""
+    tokens = -(-len(text) // 4)
+    return tokens / 1000 * AGENT_COST_PER_1K_TOKENS
+
+
+def _list_prices(
+    level: GameLevel, board: BoardGraph, traces: Sequence[MessageTrace]
+) -> tuple[float, float]:
+    """Mean list latency of a prompt's path and the list cost of the whole wave."""
+    nodes = {n.id: n for n in board.nodes}
+    rules_cost = _rules_list_cost(board) if level.agent is not None else 0.0
+    latency_sum = 0.0
+    cost_sum = 0.0
+    for trace in traces:
+        for hop in trace.hops:
+            node = nodes.get(hop.node_id)
+            if node is None:
+                continue
+            latency, cost = _hop_list_price(node)
+            latency_sum += latency
+            cost_sum += cost
+        if trace.outcome == "assistant":
+            cost_sum += rules_cost
+    mean_latency = latency_sum / len(traces) if traces else 0.0
+    return mean_latency, cost_sum
+
+
+def score_campaign(
+    level: GameLevel, board: BoardGraph, traces: Sequence[MessageTrace]
+) -> WaveScore:
+    """Score a campaign wave with list prices only, so the same board gets the same score."""
+    by_id = {m.id: m for m in level.messages}
+    attacks_total = sum(1 for m in level.messages if m.is_attack)
+    benign_total = sum(1 for m in level.messages if not m.is_attack)
+    attacks_protected = sum(1 for t in traces if t.is_attack and _is_protected(t))
+    benign_helped = sum(1 for t in traces if not t.is_attack and _is_helped(t))
+    critical_leak = any(
+        t.is_attack
+        and not _is_protected(t)
+        and by_id.get(t.message_id) is not None
+        and by_id[t.message_id].critical
+        for t in traces
+    )
+    total_tokens = sum(_agent_tokens(t) for t in traces)
+    list_latency, list_cost = _list_prices(level, board, traces)
+    constraints = level.constraints
+
+    violations: list[str] = []
+    if constraints.max_avg_latency_ms is not None and list_latency > constraints.max_avg_latency_ms:
+        violations.append(
+            f"Average latency {list_latency:.1f} ms exceeded limit "
+            f"{constraints.max_avg_latency_ms:.1f} ms."
+        )
+    if constraints.max_total_cost_usd is not None and list_cost > constraints.max_total_cost_usd:
+        violations.append(
+            f"Total cost ${list_cost:.4f} exceeded limit ${constraints.max_total_cost_usd:.4f}."
+        )
+    if constraints.max_tokens is not None and total_tokens > constraints.max_tokens:
+        violations.append(f"Total tokens {total_tokens} exceeded limit {constraints.max_tokens}.")
+
+    check_nodes = _placeable_check_nodes(board)
+    node_cap = min(constraints.max_check_nodes or _DEFAULT_NODE_CAP, _DEFAULT_NODE_CAP)
+    fair = fair_score(
+        attacks_protected=attacks_protected,
+        attacks_total=attacks_total,
+        benign_helped=benign_helped,
+        benign_total=benign_total,
+        attack_floor=level.attack_floor,
+        benign_floor=level.benign_floor,
+        critical_leak=critical_leak,
+        limits_kept=not violations,
+        latency_ms=list_latency,
+        latency_cap_ms=constraints.max_avg_latency_ms or level.max_latency_ms,
+        latency_par_ms=level.latency_par_ms,
+        cost_usd=list_cost,
+        cost_cap_usd=constraints.max_total_cost_usd or level.max_cost_usd,
+        cost_par_usd=level.cost_par_usd,
+        check_nodes=len(check_nodes),
+        node_cap=node_cap,
+        node_par=level.node_par,
+    )
+    if violations:
+        # A broken limit ends the run with no score, like a stopped run (ENG-FAIR-009).
+        fair = replace(fair, total_score=0)
+    follow_up_passed, follow_up_feedback = (
+        _follow_up_result(level.follow_up, check_nodes, list_latency, list_cost, total_tokens)
+        if fair.cleared and level.follow_up is not None
+        else (False, "")
+    )
+    return WaveScore(
+        total_score=fair.total_score,
+        medal=fair.medal,
+        protection_points=0,
+        helpfulness_points=0,
+        tool_points=0,
+        token_points=0,
+        speed_points=fair.speed_points,
+        cost_points=fair.cost_points,
+        leak_penalty=0,
+        attacks_protected=attacks_protected,
+        attacks_total=attacks_total,
+        attacks_leaked=attacks_total - attacks_protected,
+        benign_helped=benign_helped,
+        benign_total=benign_total,
+        false_alarms=benign_total - benign_helped,
+        total_tokens=total_tokens,
+        # The listed latency, so the same board always shows the same score (ENG-FAIR-003).
+        avg_latency_ms=round(list_latency, 2),
+        total_cost_usd=round(sum(t.total_cost_usd for t in traces), 6),
+        won=fair.cleared,
+        constraint_violations=tuple(violations),
+        follow_up_passed=follow_up_passed,
+        follow_up_feedback=follow_up_feedback,
+        cleared_points=fair.cleared_points,
+        accuracy_points=fair.accuracy_points,
+        simplicity_points=fair.simplicity_points,
+        quality=round(fair.quality, 4),
+        list_latency_ms=round(list_latency, 4),
+        list_cost_usd=round(list_cost, 8),
+    )
+
+
+def _follow_up_result(
+    follow_up: FollowUpChallenge,
+    check_nodes: Sequence[BoardNode],
+    latency_ms: float,
+    cost_usd: float,
+    tokens: int,
+) -> tuple[bool, str]:
+    missed: list[str] = []
+    if follow_up.max_check_nodes is not None and len(check_nodes) > follow_up.max_check_nodes:
+        missed.append(
+            f"Used {len(check_nodes)} check nodes "
+            f"(Follow-up target <= {follow_up.max_check_nodes})."
+        )
+    if follow_up.forbidden_checks:
+        used = sorted({str(n.kind) for n in check_nodes if n.kind in follow_up.forbidden_checks})
+        if used:
+            missed.append(
+                f"Used {', '.join(used)} (Follow-up forbids: "
+                f"{', '.join(follow_up.forbidden_checks)})."
+            )
+    if follow_up.max_avg_latency_ms is not None and latency_ms > follow_up.max_avg_latency_ms:
+        missed.append(
+            f"Average latency {latency_ms:.1f} ms exceeded Follow-up target "
+            f"<= {follow_up.max_avg_latency_ms:.1f} ms."
+        )
+    if follow_up.max_total_cost_usd is not None and cost_usd > follow_up.max_total_cost_usd:
+        missed.append(
+            f"Total cost ${cost_usd:.4f} exceeded Follow-up target "
+            f"<= ${follow_up.max_total_cost_usd:.4f}."
+        )
+    if follow_up.max_tokens is not None and tokens > follow_up.max_tokens:
+        missed.append(f"Total tokens {tokens} exceeded Follow-up target <= {follow_up.max_tokens}.")
+    return not missed, " ".join(missed)
+
+
 async def run_wave(
     board: BoardGraph,
     *,
@@ -1617,8 +1948,14 @@ async def run_wave(
     model = model_for_level(level, agent=agent, agents=agents)
     canary = canary_factory()
     traces: list[MessageTrace] = []
+    stop: RunStop | None = None
+    nodes_by_id = {n.id: n for n in board.nodes}
+    rules_cost = _rules_list_cost(board) if level.agent is not None else 0.0
+    latency_limit = level.constraints.max_avg_latency_ms
+    budget = level.constraints.max_total_cost_usd
+    wave_cost = 0.0
 
-    for msg in level.messages:
+    for index, msg in enumerate(level.messages, start=1):
         trace = await evaluate_message(
             board,
             message=msg.text,
@@ -1637,31 +1974,89 @@ async def run_wave(
             forbidden_tools=frozenset(msg.forbidden_tools),
         )
         traces.append(trace)
+        path = _path_steps(trace, nodes_by_id)
+        stop = _limit_stop(
+            index, path, trace, rules_cost, wave_cost, latency_limit=latency_limit, budget=budget
+        )
+        wave_cost += sum(step.cost_usd for step in path)
+        wave_cost += rules_cost if trace.outcome == "assistant" else 0.0
+        if stop is not None:
+            break
 
-    score = score_traces(
-        level.messages,
-        traces,
-        token_budget=level.agent.token_budget if level.agent else 0,
-        max_latency_ms=level.max_latency_ms,
-        max_cost_usd=level.max_cost_usd,
-        classify_only=level.agent is None,
-        restricted_tools=(
-            frozenset(t.name for t in level.agent.tools if not t.allowed)
-            if level.agent is not None
-            else frozenset()
-        ),
-    )
-    score = _apply_campaign_rules(
-        score,
-        board=board,
-        constraints=level.constraints,
-        follow_up=level.follow_up,
-    )
+    score = score_campaign(level, board, traces)
+    if stop is not None:
+        score = replace(
+            score,
+            total_score=0,
+            medal="none",
+            won=False,
+            cleared_points=0,
+            accuracy_points=0,
+            speed_points=0,
+            cost_points=0,
+            simplicity_points=0,
+            follow_up_passed=False,
+            follow_up_feedback="",
+            constraint_violations=(_stop_message(stop),),
+        )
     return WaveResult(
         level_id=level.id,
         traces=tuple(traces),
         score=score,
         agent_mode=agent_mode_for(level, model),
+        stop=stop,
+    )
+
+
+def _path_steps(trace: MessageTrace, nodes_by_id: Mapping[str, BoardNode]) -> tuple[PathStep, ...]:
+    steps: list[PathStep] = []
+    for hop in trace.hops:
+        node = nodes_by_id.get(hop.node_id)
+        if node is None or node.kind in {"incoming", "assistant"}:
+            continue
+        latency, cost = _hop_list_price(node)
+        steps.append(PathStep(node.id, str(node.kind), latency, cost))
+    return tuple(steps)
+
+
+def _limit_stop(
+    index: int,
+    path: tuple[PathStep, ...],
+    trace: MessageTrace,
+    rules_cost: float,
+    cost_before: float,
+    *,
+    latency_limit: float | None,
+    budget: float | None,
+) -> RunStop | None:
+    """The first limit this prompt breaks, named by the node that went over (spec 0050)."""
+    if latency_limit is not None:
+        running = 0.0
+        for step in path:
+            running += step.latency_ms
+            if running > latency_limit + 1e-9:
+                total = sum(s.latency_ms for s in path)
+                return RunStop("time_limit", index, step.node_id, latency_limit, total, path)
+    if budget is not None:
+        running = cost_before
+        for step in path:
+            running += step.cost_usd
+            if running > budget + 1e-12:
+                return RunStop("budget", index, step.node_id, budget, running, path)
+        if trace.outcome == "assistant" and running + rules_cost > budget + 1e-12:
+            return RunStop("budget", index, "ast", budget, running + rules_cost, path)
+    return None
+
+
+def _stop_message(stop: RunStop) -> str:
+    if stop.reason == "time_limit":
+        return (
+            f"Time limit exceeded at prompt {stop.prompt_index}: "
+            f"{stop.used:g} ms, the limit is {stop.limit:g} ms."
+        )
+    return (
+        f"Budget exceeded at prompt {stop.prompt_index}: "
+        f"${stop.used:.5f}, the budget is ${stop.limit:.5f}."
     )
 
 
@@ -1734,6 +2129,7 @@ __all__ = [
     "CheckDefinition",
     "CleanedText",
     "DifficultyCategory",
+    "FairScore",
     "FittedClassifier",
     "FollowUpChallenge",
     "GameLevel",
@@ -1749,7 +2145,9 @@ __all__ = [
     "ModelSignatureError",
     "NodeKind",
     "OutcomeKind",
+    "PathStep",
     "RetiredNodeKind",
+    "RunStop",
     "TextCleaner",
     "TrainingSummary",
     "WaveResult",
@@ -1759,6 +2157,7 @@ __all__ = [
     "agent_mode_for",
     "build_agent_graph",
     "evaluate_message",
+    "fair_score",
     "fit_classifier",
     "get_check_catalog",
     "get_level",
@@ -1768,6 +2167,7 @@ __all__ = [
     "parse_dataset_csv",
     "run_single_message",
     "run_wave",
+    "score_campaign",
     "score_traces",
     "score_wave",
     "sign_model",

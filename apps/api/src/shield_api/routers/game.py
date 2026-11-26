@@ -33,12 +33,14 @@ from shield_api.schemas import (
     PlayerProgressResponse,
     PlayerSessionStatus,
     RunLevelId,
+    RunStopSchema,
     SavedBoardRequest,
     SavedBoardResponse,
     ScoreCreateRequest,
     ScoreRecord,
     WaveScoreSchema,
 )
+from shield_api.services.agent_cache import CachedChatModel, level_canary
 from shield_api.services.clearance import Clearance
 from shield_api.services.models import (
     CAMPAIGN_TRAIN_MAX_BYTES,
@@ -56,6 +58,7 @@ from shield_api.services.rate_limit import (
     GAME_TRAIN_EMAIL_WINDOW,
 )
 from shield_api.services.scores import build_player_progress
+from shield_api.services.spend import SpendBudgetExceededError
 from shield_engine.game import (
     ALLOWED_ML_ALGORITHMS,
     AgentProfile,
@@ -66,13 +69,13 @@ from shield_engine.game import (
     BoardNode,
     BoardValidationError,
     DifficultyCategory,
+    GameLevel,
     LevelId,
     fit_classifier,
     get_check_catalog,
     get_level,
     get_levels,
     parse_dataset_csv,
-    run_single_message,
     run_wave,
     strip_training_data,
     validate_board,
@@ -85,7 +88,7 @@ from shield_engine.game.custom import (
     run_custom_wave,
     validate_custom_profile,
 )
-from shield_engine.ports import JevClient, ProbabilityModel
+from shield_engine.ports import JevClient, ProbabilityModel, UsageChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +166,7 @@ async def _load_board_ml_models(
 @router.get("/levels")
 async def list_game_levels(container: ContainerDep) -> GameCatalogResponse:
     """Return built-in levels and placeable check definitions."""
-    levels = [GameLevelSchema.model_validate(asdict(lvl)) for lvl in get_levels()]
+    levels = [_public_level(lvl) for lvl in get_levels()]
     checks = [CheckDefinitionSchema.model_validate(asdict(chk)) for chk in get_check_catalog()]
     return GameCatalogResponse(
         levels=levels,
@@ -242,6 +245,11 @@ async def run_game_board(
         return await _run_custom(body, board, player, container, token=token, jev_client=jev_client)
 
     level = get_level(body.level_id)
+    if body.custom_message is not None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Campaign levels run the whole wave. Test single messages in the custom sandbox.",
+        )
     uses_model_checks = any(node.kind in MODEL_CHECK_NODE_KINDS for node in board.nodes)
     counts_quota = level.agent is not None or uses_model_checks
     if counts_quota and not player.authenticated:
@@ -266,39 +274,38 @@ async def run_game_board(
 
     ml_models, untrained_nodes = await _load_board_ml_models(board, token, player, container)
 
-    is_custom_test = body.custom_message is not None
+    is_custom_test = False
+    spend_owner = _spend_owner(player, token)
     if counts_quota:
+        try:
+            await container.spend.ensure_within(spend_owner, player.tier)
+        except SpendBudgetExceededError as err:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
         try:
             player = await container.players.reserve_run(token, is_custom_test=is_custom_test)
         except QuotaExceededError as err:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
 
     try:
-        if body.custom_message is not None:
-            result = await run_single_message(
-                board,
-                level_id=body.level_id,
-                message=body.custom_message,
-                classifier=container.classifier,
-                agent=container.game_agent,
-                agents=container.game_agents,
-                jev_client=jev_client,
-                check_model=check_model,
-                check_model_for=container.check_model_for,
-                ml_models=ml_models,
-            )
-        else:
-            result = await run_wave(
-                board,
-                level_id=body.level_id,
-                classifier=container.classifier,
-                agent=container.game_agent,
-                agents=container.game_agents,
-                jev_client=jev_client,
-                check_model=check_model,
-                check_model_for=container.check_model_for,
-                ml_models=ml_models,
-            )
+        result = await run_wave(
+            board,
+            level_id=body.level_id,
+            classifier=container.classifier,
+            agent=(
+                None
+                if container.game_agent is None
+                else _cached(container.game_agent, container, level.id, "default")
+            ),
+            agents={
+                tier: _cached(model, container, level.id, tier)
+                for tier, model in container.game_agents.items()
+            },
+            canary_factory=lambda: level_canary(container.canary_seed, level.id),
+            jev_client=jev_client,
+            check_model=check_model,
+            check_model_for=container.check_model_for,
+            ml_models=ml_models,
+        )
     except BoardValidationError as err:
         if counts_quota:
             await container.players.release_run(token, is_custom_test=is_custom_test)
@@ -321,6 +328,7 @@ async def run_game_board(
             await container.players.release_run(token, is_custom_test=is_custom_test)
         raise
 
+    await container.spend.add(spend_owner, result.score.total_cost_usd)
     score_schema = WaveScoreSchema.model_validate(asdict(result.score))
     # Simulated agent runs are practice; live and model-free (Easy) runs are recorded.
     recordable = result.agent_mode in ("live", "none")
@@ -346,10 +354,46 @@ async def run_game_board(
 
     return GameRunResponse(
         level_id=result.level_id,
-        traces=[MessageTraceSchema.model_validate(asdict(t)) for t in result.traces],
+        traces=[_hidden_trace(MessageTraceSchema.model_validate(asdict(t))) for t in result.traces],
         score=score_schema,
         agent_mode=result.agent_mode,
         untrained_model_nodes=untrained_nodes,
+        stop=RunStopSchema.model_validate(asdict(result.stop)) if result.stop else None,
+    )
+
+
+def _public_level(level: GameLevel) -> GameLevelSchema:
+    """The level catalogue without prompt text or answers: wave prompts stay on the server."""
+    schema = GameLevelSchema.model_validate(asdict(level))
+    hidden = [
+        m.model_copy(update={"text": "", "expected_tool": None, "forbidden_tools": []})
+        for m in schema.messages
+    ]
+    return schema.model_copy(update={"messages": hidden})
+
+
+def _spend_owner(player: PlayerSessionStatus, token: str | None) -> str:
+    if player.email:
+        return player.email
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def _cached(
+    model: UsageChatModel, container: Container, level_id: str, tier: str
+) -> UsageChatModel:
+    namespace = f"{level_id}:{tier}:{type(model).__name__}:{id(model)}"
+    return CachedChatModel(model, container.agent_cache, namespace)
+
+
+def _hidden_trace(trace: MessageTraceSchema) -> MessageTraceSchema:
+    """Campaign prompts stay server secrets: no text, reply or free-text detail (API-FAIR-001)."""
+    agent = trace.agent.model_copy(update={"reply": ""}) if trace.agent is not None else None
+    return trace.model_copy(
+        update={
+            "text": "",
+            "hops": [hop.model_copy(update={"detail": ""}) for hop in trace.hops],
+            "agent": agent,
+        }
     )
 
 

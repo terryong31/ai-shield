@@ -17,16 +17,16 @@ from shield_api.schemas import PlayerSessionStatus, PlayerTier
 DAILY_LIMITS: dict[PlayerTier, tuple[int, int]] = {
     "anonymous": (1, 3),
     "free": (5, 20),
-    "paid": (300, 1000),
+    "paid": (50, 1000),
 }
 DAILY_TRAIN_LIMITS: dict[PlayerTier, int] = {
     "anonymous": 0,
     "free": 3,
-    "paid": 200,
+    "paid": 20,
 }
 _MORE_RUNS_HINT: dict[PlayerTier, str] = {
     "anonymous": "Sign in for 5 wave runs a day.",
-    "free": "Upgrade to a paid plan for 300 wave runs a day.",
+    "free": "Upgrade to a paid plan for 50 wave runs a day.",
     "paid": "Try again tomorrow.",
 }
 PurchaseOutcome = Literal[

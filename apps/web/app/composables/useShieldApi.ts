@@ -43,7 +43,10 @@ import type {
 export const useShieldApi = () => {
   // Same origin: the web server proxies to the gateway, so the HttpOnly player and
   // admin session cookies are first-party (specs 0012, 0016, 0041).
-  const api = $fetch.create({ baseURL: SHIELD_API_PREFIX, credentials: 'include' })
+  // A server render passes only the client address, which the proxy needs; never cookies.
+  const clientIpHeader = import.meta.server ? String(useRuntimeConfig().clientIpHeader ?? '').trim().toLowerCase() : ''
+  const headers = clientIpHeader ? useRequestHeaders([clientIpHeader]) as Record<string, string> : undefined
+  const api = $fetch.create({ baseURL: SHIELD_API_PREFIX, credentials: 'include', headers })
 
   return {
     getClearance: () => api<ClearanceStatus>('/clearance'),

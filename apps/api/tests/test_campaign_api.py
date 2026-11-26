@@ -144,7 +144,7 @@ def test_catalog_exposes_23_levels_and_enforces_pro_tier_gating(make_harness) ->
 async def test_migration_purges_legacy_scores_and_preserves_mastered_stickily(
     tmp_path: Path, fake_supabase: Callable[..., FakeClient]
 ) -> None:
-    assert SCORE_VERSION == 3
+    assert SCORE_VERSION >= 3  # 4 since API-FAIR-006
 
     sql = "\n".join(p.read_text() for p in sorted(MIGRATIONS.glob("*.sql"))).lower()
     assert "add column if not exists won" in sql
@@ -265,7 +265,7 @@ async def test_difficulty_leaderboard_aggregates_sum_per_category_and_progress_r
     assert easy_board.status_code == 200
     rows = easy_board.json()
     assert len(rows) == 3
-    # Ada & Alan both tie at 17,800 (9000+8800 vs 9500+8300); Ada wins on latency/cost tie-breaker.
+    # Ada & Alan both tie at 17,800 (9000+8800 vs 9500+8300); stars, then the date, break it.
     assert rows[0]["total_score"] == 17800
     assert rows[1]["total_score"] == 17800
     assert {r["player_name"] for r in rows[:2]} == {"Ada", "Alan"}

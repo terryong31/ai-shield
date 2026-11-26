@@ -38,7 +38,7 @@ Backend = Literal["supabase", "memory"]
 
 
 # Leaderboard scoring scale; bump when scores stop being comparable (spec 0021, 0039).
-SCORE_VERSION = 3
+SCORE_VERSION = 4
 
 _EMPTY_BOARD = BoardGraphSchema(nodes=[], edges=[])
 _LEGACY_SUMMARY_COLUMNS = (
@@ -483,19 +483,18 @@ def aggregate_difficulty_leaderboard(
                 levels_total=levels_total,
                 avg_latency_ms=round(lat_milli / 1000 / count, 2),
                 total_cost_usd=round(cost_nano / 1_000_000_000, 6),
+                reached_at=latest.created_at,
             )
         )
     entries = [e for e in entries if e.total_score > 0]
-    entries.sort(
-        key=lambda e: (
-            -e.total_score,
-            -e.levels_mastered,
-            e.avg_latency_ms,
-            e.total_cost_usd,
-            e.player_name,
-        )
-    )
+    entries.sort(key=leaderboard_sort_key)
     return entries[:limit]
+
+
+def leaderboard_sort_key(entry: DifficultyLeaderboardEntry) -> tuple[int, int, float, str]:
+    """Higher total, then more mastery stars, then the earlier date (API-FAIR-005)."""
+    reached = entry.reached_at.timestamp() if entry.reached_at is not None else float("inf")
+    return (-entry.total_score, -entry.levels_mastered, reached, entry.player_name)
 
 
 def build_player_progress(owned_scores: list[ScoreRecord]) -> PlayerProgressResponse:

@@ -209,7 +209,7 @@ describe('admin console access and routing', () => {
     }
     expect(canUseNodeKind('safety_check', freeSession)).toBe(true)
     expect(canUseNodeKind('llm_review', freeSession)).toBe(true)
-    expect(attemptsLeftLabel(freeSession)).toBe('2/3 attempts left today')
+    expect(attemptsLeftLabel(freeSession)).toBe('2 / 3 runs left today')
 
     const paidSession = {
       ...freeSession,

@@ -188,30 +188,32 @@ describe('leaderboard read scaling & my rank (spec 0044)', () => {
     ).toEqual({
       kind: 'pin',
       rank: null,
-      rankLabel: '-',
+      rankLabel: '#-',
       playerName: 'Player 7',
       totalScore: 0
     })
     expect(ownRowPlacement(entries, null, signedIn)).toEqual({ kind: 'none' })
   })
 
-  it('[WEB-LBOARD-013] [WEB-LBOARD-014] index.vue renders pinned row outside table and highlights in-list row', () => {
+  it('[WEB-LBOARD-013] [WEB-LBOARD-014] index.vue shows one own row that sticks to the bottom edge until its place in the list', () => {
     const indexPage = readFileSync(join(APP_DIR, 'pages', 'index.vue'), 'utf-8')
     const leaderboardUtil = readFileSync(join(APP_DIR, 'utils', 'leaderboard.ts'), 'utf-8')
-    expect(indexPage).toContain('ownPlacement')
-    expect(indexPage).toContain('ownPlacement.kind === \'pin\'')
     expect(indexPage).not.toContain('pin-unranked')
     expect(leaderboardUtil).not.toContain('not ranked yet')
-    expect(indexPage).toContain('ownPlacement.value.kind === \'highlight\'')
-    expect(indexPage).toContain('bg-elevated')
-    expect(indexPage).toContain('border-t border-default')
+    expect(indexPage).toContain(':data="boardRows"')
+    expect(indexPage).toMatch(/OWN_ROW_CLASS = '[^']*sticky bottom-0[^']*bg-inverted/)
+    expect(indexPage).not.toMatch(/OWN_ROW_CLASS = '[^']*ring/)
+    expect(indexPage).toContain('row.original.own ? OWN_ROW_CLASS')
+    // A scroll area around the table would stop the sticky row: the table root is the only one.
+    expect(indexPage).toMatch(/<UTable\s*class="max-h-96"\s*sticky="header"/)
+    expect(indexPage).not.toContain('max-h-96 overflow-y-auto')
   })
 
   it('[WEB-LBOARD-016] index.vue puts the rank in its own column before the player name', () => {
     const page = readFileSync(join(import.meta.dirname, '..', 'app', 'pages', 'index.vue'), 'utf-8')
     expect(page).toMatch(/id: 'rank', header: 'Rank'[^\n]*\n\s*\{ accessorKey: 'player_name'/)
     const rankCell = page.slice(page.indexOf('<template #rank-cell'), page.indexOf('<template #player_name-cell'))
-    expect(rankCell).toContain('formatRankLabel(row.index + 1)')
+    expect(rankCell).toContain('row.original.rankLabel')
     const nameCell = page.slice(page.indexOf('<template #player_name-cell'), page.indexOf('<template #total_score-cell'))
     expect(nameCell).not.toContain('formatRankLabel')
   })

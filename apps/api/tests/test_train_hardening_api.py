@@ -216,10 +216,10 @@ def test_daily_train_quotas_and_uncounted_failures(harness: Harness) -> None:
     sess2 = harness.client.get("/api/v1/auth/session").json()
     assert sess2["train_runs_used"] == 0
 
-    # Paid limit is 200 per day (seeded to 199 -> 200th OK, 201st -> 429)
+    # Paid limit is 20 per day (seeded to 19 -> 20th OK, 21st -> 429; spec 0050)
     _register_and_login(harness, "paid@example.com", paid=True)
     today = datetime.now(UTC).date().isoformat()
-    harness.container.players._usage[("paid@example.com", today)] = (0, 0, 199)  # type: ignore[attr-defined]
+    harness.container.players._usage[("paid@example.com", today)] = (0, 0, 19)  # type: ignore[attr-defined]
     assert (
         harness.client.post(
             "/api/v1/game/train", json={"algorithm": "tfidf", "csv_text": _VALID_CSV}
@@ -233,8 +233,8 @@ def test_daily_train_quotas_and_uncounted_failures(harness: Harness) -> None:
         == 429
     )
     paid_sess = harness.client.get("/api/v1/auth/session").json()
-    assert paid_sess["daily_train_limit"] == 200
-    assert paid_sess["train_runs_used"] == 200
+    assert paid_sess["daily_train_limit"] == 20
+    assert paid_sess["train_runs_used"] == 20
 
 
 @pytest.mark.spec("API-TRAIN-005")
@@ -748,7 +748,7 @@ async def test_session_model_lifecycle_ttl_single_model_and_concurrency(make_har
     )
     assert expired_run.status_code == 200
     assert expired_run.json()["untrained_model_nodes"] == ["ml"]
-    assert expired_run.json()["traces"][0]["hops"][1]["detail"] == "Model not trained"
+    assert expired_run.json()["traces"][0]["hops"][1]["handle"] == "safe"
 
     # Concurrent trains in Redis store leave exactly 1 model
     redis = FakeModelRedis(clock=h_a.clock)

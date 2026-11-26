@@ -9,6 +9,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from shield_api.schemas import (
@@ -213,20 +214,14 @@ def _board_levels_total(board: BoardName) -> int:
     return len(LEVEL_IDS_BY_DIFFICULTY[board])
 
 
-def _entry_sort_key(entry: DifficultyLeaderboardEntry) -> tuple[int, int, float, float, str]:
-    return (
-        -entry.total_score,
-        -entry.levels_mastered,
-        entry.avg_latency_ms,
-        entry.total_cost_usd,
-        entry.player_name,
-    )
+def _entry_sort_key(entry: DifficultyLeaderboardEntry) -> tuple[int, int, float, str]:
+    return scores_mod.leaderboard_sort_key(entry)
 
 
 def _decode_member_entry(
     board: BoardName, levels_total: int, raw: list[str | None]
 ) -> DifficultyLeaderboardEntry | None:
-    name, _name_at, total_s, mastered_s, solved_s, lat_s, cost_s = raw
+    name, name_at, total_s, mastered_s, solved_s, lat_s, cost_s = raw
     if (
         name is None
         or total_s is None
@@ -250,6 +245,7 @@ def _decode_member_entry(
         levels_total=levels_total,
         avg_latency_ms=round(int(lat_s) / 1000 / solved, 2),
         total_cost_usd=round(int(cost_s) / 1_000_000_000, 6),
+        reached_at=datetime.fromtimestamp(float(name_at), UTC) if name_at else None,
     )
 
 

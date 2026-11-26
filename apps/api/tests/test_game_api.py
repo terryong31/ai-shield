@@ -98,6 +98,7 @@ def test_run_level_wave_and_reject_invalid_board(harness: Harness) -> None:
 
 @pytest.mark.spec("API-GAME-003")
 def test_run_custom_message_through_board(harness: Harness) -> None:
+    # API-FAIR-002 replaced this: a campaign level rejects a single custom message.
     response = harness.client.post(
         "/api/v1/game/run",
         json={
@@ -106,11 +107,7 @@ def test_run_custom_message_through_board(harness: Harness) -> None:
             "board": _valid_board_payload(),
         },
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data["traces"]) == 1
-    assert data["traces"][0]["outcome"] == "blocked"
-    assert len(data["traces"][0]["hops"]) >= 2
+    assert response.status_code == 422
 
 
 @pytest.mark.spec("API-GAME-004")
@@ -326,34 +323,23 @@ def test_player_auth_tiers_ai_node_gate_leaderboard_recording_and_daily_quotas(
     )
     assert fourth_wave.status_code == 429
 
-    # Logged-in Free user has 20 custom single-message tests per day (spec 0020)
-    for test_idx in range(20):
-        test_res = harness.client.post(
-            "/api/v1/game/run",
-            json={
-                "level_id": "medium-1",
-                "custom_message": f"test prompt {test_idx}",
-                "board": _ai_board_payload(),
-            },
-        )
-        assert test_res.status_code == 200
-
-    eleventh_test = harness.client.post(
+    # API-FAIR-002 replaced single-message tests on campaign levels: they return 422.
+    campaign_test = harness.client.post(
         "/api/v1/game/run",
         json={
             "level_id": "medium-1",
-            "custom_message": "test prompt overflow",
+            "custom_message": "test prompt",
             "board": _ai_board_payload(),
         },
     )
-    assert eleventh_test.status_code == 429
+    assert campaign_test.status_code == 422
 
-    # 4. Upgrade to Paid raises the daily limits to 300 waves and 1000 tests (spec 0020)
+    # 4. Upgrade to Paid raises the daily wave limit to 50 (spec 0050)
     upgrade_res = harness.client.post("/api/v1/auth/upgrade")
     assert upgrade_res.status_code == 200
     upgrade_body = upgrade_res.json()
     assert upgrade_body["tier"] == "paid"
-    assert upgrade_body["daily_wave_limit"] == 300
+    assert upgrade_body["daily_wave_limit"] == 50
     assert upgrade_body["daily_test_limit"] == 1000
 
     paid_wave = harness.client.post(
@@ -587,20 +573,19 @@ def test_game_api_validates_and_runs_tool_policy_on_jev_safety_check_and_llm_rev
         json={"email": "policy@example.com", "password": "Password123", "player_name": "Policy"},
     )
     harness.container.jev_client = ScriptedJevClient(
-        replies=[JevEvaluation(probability=0.92, input_tokens=40)]
+        default=JevEvaluation(probability=0.92, input_tokens=40)
     )
     harness.container.game_agent = ScriptedUsageChatModel(
-        replies=[
-            ChatCompletion(
-                text=(
-                    '{"reply": "Payout is on the 28th.", '
-                    '"tool_calls": [{"name": "search_handbook"}, '
-                    '{"name": "read_salary_records"}], "refused": false}'
-                ),
-                input_tokens=60,
-                output_tokens=20,
-            )
-        ]
+        replies=[],
+        default=ChatCompletion(
+            text=(
+                '{"reply": "Payout is on the 28th.", '
+                '"tool_calls": [{"name": "search_handbook"}, '
+                '{"name": "read_salary_records"}], "refused": false}'
+            ),
+            input_tokens=60,
+            output_tokens=20,
+        ),
     )
 
     jev_policy_board = {
@@ -625,17 +610,13 @@ def test_game_api_validates_and_runs_tool_policy_on_jev_safety_check_and_llm_rev
     }
     ok_res = harness.client.post(
         "/api/v1/game/run",
-        json={
-            "level_id": "medium-1",
-            "custom_message": "Check salary records for me right now.",
-            "board": jev_policy_board,
-        },
+        json={"level_id": "medium-1", "board": jev_policy_board},
     )
     assert ok_res.status_code == 200
     trace = ok_res.json()["traces"][0]
     assert trace["outcome"] == "assistant"
     assert trace["hops"][1]["handle"] == "safe"
-    assert "read_salary_records" in trace["hops"][1]["detail"]
+    assert trace["hops"][1]["detail"] == ""  # API-FAIR-001 hides free-text detail
     assert trace["agent"]["tool_calls"] == ["search_handbook"]
 
 
@@ -659,7 +640,9 @@ def test_untrained_tfidf_does_not_block_and_train_rejects_empty_data(harness: Ha
     assert res.status_code == 200
     body = res.json()
     assert body["score"]["won"] is False
-    assert body["traces"][0]["hops"][1]["detail"] == "Model not trained"
+    # API-FAIR-001 hides the detail; the untrained node passes the prompt and is named.
+    assert body["traces"][0]["hops"][1]["handle"] == "safe"
+    assert body["untrained_model_nodes"] == ["ml"]
 
     _sign_in_trainer(harness, "ml2@example.com")
     missing_res = harness.client.post("/api/v1/game/train", json={"algorithm": "tfidf"})
