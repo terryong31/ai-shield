@@ -180,7 +180,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup
         with:
-          tools: supabase
+          tools: supabase uv python
           javascript: "false"
       - name: Every migration applies to a fresh database
         run: mise run db:check
