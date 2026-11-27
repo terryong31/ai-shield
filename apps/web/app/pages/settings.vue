@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { deleteConfirmed, displayNameSchema, errorDetail, passwordChangeReady } from '~/utils/account'
+import { EXPORT_FILE_NAME, deleteConfirmed, displayNameSchema, downloadJson, emailChangeSchema, errorDetail, passwordChangeReady } from '~/utils/account'
 import { ensureAuthBrowserCookie, passwordChangeSchema } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
@@ -16,7 +16,7 @@ const goBack = useGoBack()
 const toast = useToast()
 const { session, isLoggedIn, refreshSession, continueAnonymously } = usePlayerAuth()
 const { refreshScores } = useLeaderboard()
-const { changeDisplayName, changePassword, changeEmail, resetProgress, deleteAccount } = useShieldApi()
+const { changeDisplayName, changePassword, changeEmail, resetProgress, deleteAccount, exportAccount } = useShieldApi()
 
 // Account settings (spec 0025). Every action except the display name asks for the current password.
 type AccountModal = 'name' | 'email' | 'password' | 'reset' | 'delete'
@@ -70,6 +70,24 @@ const submitName = () => run(async () => {
   openModal.value = null
   toast.add({ title: 'Display name changed', icon: 'i-lucide-user-check', color: 'neutral' })
 })
+
+// The export goes straight to a download; it is never kept in browser storage (spec 0058).
+const exporting = ref(false)
+const downloadMyData = async () => {
+  exporting.value = true
+  try {
+    const data = await exportAccount()
+    downloadJson(data, EXPORT_FILE_NAME, {
+      createElement: () => document.createElement('a'),
+      createObjectURL: blob => URL.createObjectURL(blob),
+      revokeObjectURL: url => URL.revokeObjectURL(url)
+    })
+  } catch (err) {
+    toast.add({ title: 'Download failed', description: errorDetail(err), icon: 'i-lucide-triangle-alert', color: 'neutral' })
+  } finally {
+    exporting.value = false
+  }
+}
 
 const submitEmail = () => run(async () => {
   ensureAuthBrowserCookie()
@@ -202,6 +220,27 @@ onMounted(() => {
             <div class="flex items-center justify-between gap-4 py-3">
               <div>
                 <p class="text-base font-medium text-highlighted">
+                  Download my data
+                </p>
+                <p class="text-sm text-muted">
+                  A JSON file of your account, boards, scores and purchases. See the
+                  <ULink
+                    to="/privacy"
+                    class="font-medium text-highlighted"
+                  >Privacy Policy</ULink>.
+                </p>
+              </div>
+              <UButton
+                label="Download my data"
+                color="neutral"
+                variant="soft"
+                :loading="exporting"
+                @click="downloadMyData"
+              />
+            </div>
+            <div class="flex items-center justify-between gap-4 py-3">
+              <div>
+                <p class="text-base font-medium text-highlighted">
                   Reset progress
                 </p>
                 <p class="text-sm text-muted">
@@ -301,6 +340,7 @@ onMounted(() => {
     >
       <template #body>
         <UForm
+          :schema="emailChangeSchema"
           :state="emailForm"
           class="space-y-4"
           @submit="submitEmail"

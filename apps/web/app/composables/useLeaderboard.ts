@@ -8,13 +8,25 @@ import {
   LEADERBOARD_POLL_INTERVAL_MS,
   LEADERBOARD_STALE_AFTER_MS
 } from '~/utils/leaderboard'
+import { withSsrTimeout } from '~/utils/ssr'
 
-const CACHE_KEY = 'shield_leaderboard_cache_v5'
+const CACHE_KEY = 'shield_leaderboard_cache_v6'
+const DIFFICULTIES: readonly DifficultyCategory[] = ['Easy', 'Medium', 'Hard']
 
-let inFlightRefresh: Promise<void> | null = null
+type DifficultyFlags = Partial<Record<DifficultyCategory, boolean>>
+
+// Keyed by difficulty: a request for one tab must never stand in for another.
+const inFlightRefresh = new Map<DifficultyCategory, Promise<void>>()
+let cacheHydrated = false
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let visibilityListenerAttached = false
 let subscribers = 0
+
+export const useMyRanks = () =>
+  useState<Partial<Record<DifficultyCategory, LeaderboardRankResponse>>>(
+    'shield_leaderboard_my_ranks',
+    () => ({})
+  )
 
 export const useLeaderboard = () => {
   const { getLeaderboard, getMyLeaderboardRank } = useShieldApi()
@@ -28,36 +40,35 @@ export const useLeaderboard = () => {
       Hard: []
     })
   )
-  const myRanks = useState<Partial<Record<DifficultyCategory, LeaderboardRankResponse>>>(
-    'shield_leaderboard_my_ranks',
-    () => ({})
-  )
+  const myRanks = useMyRanks()
   const lastFetchedAt = useState<Partial<Record<DifficultyCategory, number>>>(
     'shield_leaderboard_fetched_at',
     () => ({})
   )
-  const hasLoaded = useState<boolean>('shield_leaderboard_loaded', () => false)
-  const loading = useState<boolean>('shield_leaderboard_loading', () => false)
+  const loadedBy = useState<DifficultyFlags>('shield_leaderboard_loaded_by_difficulty', () => ({}))
+  const loadingBy = useState<DifficultyFlags>('shield_leaderboard_loading_by_difficulty', () => ({}))
   const selectedTab = useState<LevelId>('shield_leaderboard_tab', () => 'easy-1')
   const selectedDifficulty = useState<DifficultyCategory>('shield_leaderboard_difficulty', () => 'Easy')
+  // Both follow the visible tab, so switching to an unfetched difficulty shows its own loading state.
+  const hasLoaded = computed(() => loadedBy.value[selectedDifficulty.value] === true)
+  const loading = computed(() => loadingBy.value[selectedDifficulty.value] === true)
+
+  const setFlag = (flags: Ref<DifficultyFlags>, diff: DifficultyCategory, value: boolean) => {
+    flags.value = { ...flags.value, [diff]: value }
+  }
 
   const hydrateFromCache = () => {
-    if (!import.meta.client || hasLoaded.value) return
+    if (!import.meta.client || cacheHydrated) return
+    cacheHydrated = true
     try {
       const raw = window.sessionStorage.getItem(CACHE_KEY)
       if (!raw) return
       const parsed = JSON.parse(raw) as Partial<Record<DifficultyCategory, DifficultyLeaderboardEntry[]>>
-      if (
-        Array.isArray(parsed.Easy)
-        && Array.isArray(parsed.Medium)
-        && Array.isArray(parsed.Hard)
-      ) {
-        difficultyLeaderboards.value = {
-          Easy: parsed.Easy,
-          Medium: parsed.Medium,
-          Hard: parsed.Hard
-        }
-        hasLoaded.value = true
+      for (const diff of DIFFICULTIES) {
+        const rows = parsed[diff]
+        if (!Array.isArray(rows) || loadedBy.value[diff]) continue
+        difficultyLeaderboards.value = { ...difficultyLeaderboards.value, [diff]: rows }
+        setFlag(loadedBy, diff, true)
       }
     } catch {
       // Ignore corrupt or unavailable sessionStorage.
@@ -67,7 +78,11 @@ export const useLeaderboard = () => {
   const persistToCache = () => {
     if (!import.meta.client) return
     try {
-      window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(difficultyLeaderboards.value))
+      // Only difficulties that were fetched: an unfetched empty list would read as "No scores yet".
+      const fetched = Object.fromEntries(
+        DIFFICULTIES.filter(diff => loadedBy.value[diff]).map(diff => [diff, difficultyLeaderboards.value[diff]])
+      )
+      window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(fetched))
     } catch {
       // Ignore quota or storage errors.
     }
@@ -96,16 +111,19 @@ export const useLeaderboard = () => {
     if (!force && !isStale(activeDiff)) {
       return
     }
-    if (inFlightRefresh) return inFlightRefresh
+    const pending = inFlightRefresh.get(activeDiff)
+    if (pending) return pending
 
-    const background = options?.background ?? hasLoaded.value
-    if (!background && !hasLoaded.value) {
-      loading.value = true
+    if (!loadedBy.value[activeDiff]) {
+      setFlag(loadingBy, activeDiff, true)
     }
 
-    inFlightRefresh = (async () => {
+    const request = (async () => {
       try {
-        const activeRows = await getLeaderboard(activeDiff, 25)
+        const [activeRows] = await Promise.all([
+          getLeaderboard(activeDiff, 25),
+          refreshMyRank(activeDiff)
+        ])
         difficultyLeaderboards.value = {
           ...difficultyLeaderboards.value,
           [activeDiff]: activeRows
@@ -114,18 +132,31 @@ export const useLeaderboard = () => {
           ...lastFetchedAt.value,
           [activeDiff]: Date.now()
         }
-        hasLoaded.value = true
+        setFlag(loadedBy, activeDiff, true)
         persistToCache()
-        await refreshMyRank(activeDiff)
       } catch (err) {
         console.warn('Scoreboard unavailable:', err)
       } finally {
-        loading.value = false
-        inFlightRefresh = null
+        setFlag(loadingBy, activeDiff, false)
+        inFlightRefresh.delete(activeDiff)
       }
     })()
 
-    return inFlightRefresh
+    inFlightRefresh.set(activeDiff, request)
+    return request
+  }
+
+  // Server render only: a slow gateway must not delay the page, the browser retries on mount.
+  const prefetchScores = async () => {
+    const diff = selectedDifficulty.value
+    try {
+      const rows = await withSsrTimeout(getLeaderboard(diff, 25))
+      difficultyLeaderboards.value = { ...difficultyLeaderboards.value, [diff]: rows }
+      lastFetchedAt.value = { ...lastFetchedAt.value, [diff]: Date.now() }
+      setFlag(loadedBy, diff, true)
+    } catch (err) {
+      console.warn('Scoreboard prefetch skipped:', (err as Error).message)
+    }
   }
 
   const handleVisibilityChange = () => {
@@ -180,6 +211,8 @@ export const useLeaderboard = () => {
     selectedTab,
     selectedDifficulty,
     refreshScores,
+    refreshMyRank,
+    prefetchScores,
     startPolling,
     stopPolling
   }

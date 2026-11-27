@@ -6,7 +6,10 @@ The game's check library. Root rules in [../../AGENTS.md](../../AGENTS.md) apply
 
 | Module | Responsibility | Spec |
 | --- | --- | --- |
-| `game/` | Board interpreter, check nodes, levels, AI Agent, custom sandbox, scoring | 0016, 0020–0022 |
+| `game/__init__.py` | Re-exports only; import from `shield_engine.game` | 0055 |
+| `game/types.py`, `detectors.py`, `validation.py` | Value types and the check catalogue; word filter, text cleaner and classifier fitting; board validation | 0016, 0055 |
+| `game/runner.py`, `scoring.py` | Running a prompt or a wave through a board; the legacy and fair scores | 0016, 0050, 0055 |
+| `game/levels.py`, `agent.py`, `custom.py` | Levels, the AI Agent, the custom sandbox | 0020–0022, 0051 |
 | `detectors/classifier.py` | Baseline TF-IDF + SGD classifier with a sensitive-topic floor (no check uses it since spec 0038) | 0002 |
 | `untrusted.py` | `wrap_untrusted()`: prompts reach an LLM only as inert, delimited data | 0026 |
 | `models/` | Bundled, hash-verified baseline artifacts | 0002 |

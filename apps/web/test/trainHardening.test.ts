@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Node } from '@vue-flow/core'
 import { describe, expect, it, vi } from 'vitest'
 import type { GameNodeData } from '../app/utils/gameBoard'
@@ -15,9 +13,9 @@ import {
   needsReplaceConfirmation,
   triggerBeaconPurge
 } from '../app/utils/mlTraining'
+import { readGamePage } from './support/gameSource'
 
-const APP_DIR = join(import.meta.dirname, '..', 'app')
-const gameSource = () => readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+const gameSource = () => readGamePage()
 
 const makeMlNode = (id: string, config: Record<string, unknown> = {}): Node<GameNodeData> => ({
   id,

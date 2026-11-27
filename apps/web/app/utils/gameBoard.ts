@@ -8,6 +8,7 @@ import type {
   MessageTraceSchema,
   NodeKind,
   PlayerSessionStatus,
+  RunStopSchema,
   ScoreRecord,
   WaveScoreSchema
 } from '../types/api'
@@ -269,10 +270,8 @@ export function makeGameNode(
 
 export const ALL_LEVEL_IDS: readonly LevelId[] = [
   'easy-1', 'easy-2', 'easy-3', 'easy-4', 'easy-5',
-  'medium-1', 'medium-2', 'medium-3', 'medium-4', 'medium-5',
-  'medium-6', 'medium-7', 'medium-8', 'medium-9', 'medium-10',
-  'hard-1', 'hard-2', 'hard-3', 'hard-4', 'hard-5',
-  'hard-6', 'hard-7', 'hard-8'
+  'medium-1', 'medium-2', 'medium-3', 'medium-4', 'medium-5', 'medium-6', 'medium-7',
+  'hard-1', 'hard-2', 'hard-3', 'hard-4', 'hard-5', 'hard-6', 'hard-7'
 ]
 
 const ALL_LEVEL_ID_SET = new Set<string>(ALL_LEVEL_IDS)
@@ -295,17 +294,13 @@ export const FINAL_NODE_LABELS: Record<LevelId, string> = {
   'medium-5': 'Protected Agent',
   'medium-6': 'Protected Agent',
   'medium-7': 'Protected Agent',
-  'medium-8': 'Protected Agent',
-  'medium-9': 'Protected Agent',
-  'medium-10': 'Protected Agent',
   'hard-1': 'Protected Agent',
   'hard-2': 'Protected Agent',
   'hard-3': 'Protected Agent',
   'hard-4': 'Protected Agent',
   'hard-5': 'Protected Agent',
   'hard-6': 'Protected Agent',
-  'hard-7': 'Protected Agent',
-  'hard-8': 'Protected Agent'
+  'hard-7': 'Protected Agent'
 }
 
 export function isClassifyOnlyLevel(levelId: LevelId): boolean {
@@ -676,27 +671,129 @@ export function nextHighScore(previous: number | null, score: number): number {
 export function attemptsLeftLabel(session: PlayerSessionStatus): string {
   const left = runsRemaining(session, 'wave')
   if (left === null) return ''
-  return `${left}/${session.daily_wave_limit} attempts left today`
+  return `${left} / ${session.daily_wave_limit} runs left today`
 }
 
+/**
+ * The score parts of a run (WEB-FAIR-002). A cleared run shows the five parts of the
+ * spec 0050 formula; a run that did not clear has one part, from attacks and normal prompts.
+ */
 export function scoreBreakdown(
   score: WaveScoreSchema,
-  levelId?: LevelId
+  _levelId?: LevelId
 ): Array<{ label: string, points: number }> {
-  const agentRows = levelId && isClassifyOnlyLevel(levelId)
-    ? []
-    : [
-        { label: 'Tool use', points: score.tool_points },
-        { label: 'Tokens', points: score.token_points }
-      ]
+  if (!score.won) {
+    return [{ label: 'Attacks and normal prompts', points: score.total_score }]
+  }
   return [
-    { label: 'Protection', points: score.protection_points },
-    { label: 'Helpfulness', points: score.helpfulness_points },
-    ...agentRows,
+    { label: 'Cleared', points: score.cleared_points ?? 0 },
+    { label: 'Accuracy', points: score.accuracy_points ?? 0 },
     { label: 'Speed', points: score.speed_points },
     { label: 'Cost', points: score.cost_points },
-    { label: 'Leak penalty', points: -score.leak_penalty }
+    { label: 'Simplicity', points: score.simplicity_points ?? 0 }
   ]
+}
+
+/** The stat boxes above the points; agent tokens only where the level has an agent. */
+export function breakdownStats(
+  score: WaveScoreSchema,
+  levelId: LevelId
+): Array<{ icon: string, label: string, value: string }> {
+  const stats = [
+    { icon: 'i-lucide-timer', label: 'Avg latency', value: `${score.avg_latency_ms.toFixed(1)} ms` },
+    { icon: 'i-lucide-coins', label: 'Cost', value: `$${score.total_cost_usd.toFixed(4)}` }
+  ]
+  if (!isClassifyOnlyLevel(levelId)) {
+    stats.push({ icon: 'i-lucide-cpu', label: 'Agent tokens', value: score.total_tokens.toLocaleString() })
+  }
+  return stats
+}
+
+function formatMs(ms: number): string {
+  return `${Number(ms.toFixed(2))} ms`
+}
+
+function formatUsd(usd: number): string {
+  return `$${Number(usd.toFixed(5))}`
+}
+
+/** One sentence for a run that a limit stopped (WEB-FAIR-003). */
+export function stopSummary(
+  stop: RunStopSchema,
+  promptCount: number,
+  labelFor: (nodeId: string) => string
+): string {
+  const where = `at prompt ${stop.prompt_index} of ${promptCount}`
+  if (stop.reason === 'time_limit') {
+    const step = stop.path.find(s => s.node_id === stop.node_id)
+    const takes = step ? formatMs(step.latency_ms) : formatMs(stop.used)
+    return `Time limit exceeded ${where}: ${labelFor(stop.node_id)} takes ${takes}, the limit is ${formatMs(stop.limit)}.`
+  }
+  return `Budget exceeded ${where}: ${labelFor(stop.node_id)} takes the run to ${formatUsd(stop.used)}, the budget is ${formatUsd(stop.limit)}.`
+}
+
+const FAMILY_NAMES: Record<string, string> = {
+  normal: 'Normal request'
+}
+
+/** A prompt family as a player reads it: `tool_exploit` is `Tool exploit`. */
+export function familyName(category: string): string {
+  const known = FAMILY_NAMES[category]
+  if (known) return known
+  const words = category
+    .replace(/_s_/g, '\'s_')
+    .split('_')
+    .filter(Boolean)
+    .map(word => FAMILY_WORDS[word] ?? word)
+    .join(' ')
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Prompt'
+}
+
+/** Words that keep their own capitals in a family label. */
+const FAMILY_WORDS: Record<string, string> = { url: 'URL', sql: 'SQL', base64: 'Base64', ml: 'ML', llm: 'LLM' }
+
+/**
+ * Rows of a result cell (WEB-FAIR-004): the prompt number, its family and the node that
+ * stopped it. Campaign prompts stay hidden, so there is no text and no badge.
+ */
+export function promptRows(
+  items: MessageTraceSchema[],
+  wave: MessageTraceSchema[],
+  labelFor: (nodeId: string) => string
+): Array<{ key: string, title: string, detail: string }> {
+  return items.map((item) => {
+    const number = wave.findIndex(t => t.message_id === item.message_id) + 1
+    const stopper = [...item.hops].reverse().find(h => h.handle === 'block')
+    let detail = ''
+    if (stopper) {
+      const score = stopper.score ?? null
+      const scoreText = score === null ? '' : ` (score ${Number(score.toFixed(2))})`
+      detail = `Stopped by ${labelFor(stopper.node_id)}${scoreText}`
+    } else if (item.outcome === 'assistant') {
+      detail = item.agent?.verdict === 'protected' ? 'Refused by the agent' : 'Got through'
+    }
+    return { key: item.message_id, title: `Prompt ${number} · ${familyName(item.category ?? '')}`, detail }
+  })
+}
+
+/**
+ * The prompts of a results cell, one group a family in wave order (owner, 2026-11-27).
+ */
+export function promptGroups(
+  items: MessageTraceSchema[],
+  wave: MessageTraceSchema[],
+  labelFor: (nodeId: string) => string
+): Array<{ family: string, rows: Array<{ key: string, title: string, detail: string }> }> {
+  const byFamily = new Map<string, Array<{ key: string, title: string, detail: string }>>()
+  const rows = promptRows(items, wave, labelFor)
+  items.forEach((item, index) => {
+    const family = familyName(item.category ?? '')
+    const row = rows[index]!
+    const group = byFamily.get(family) ?? []
+    group.push({ ...row, title: row.title.split(' · ')[0]! })
+    byFamily.set(family, group)
+  })
+  return [...byFamily].map(([family, groupRows]) => ({ family, rows: groupRows }))
 }
 
 export function resolveConsoleAccess(status: ClearanceStatus): {
@@ -769,16 +866,16 @@ export function waveOutcomeSummary(score: WaveScoreSchema): string {
   if (score.won) {
     return 'All attacks stopped and all normal prompts helped.'
   }
+  const reasons: string[] = []
   if (score.attacks_leaked > 0 && score.false_alarms > 0) {
-    return `${score.attacks_leaked} attack(s) got through and ${score.false_alarms} normal prompt(s) were blocked.`
+    reasons.push(`${score.attacks_leaked} attack(s) got through and ${score.false_alarms} normal prompt(s) were blocked.`)
+  } else if (score.attacks_leaked > 0) {
+    reasons.push(`${score.attacks_leaked} attack(s) got into the system.`)
+  } else if (score.false_alarms > 0) {
+    reasons.push(`${score.false_alarms} normal prompt(s) were blocked or refused.`)
   }
-  if (score.attacks_leaked > 0) {
-    return `${score.attacks_leaked} attack(s) got into the system.`
-  }
-  if (score.false_alarms > 0) {
-    return `${score.false_alarms} normal prompt(s) were blocked or refused.`
-  }
-  return 'Defeat'
+  reasons.push(...(score.constraint_violations ?? []))
+  return reasons.join(' ') || 'Defeat'
 }
 
 export interface ConfusionMatrix {
@@ -817,7 +914,7 @@ export interface PlanCard {
   highlight: boolean
   badge?: string
   terms?: string
-  button?: { label: string, to?: string, disabled?: boolean, color: 'neutral', variant: 'solid' | 'outline' }
+  button?: { label: string, to?: string, disabled?: boolean, loading?: boolean, color: 'neutral', variant: 'solid' | 'outline' }
   /** Set when the button upgrades the player instead of linking somewhere. */
   action?: 'upgrade' | 'checkout'
 }
@@ -825,7 +922,7 @@ export interface PlanCard {
 /** Plans shown on /plans (WEB-GAME-014). Limits mirror the gateway's DAILY_LIMITS. */
 export function planCards(
   session: PlayerSessionStatus,
-  options: { selfUpgradeEnabled?: boolean, billingEnabled?: boolean } = {}
+  options: { selfUpgradeEnabled?: boolean, billingEnabled?: boolean, pending?: boolean } = {}
 ): PlanCard[] {
   const selfUpgradeEnabled = options.selfUpgradeEnabled ?? true
   const anonymous = session.is_anonymous || session.tier === 'anonymous'
@@ -837,7 +934,7 @@ export function planCards(
     description: 'For players who sign in.',
     price: '$0',
     highlight: false,
-    features: ['5 wave runs a day', '20 tests a day', 'AI agent tools', 'Scores on the leaderboard']
+    features: ['5 wave runs a day', 'Easy 1 to 3 and Medium 1 to 2', 'AI agent tools', 'Scores on the leaderboard']
   }
   const paid: PlanCard = {
     title: 'Paid',
@@ -846,14 +943,15 @@ export function planCards(
     billingCycle: '/month',
     highlight: true,
     features: [
-      '300 wave runs a day',
-      '1,000 tests a day',
+      '50 wave runs a day',
+      'All 19 campaign levels',
       'Everything in Free',
       'Custom sandbox with your own dataset and model key'
     ]
   }
 
-  if (options.billingEnabled) {
+  // The usual price holds while the state loads, so nothing moves when it arrives (WEB-BILL-006).
+  if (options.billingEnabled || options.pending) {
     Object.assign(paid, {
       price: '$5',
       billingCycle: '/30 days',
@@ -862,6 +960,11 @@ export function planCards(
   }
 
   if (anonymous) return [{ ...free, button: signIn }, { ...paid, button: { ...signIn, variant: 'solid' } }]
+  if (options.pending) {
+    const label = session.tier === 'paid' ? 'Extend' : 'Buy 30-day pass'
+    const button = { label, disabled: true, loading: true, color: 'neutral' as const, variant: 'solid' as const }
+    return [session.tier === 'paid' ? free : { ...free, button: current }, { ...paid, button }]
+  }
   if (session.tier === 'paid') {
     if (!options.billingEnabled || !session.paid_until) return [free, { ...paid, button: current }]
     return [free, {

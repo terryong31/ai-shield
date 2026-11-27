@@ -77,6 +77,7 @@ Only cards (and card wallets) are accepted, and adaptive pricing is off, so paym
 - **WEB-BILL-001**: Given `/plans` and a signed-in player with billing on, then Paid shows `$5 / 30 days` with `One payment, does not renew` in its feature list, Free shows `$0` with no billing cycle, and `Buy 30-day pass` redirects to the Stripe URL; with billing off, `Coming soon`.
 - **WEB-BILL-002**: Given a return with `checkout=success`, then the page removes the query, polls the session for at most 20 seconds, and shows success only when the tier is `paid`; `checkout=cancelled` changes nothing.
 - **WEB-BILL-003**: Given an active pass, then `/plans` shows the end date and an `Extend` button.
+- **WEB-BILL-006**: Given a page load of `/plans`, then the server render has the billing state (at most 800 ms wait). Until the billing state is known, Paid shows `$5 / 30 days` and all its features with a loading button, so the price and the feature list do not change after the page loads. Until the session is confirmed, a Paid player also sees a loading button.
 - **API-BILL-011**: Given a new checkout, then the Stripe session expires 30 to 35 minutes after creation, accepts only `card`, and has adaptive pricing off.
 - **API-BILL-012**: Given a player with an open session, when they start checkout again, then the response has the same Stripe URL and no second session is created; when another request is creating a session at the same time, then the response is `409`.
 - **API-BILL-013**: Given `POST /billing/sync` with `cancel: true` and an open session, then Stripe expires it and the purchase is `expired`; given the session was paid, then the pass is granted once and the state is `paid`.
@@ -92,6 +93,7 @@ Only cards (and card wallets) are accepted, and adaptive pricing is off, so paym
 - **API-BILL-023**: Given Stripe is unavailable while the gateway checks an open session, then checkout and sync return `503` and no second session is created; account deletion continues.
 - **WEB-BILL-004**: Given a return with `checkout=cancelled`, then the page calls sync with `cancel: true`; each visit by a signed-in player with billing on calls sync once.
 - **WEB-BILL-005**: Given a page restored from the back-forward cache, then the buy button is not loading; given a return with `checkout=success` and no signed-in session, then the toast asks the player to sign in.
+- **WEB-BILL-007**: Given a signed-in player, then the main menu always links to `/plans`: `Upgrade Plan` on Free and `Manage Plan` on Paid.
 
 ## Security & privacy considerations
 
@@ -134,5 +136,19 @@ None. The owner chose the 30-day pass, USD 5, and sandbox in both environments w
 
 - Criteria: API-BILL-011
 - Red: 1 failing test(s) before implementation (`apps/api/tests/test_billing.py::test_session_expires_soon_and_takes_only_cards_in_usd`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-25 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-BILL-006
+- Red: 1 failing test(s) before implementation (`Stripe pass checkout (spec 0049) [WEB-BILL-006] keeps the price and features stable until the billing state is known`)
+- Green: 1 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-26 · commit 7d6a8d9 (+ uncommitted changes)
+
+- Criteria: WEB-BILL-007
+- Red: 1 failing test(s) before implementation (`Stripe pass checkout (spec 0049) [WEB-BILL-007] links every signed-in player to the plans from the main menu`)
 - Green: 1 passing test(s)
 - Gate: `mise run check` passed

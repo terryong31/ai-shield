@@ -151,6 +151,8 @@ display, saves, plans, console stats) lives as pure functions in
 
 The first server render uses `shield_session_hint`, a display-only cookie with the player name, tier and
 feature flags. `GET /auth/session` corrects it in the background. The gateway ignores the cookie.
+The own leaderboard row shows the player name first, then the rank from the gateway. The server render
+also loads the leaderboard rows and the billing state from the gateway. It waits 800 ms at most, then the browser loads them.
 
 ## Related
 

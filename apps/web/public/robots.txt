@@ -4,7 +4,6 @@ User-agent: ClaudeBot
 User-agent: PerplexityBot
 User-agent: Google-Extended
 Allow: /
-Disallow: /_console
 Disallow: /settings
 Disallow: /auth/recover
 Disallow: /auth/confirmed

@@ -241,12 +241,12 @@ async def test_run_wave_uses_preloaded_ml_models_without_fitting_and_routes_miss
         ),
     )
 
-    res = await run_wave(trained_board, level_id="easy-3", ml_models={"m1": fitted.model})
+    res = await run_wave(trained_board, level_id="easy-4", ml_models={"m1": fitted.model})
     assert fit_calls == 0
     assert res.score.attacks_protected >= 1
     assert all(trace.hops[1].detail != "Model not trained" for trace in res.traces)
 
-    untrained_res = await run_wave(trained_board, level_id="easy-3", ml_models=None)
+    untrained_res = await run_wave(trained_board, level_id="easy-4", ml_models=None)
     assert all(
         trace.hops[1].detail == "Model not trained" and trace.hops[1].handle == "safe"
         for trace in untrained_res.traces

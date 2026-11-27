@@ -72,8 +72,10 @@ def _prod_harness(
         SESSION_COOKIE_SECURE=False,
         TRUSTED_CLIENT_IP_HEADER=trusted_ip_header,
         TRUSTED_PROXY_SECRET=SecretStr(trusted_proxy_secret) if trusted_proxy_secret else None,
-        REDIS_URL=SecretStr("redis://localhost:6379/0") if app_env == "production" else None,
-        MODEL_SIGNING_KEY=SecretStr("test-signing-key") if app_env == "production" else None,
+        REDIS_URL=SecretStr("rediss://localhost:6379/0") if app_env == "production" else None,
+        MODEL_SIGNING_KEY=SecretStr("test-signing-key-" + "k" * 16)
+        if app_env == "production"
+        else None,
     )
     limiter = RateLimiter(redis_client=redis_client, clock=clk)
     container = Container(
@@ -117,6 +119,8 @@ def _headers(
         "x-shield-client-ip": ip,
         "x-shield-proxy-secret": secret,
         "x-shield-botid": botid,
+        # A browser behind the web proxy labels its requests (spec 0054).
+        "sec-fetch-site": "same-origin",
     }
 
 
@@ -185,7 +189,7 @@ def test_anonymous_route_allows_30_per_hour_and_limits_31st_with_no_cookie() -> 
 @pytest.mark.spec("API-RATE-003")
 @pytest.mark.spec("API-RATE-004")
 @pytest.mark.spec("API-RATE-005")
-def test_failed_login_per_email_limits_after_10_resets_after_window_and_ignores_successes() -> None:
+def test_failed_login_per_email_limits_after_10_resets_after_window_and_on_success() -> None:
     client, _, auth, clk, _ = _prod_harness()
     with client:
         user = auth.add("ada@example.com", "StrongPass1")
@@ -207,13 +211,15 @@ def test_failed_login_per_email_limits_after_10_resets_after_window_and_ignores_
             )
             assert ok.status_code == 200
 
-        # 10th failure fills bucket; 11th returns 429 without verifying (API-RATE-003)
-        tenth = client.post(
-            "/api/v1/auth/login",
-            json={"email": "ada@example.com", "password": "WrongPass1"},
-            headers=_headers("203.0.113.99"),
-        )
-        assert tenth.status_code == 401
+        # A valid sign-in reset the count (API-SEC-003), so 10 new failures fill the bucket;
+        # the 11th returns 429 without verifying (API-RATE-003).
+        for i in range(10):
+            failed = client.post(
+                "/api/v1/auth/login",
+                json={"email": "ada@example.com", "password": "WrongPass1"},
+                headers=_headers(f"203.0.113.{i + 60}"),
+            )
+            assert failed.status_code == 401
         auth.calls.clear()
         eleventh = client.post(
             "/api/v1/auth/login",
@@ -489,14 +495,15 @@ def test_unset_trusted_header_ignores_forwarded_headers() -> None:
 
 
 @pytest.mark.spec("API-IP-002")
-def test_trusted_header_without_secret_reads_first_ip_entry() -> None:
+def test_trusted_header_without_secret_uses_the_peer() -> None:
+    # API-SEC-002 replaced this: with no proxy secret the header is not trusted.
     s = Settings(
         _env_file=None, TRUSTED_CLIENT_IP_HEADER="x-shield-client-ip", TRUSTED_PROXY_SECRET=None
     )
     req = _fake_request(
         {"x-shield-client-ip": "198.51.100.1, 10.0.0.1"}, peer="127.0.0.5", settings=s
     )
-    assert client_address(req, s) == "198.51.100.1"
+    assert client_address(req, s) == "127.0.0.5"
 
 
 @pytest.mark.spec("API-IP-003")
@@ -550,12 +557,14 @@ def test_clearance_attempt_limiter_uses_trusted_client_ip_per_address() -> None:
         )
         assert locked.status_code == 429
 
-        other_ok = client.post(
+        # Another address keeps its own budget. The admin email is now limited too
+        # (API-SEC-003), so the other address tries another email.
+        other = client.post(
             "/api/v1/clearance",
-            json={"email": "admin@example.com", "password": "admin-pass"},
+            json={"email": "someone@example.com", "password": "wrong"},
             headers=_headers("203.0.113.2"),
         )
-        assert other_ok.status_code == 200
+        assert other.status_code == 401
 
 
 @pytest.mark.spec("API-BOTID-001")
@@ -656,9 +665,11 @@ def test_production_without_proxy_secret_refuses_protected_routes_and_logs_error
 def test_production_unprotected_routes_ignore_missing_botid_headers() -> None:
     client, *_ = _prod_harness()
     with client:
-        assert client.get("/api/v1/game/levels").status_code == 200
-        assert client.get("/api/v1/auth/session").status_code == 200
-        assert client.post("/api/v1/auth/logout").status_code == 204
+        # The proxy secret is required everywhere in production (API-SEC-013); BotID is not.
+        proxied = {"x-shield-proxy-secret": "s3cret", "sec-fetch-site": "same-origin"}
+        assert client.get("/api/v1/game/levels", headers=proxied).status_code == 200
+        assert client.get("/api/v1/auth/session", headers=proxied).status_code == 200
+        assert client.post("/api/v1/auth/logout", headers=proxied).status_code == 204
 
 
 @pytest.mark.spec("API-PROD-002")
@@ -735,7 +746,7 @@ def test_production_with_supabase_and_redis_succeeds(monkeypatch: pytest.MonkeyP
             WEB_BASE_URL="https://ai-shield.example",
             SUPABASE_URL="https://example.supabase.co",
             SUPABASE_KEY=SecretStr("service-key"),
-            REDIS_URL=SecretStr("redis://localhost:6379/0"),
+            REDIS_URL=SecretStr("rediss://localhost:6379/0"),
             TRUSTED_CLIENT_IP_HEADER="x-shield-client-ip",
             TRUSTED_PROXY_SECRET=SecretStr("s3cret"),
         )
@@ -767,7 +778,7 @@ def test_production_build_container_requires_trusted_ip_header_and_proxy_secret(
                     APP_ENV="production",
                     SUPABASE_URL="https://example.supabase.co",
                     SUPABASE_KEY=SecretStr("service-key"),
-                    REDIS_URL=SecretStr("redis://localhost:6379/0"),
+                    REDIS_URL=SecretStr("rediss://localhost:6379/0"),
                     **overrides,
                 )
             )

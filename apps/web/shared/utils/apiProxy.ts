@@ -5,6 +5,9 @@ import { BOTID_PROTECTED_ROUTES } from './botid'
  * web-standard Request/Response so it is testable with a fake fetch.
  */
 const PREFIX = '/api/v1/'
+const WEBHOOK_PATH = '/api/v1/billing/webhook'
+// Above the 1.25 MiB training CSV limit; the gateway keeps its own per-route caps (spec 0053).
+export const MAX_PROXY_BODY_BYTES = 2 * 1024 * 1024
 
 const HOP_BY_HOP = new Set([
   'connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'te', 'trailer'
@@ -20,6 +23,32 @@ const json = (status: number, detail: string) =>
   })
 
 const notFound = () => json(404, 'Not found.')
+const tooLarge = () => json(413, 'Request body too large.')
+
+/** The body, or null once it passes the limit; reads the stream so a missing length cannot hide it. */
+async function readBoundedBody(request: Request, limit: number): Promise<ArrayBuffer | null> {
+  if (!request.body) return new ArrayBuffer(0)
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > limit) {
+      await reader.cancel()
+      return null
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out.buffer
+}
 const unavailable = () => json(502, 'Gateway unavailable.')
 
 const isSafeSegment = (segment: string): boolean => {
@@ -115,12 +144,23 @@ export async function proxyToGateway(
   const method = request.method.toUpperCase()
   const parsedRequestUrl = new URL(request.url)
   const { pathname } = parsedRequestUrl
-  if (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE') {
+  // Stripe signs its webhook and posts it server to server, with no browser headers;
+  // the gateway checks the signature, so the webhook skips the browser checks.
+  const isWebhook = method === 'POST' && pathname === WEBHOOK_PATH
+  if (!isWebhook && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')) {
+    // Only same-origin pages and direct navigation may change state (spec 0053).
     const fetchSite = request.headers.get('sec-fetch-site')?.trim().toLowerCase()
     const originHeader = request.headers.get('origin')?.trim()
-    if (fetchSite === 'cross-site' || (originHeader && originHeader !== parsedRequestUrl.origin)) {
+    const foreignSite = fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none'
+    const foreignOrigin = Boolean(originHeader) && originHeader !== parsedRequestUrl.origin
+    const unlabelled = options.requireProxyTrust === true && !originHeader && fetchSite === undefined
+    if (foreignSite || foreignOrigin || unlabelled) {
       return json(403, 'Cross-site request blocked.')
     }
+  }
+  const declaredLength = Number(request.headers.get('content-length') ?? '0')
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_PROXY_BODY_BYTES) {
+    return tooLarge()
   }
   const reqHeaders = forwardableRequestHeaders(request.headers)
 
@@ -143,7 +183,12 @@ export async function proxyToGateway(
     }
   }
 
-  const body = method === 'GET' || method === 'HEAD' ? undefined : await request.arrayBuffer()
+  let body: ArrayBuffer | undefined
+  if (method !== 'GET' && method !== 'HEAD') {
+    const bounded = await readBoundedBody(request, MAX_PROXY_BODY_BYTES)
+    if (bounded === null) return tooLarge()
+    body = bounded
+  }
 
   let upstream: Response
   try {

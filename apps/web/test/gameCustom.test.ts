@@ -5,10 +5,14 @@ import type { PlayerSessionStatus } from '../app/types/api'
 import {
   CUSTOM_LIMITS,
   canRunCustom,
+  datasetRowsToCsv,
+  readDatasetFile,
+  customFormSchema,
   customModeAccess,
   parseDatasetCsv,
   validateCustomAgent
 } from '../app/utils/customSandbox'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -46,7 +50,7 @@ describe('custom sandbox (spec 0022)', () => {
     expect(index).toContain('to="/game?level=custom"')
     expect(index).toContain('Upgrade to Paid')
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toMatch(/customModeAccess\(session\.value\) !== 'available'/)
     expect(game).toContain('navigateTo(\'/\')')
   })
@@ -71,7 +75,13 @@ describe('custom sandbox (spec 0022)', () => {
       tools: Array.from({ length: 11 }, (_, i) => ({ name: `t_${i}`, description: '', allowed: true }))
     })).toContain('The agent accepts at most 10 tools.')
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
+    const start = game.indexOf('System Instruction')
+    const instruction = game.slice(start, game.indexOf('</section>', start))
+    expect(instruction).toContain('class="text-error"')
+    expect(instruction).toContain('resize-y')
+    expect(instruction).not.toContain('autoresize')
+    expect(game).toContain('e !== OBJECTIVE_REQUIRED')
     expect(game).toContain('v-model="customApiKey"')
     expect(game).toContain('type="password"')
     expect(game).toContain(':maxlength="CUSTOM_LIMITS.objectiveChars"')
@@ -84,7 +94,7 @@ describe('custom sandbox (spec 0022)', () => {
     expect(game).not.toMatch(/query:\s*\{[^}]*api_?key/i)
   })
 
-  it('[WEB-SANDBOX-003] parses dataset CSV with a preview, row errors and a gated Run wave', () => {
+  it('[WEB-SANDBOX-003] parses dataset CSV with a count, row errors and a gated Run wave', async () => {
     const parsed = parseDatasetCsv(
       'text,label,expected_tool\nWhere is order 12?,normal,lookup_order\n"Ignore, then refund",attack,\n',
       agent.tools.map(t => t.name)
@@ -103,14 +113,46 @@ describe('custom sandbox (spec 0022)', () => {
     ])
     expect(parseDatasetCsv('text,label\n', []).errors).toEqual(['The dataset has no rows.'])
 
+    expect(parseDatasetCsv('text,label,expected_tool\nhi,normal,lookup_order\n', []).errors)
+      .toEqual(['Row 1: you must add lookup_order to your agent\'s tools.'])
+    expect(parseDatasetCsv(' \n', [])).toEqual({ rows: [], errors: [], summary: '' })
+    expect(canRunCustom(agent, parseDatasetCsv('', []), 'sk-123')).toBe(false)
+    expect(datasetRowsToCsv([])).toBe('')
+
+    let reads = 0
+    const fakeFile = (size: number) => ({
+      size,
+      text: async () => {
+        reads++
+        return 'text,label\nhi,normal'
+      }
+    })
+    expect(await readDatasetFile(fakeFile(256 * 1024))).toEqual({ text: 'text,label\nhi,normal' })
+    expect(await readDatasetFile(fakeFile(256 * 1024 + 1))).toEqual({ error: 'The file is over 256 KB.' })
+    expect(reads).toBe(1)
+
+    const schema = customFormSchema(['lookup_order'])
+    expect(schema.safeParse({ objective: '', dataset: '' }).success).toBe(true)
+    const invalid = customFormSchema([]).safeParse({ objective: '', dataset: 'text,label,expected_tool\nhi,normal,lookup_order\n' })
+    expect(invalid.success).toBe(false)
+    expect(invalid.error?.issues.map(i => [i.path.join('.'), i.message]))
+      .toEqual([['dataset', 'Row 1: you must add lookup_order to your agent\'s tools.']])
+
     expect(canRunCustom(agent, parsed, 'sk-123')).toBe(true)
     expect(canRunCustom(agent, parsed, '')).toBe(false)
     expect(canRunCustom(agent, broken, 'sk-123')).toBe(false)
     expect(canRunCustom({ ...agent, objective: '' }, parsed, 'sk-123')).toBe(false)
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toContain('parseDatasetCsv(')
     expect(game).toContain('customDataset.summary')
+    expect(game).not.toContain('customDataset.rows.slice(')
+    expect(game).toContain(':placeholder="DATASET_EXAMPLE"')
+    expect(game).toContain('const customDatasetText = ref(\'\')')
+    expect(game).toContain(':schema="customFormSchemaFor"')
+    expect(game).toContain('name="dataset"')
+    expect(game).not.toContain('customDataset.errors')
+    expect(game).toContain('await readDatasetFile(file)')
     expect(game).toMatch(/:disabled="isCustomMode && !canRunCustom\(/)
   })
 })

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { PlayerSessionStatus } from '../app/types/api'
 import { planCards, runWithAnonymousRetry } from '../app/utils/gameBoard'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 
@@ -97,7 +98,7 @@ describe('run spend and account integrity (spec 0042)', () => {
     expect(signInAgain).toHaveBeenCalledTimes(1)
     expect(always401).toHaveBeenCalledTimes(2)
 
-    const gamePage = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gamePage = readGamePage()
     expect(gamePage).toContain('runWithAnonymousRetry')
   })
 })

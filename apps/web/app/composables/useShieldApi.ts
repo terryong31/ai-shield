@@ -4,6 +4,7 @@ import type {
   AccountPasswordRequest,
   AccountProfileRequest,
   AccountResetRequest,
+  AccountExportResponse,
   AccountResetResponse,
   BillingCheckoutResponse,
   BillingSyncResponse,
@@ -43,7 +44,10 @@ import type {
 export const useShieldApi = () => {
   // Same origin: the web server proxies to the gateway, so the HttpOnly player and
   // admin session cookies are first-party (specs 0012, 0016, 0041).
-  const api = $fetch.create({ baseURL: SHIELD_API_PREFIX, credentials: 'include' })
+  // A server render passes only the client address, which the proxy needs; never cookies.
+  const clientIpHeader = import.meta.server ? String(useRuntimeConfig().clientIpHeader ?? '').trim().toLowerCase() : ''
+  const headers = clientIpHeader ? useRequestHeaders([clientIpHeader]) as Record<string, string> : undefined
+  const api = $fetch.create({ baseURL: SHIELD_API_PREFIX, credentials: 'include', headers })
 
   return {
     getClearance: () => api<ClearanceStatus>('/clearance'),
@@ -79,6 +83,9 @@ export const useShieldApi = () => {
       api<PlayerConfirmationResponse>('/auth/account/email', { method: 'POST', body }),
     resetProgress: (body: AccountResetRequest) =>
       api<AccountResetResponse>('/auth/account/reset-progress', { method: 'POST', body }),
+    // Everything the gateway holds about the player (spec 0058).
+    exportAccount: () =>
+      api<AccountExportResponse>('/auth/account/export'),
     deleteAccount: (body: AccountDeleteRequest) =>
       api('/auth/account', { method: 'DELETE', body }),
     getLevels: () => api<GameCatalogResponse>('/game/levels'),

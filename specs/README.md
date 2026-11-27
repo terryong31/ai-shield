@@ -122,6 +122,15 @@ Check locally with `mise run spec:check`.
 | 0047 | [Auth flows and hardening](0047-auth-flows-and-hardening/spec.md) | API, WEB | Implemented |
 | 0048 | [Display name](0048-display-name/spec.md) | API, WEB | Implemented |
 | 0049 | [Stripe pass checkout (sandbox)](0049-stripe-pass-checkout/spec.md) | API, WEB | Implemented |
+| 0050 | [Fair scoring and the scored run](0050-campaign-redesign/spec.md) | ENG, API, WEB | Implemented |
+| 0051 | [Campaign levels v2](0051-campaign-levels-v2/spec.md) | ENG, API, WEB | Implemented |
+| 0052 | [Anonymous draft persistence and server-side score promotion](0052-anonymous-draft-persistence/spec.md) | API, WEB | Implemented |
+| 0053 | [Frontend security hardening](0053-frontend-security-hardening/spec.md) | WEB | Implemented |
+| 0054 | [Backend security hardening](0054-backend-security-hardening/spec.md) | ENG, API | Implemented |
+| 0055 | [Portfolio readiness and codebase modularisation](0055-portfolio-readiness/spec.md) | ENG, WEB, DEV | Implemented |
+| 0056 | [Database tests](0056-database-tests/spec.md) | API, DEV | Implemented |
+| 0057 | [k6 load testing](0057-k6-load-testing/spec.md) | DEV, API | Implemented |
+| 0058 | [Privacy policy and player data controls](0058-privacy-policy/spec.md) | API, WEB | Implemented |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

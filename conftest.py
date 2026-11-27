@@ -45,7 +45,18 @@ def pytest_collectreport(report: pytest.CollectReport) -> None:
         )
 
 
+def _deselect_db_tests(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Database tests need local Supabase, so they run only when asked for (spec 0056)."""
+    if "db" in (config.option.markexpr or "") or _session.wanted:
+        return
+    kept = [item for item in items if item.get_closest_marker("db") is None]
+    if len(kept) != len(items):
+        config.hook.pytest_deselected(items=[i for i in items if i not in kept])
+        items[:] = kept
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    _deselect_db_tests(config, items)
     if not _session.wanted:
         return
     selected, deselected = [], []

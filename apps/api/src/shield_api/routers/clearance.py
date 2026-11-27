@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from shield_api.dependencies import SESSION_COOKIE, ContainerDep, client_address
 from shield_api.schemas import ClearanceRequest, ClearanceStatus
+from shield_api.services.audit import audit
 from shield_api.services.rate_limit import RateLimitExceededError
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,25 @@ async def grant_clearance(
     """
     settings = container.settings
     client = client_address(request)
+    email = body.email.strip().lower()
     window_seconds = settings.CLEARANCE_WINDOW_MINUTES * 60
+
+    # Failures count per email as well as per address, so many IPs cannot share one guess
+    # budget (spec 0054).
+    try:
+        await container.rate_limiter.check_only(
+            "clearance_email_fail",
+            email,
+            limit=settings.CLEARANCE_MAX_ATTEMPTS,
+            window_seconds=window_seconds,
+        )
+    except RateLimitExceededError as err:
+        audit("clearance.denied", outcome="rate_limited", actor=email, client=client, warning=True)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            TOO_MANY,
+            headers={"Retry-After": str(err.retry_after)},
+        ) from None
 
     if container.rate_limiter._redis is not None:
         try:
@@ -55,9 +74,13 @@ async def grant_clearance(
             status.HTTP_429_TOO_MANY_REQUESTS, TOO_MANY, headers={"Retry-After": str(retry_after)}
         )
 
-    admin = await container.admins.authenticate(body.email.strip().lower(), body.password)
+    admin = await container.admins.authenticate(email, body.password)
     if admin is None:
         container.attempts.record_failure(client)
+        await container.rate_limiter.record_failure(
+            "clearance_email_fail", email, window_seconds=window_seconds
+        )
+        audit("clearance.denied", outcome="invalid", actor=email, client=client, warning=True)
         if container.rate_limiter._redis is not None:
             await container.rate_limiter.record_failure(
                 "clearance_fail", client, window_seconds=window_seconds
@@ -65,6 +88,7 @@ async def grant_clearance(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, NOT_GRANTED)
 
     container.attempts.reset(client)
+    await container.rate_limiter.reset("clearance_email_fail", email, window_seconds=window_seconds)
     if container.rate_limiter._redis is not None:
         await container.rate_limiter.reset("clearance_fail", client, window_seconds=window_seconds)
     if previous := request.cookies.get(SESSION_COOKIE):
@@ -79,8 +103,9 @@ async def grant_clearance(
         path=settings.API_PREFIX,
         secure=settings.SESSION_COOKIE_SECURE,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
     )
+    audit("clearance.granted", outcome="granted", actor=email, client=client)
     return ClearanceStatus(granted=True, expires_at=expires_at)
 
 
@@ -109,6 +134,6 @@ async def revoke_clearance(request: Request, container: ContainerDep) -> Respons
         path=settings.API_PREFIX,
         secure=settings.SESSION_COOKIE_SECURE,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
     )
     return response

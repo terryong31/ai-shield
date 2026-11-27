@@ -59,3 +59,9 @@ company_document/
 .agents/skills/
 # Vercel build copies the engine here (apps/api/pyproject.toml [tool.vercel.scripts])
 apps/api/shield_engine/
+
+# k6 summaries (spec 0057)
+perf/k6/.reports/
+
+# Load lab results and logs (perf/prodsim)
+perf/prodsim/out/

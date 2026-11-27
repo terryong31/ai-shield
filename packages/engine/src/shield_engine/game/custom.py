@@ -8,21 +8,16 @@ from __future__ import annotations
 
 import csv
 import io
+import itertools
 import re
 from collections.abc import Callable, Iterable, Mapping
 
-from shield_engine.game import (
-    AgentProfile,
-    BoardGraph,
-    BoardValidationError,
-    LevelMessage,
-    MessageTrace,
-    WaveResult,
-    evaluate_message,
-    score_traces,
-    validate_board,
-)
-from shield_engine.game.agent import new_canary
+from shield_engine.game.agent import AgentProfile, new_canary
+from shield_engine.game.levels import LevelMessage
+from shield_engine.game.runner import evaluate_message
+from shield_engine.game.scoring import score_traces
+from shield_engine.game.types import BoardGraph, BoardValidationError, MessageTrace, WaveResult
+from shield_engine.game.validation import validate_board
 from shield_engine.ports import Classifier, JevClient, ProbabilityModel, UsageChatModel
 
 CUSTOM_LEVEL_ID = "custom"
@@ -102,7 +97,11 @@ def parse_custom_dataset(csv_text: str, profile: AgentProfile) -> tuple[LevelMes
     fields = {name.strip().lower() for name in reader.fieldnames or []}
     if not {"text", "label"} <= fields:
         raise BoardValidationError("The dataset needs text and label columns.")
-    rows = [{(k or "").strip().lower(): v for k, v in row.items()} for row in reader]
+    # Read one row past the limit at most, so a huge CSV is never held (spec 0054).
+    rows = [
+        {(k or "").strip().lower(): v for k, v in row.items()}
+        for row in itertools.islice(reader, CUSTOM_MAX_ROWS + 1)
+    ]
     return build_custom_messages(rows, profile)
 
 

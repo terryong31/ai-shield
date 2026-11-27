@@ -1,10 +1,10 @@
-import hmac
 import ipaddress
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 
 from shield_api.container import Container
+from shield_api.security import proxy_secret_matches
 from shield_api.services.clearance import Clearance, clearance_for
 from shield_api.services.rate_limit import RateLimiter, RateLimitExceededError
 from shield_api.settings import Settings
@@ -32,22 +32,17 @@ def client_address(request: Request, settings: Settings | None = None) -> str:
     if settings is None or not settings.TRUSTED_CLIENT_IP_HEADER:
         return peer
 
-    secret = (
-        settings.TRUSTED_PROXY_SECRET.get_secret_value().strip()
-        if settings.TRUSTED_PROXY_SECRET
-        else ""
-    )
-    if secret:
-        presented = request.headers.get("x-shield-proxy-secret", "")
-        if not hmac.compare_digest(presented, secret):
-            return peer
+    # Trust the header only from the proxy that proves the shared secret (spec 0054).
+    if not proxy_secret_matches(settings, request.headers.get("x-shield-proxy-secret", "")):
+        return peer
 
+    # The rightmost entry is the hop that the trusted proxy appended itself.
     raw = request.headers.get(settings.TRUSTED_CLIENT_IP_HEADER, "")
-    first = raw.split(",", 1)[0].strip()
-    if not first:
+    last = raw.rsplit(",", 1)[-1].strip()
+    if not last:
         return peer
     try:
-        return str(ipaddress.ip_address(first))
+        return str(ipaddress.ip_address(last))
     except ValueError:
         return peer
 

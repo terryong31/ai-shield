@@ -107,8 +107,8 @@ def _prod_container(
         SESSION_COOKIE_SECURE=False,
         TRUSTED_CLIENT_IP_HEADER="x-shield-client-ip",
         TRUSTED_PROXY_SECRET=SecretStr("s3cret"),
-        REDIS_URL=SecretStr("redis://localhost:6379/0"),
-        MODEL_SIGNING_KEY=SecretStr("test-signing-key"),
+        REDIS_URL=SecretStr("rediss://localhost:6379/0"),
+        MODEL_SIGNING_KEY=SecretStr("test-signing-key-" + "k" * 16),
     )
     limiter = RateLimiter(redis_client=redis_client, clock=clk)
     container = Container(
@@ -134,6 +134,8 @@ def _prod_headers(ip: str = "198.51.100.1", botid: str = "pass") -> dict[str, st
         "x-shield-client-ip": ip,
         "x-shield-proxy-secret": "s3cret",
         "x-shield-botid": botid,
+        # A browser behind the web proxy labels its requests (spec 0054).
+        "sec-fetch-site": "same-origin",
     }
 
 
@@ -528,7 +530,7 @@ def test_production_build_container_requires_non_localhost_web_base_url(
                     WEB_BASE_URL=bad_url,
                     SUPABASE_URL="https://example.supabase.co",
                     SUPABASE_KEY=SecretStr("service-key"),
-                    REDIS_URL=SecretStr("redis://localhost:6379/0"),
+                    REDIS_URL=SecretStr("rediss://localhost:6379/0"),
                     TRUSTED_CLIENT_IP_HEADER="x-shield-client-ip",
                     TRUSTED_PROXY_SECRET=SecretStr("s3cret"),
                 )
@@ -542,7 +544,7 @@ def test_production_build_container_requires_non_localhost_web_base_url(
             WEB_BASE_URL="https://ai-shield-delta.vercel.app/",
             SUPABASE_URL="https://example.supabase.co",
             SUPABASE_KEY=SecretStr("service-key"),
-            REDIS_URL=SecretStr("redis://localhost:6379/0"),
+            REDIS_URL=SecretStr("rediss://localhost:6379/0"),
             TRUSTED_CLIENT_IP_HEADER="x-shield-client-ip",
             TRUSTED_PROXY_SECRET=SecretStr("s3cret"),
         )
@@ -563,8 +565,10 @@ def test_contract_includes_confirm_and_reset_password_and_auth_responses_are_no_
     assert "post" in paths["/api/v1/auth/reset-password"]
 
     harness = make_harness()
-    assert harness.client.get("/api/v1/auth/session").headers.get("cache-control") == "no-store"
-    assert harness.client.get("/api/v1/clearance").headers.get("cache-control") == "no-store"
+    # Spec 0054 made private routes "private, no-store".
+    private = "private, no-store"
+    assert harness.client.get("/api/v1/auth/session").headers.get("cache-control") == private
+    assert harness.client.get("/api/v1/clearance").headers.get("cache-control") == private
 
 
 class _FlakyRedis(FakeRedisForAuth):

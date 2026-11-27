@@ -33,6 +33,9 @@ const statTiles = computed(() => [
   { label: 'Gold / Silver / Bronze', icon: 'i-lucide-medal', value: `${stats.value.medals.gold} / ${stats.value.medals.silver} / ${stats.value.medals.bronze}` }
 ])
 const clearing = ref(false)
+// Clearing the scoreboard needs a typed confirmation (spec 0053).
+const isClearOpen = ref(false)
+const clearConfirm = ref('')
 
 const scoreColumns: TableColumn<ScoreRecord>[] = [
   { accessorKey: 'player_name', header: 'Player' },
@@ -44,6 +47,7 @@ const scoreColumns: TableColumn<ScoreRecord>[] = [
 ]
 
 const loadScores = async () => {
+  if (!access.value.allowed) return
   try {
     scores.value = await getScores(undefined, 100)
   } catch (err) {
@@ -52,10 +56,13 @@ const loadScores = async () => {
 }
 
 const handleClearScores = async () => {
+  if (clearConfirm.value !== 'CLEAR') return
   clearing.value = true
   try {
     await clearScores()
     scores.value = []
+    isClearOpen.value = false
+    clearConfirm.value = ''
     toast.add({
       title: 'Scoreboard cleared',
       description: 'All saved scoreboard records were removed.',
@@ -74,7 +81,14 @@ const handleClearScores = async () => {
   }
 }
 
-onMounted(loadScores)
+// No admin data is fetched before clearance is granted (spec 0053).
+watch(
+  () => access.value.allowed,
+  (allowed) => {
+    if (allowed) void loadScores()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -153,8 +167,7 @@ onMounted(loadScores)
               color="error"
               variant="outline"
               size="sm"
-              :loading="clearing"
-              @click="handleClearScores"
+              @click="isClearOpen = true"
             />
           </div>
 
@@ -171,6 +184,43 @@ onMounted(loadScores)
           />
         </div>
       </div>
+
+      <UModal
+        v-model:open="isClearOpen"
+        title="Clear scoreboard"
+        description="This deletes every score on the leaderboard. It cannot be undone."
+      >
+        <template #body>
+          <UFormField
+            label="Type CLEAR to confirm"
+            name="confirm"
+          >
+            <UInput
+              v-model="clearConfirm"
+              autocomplete="off"
+              class="w-full"
+            />
+          </UFormField>
+        </template>
+
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton
+              label="Cancel"
+              color="neutral"
+              variant="ghost"
+              @click="isClearOpen = false"
+            />
+            <UButton
+              label="Clear scoreboard"
+              color="error"
+              :loading="clearing"
+              :disabled="clearConfirm !== 'CLEAR'"
+              @click="handleClearScores"
+            />
+          </div>
+        </template>
+      </UModal>
     </template>
   </UDashboardPanel>
 </template>

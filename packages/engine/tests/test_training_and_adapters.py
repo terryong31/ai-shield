@@ -165,3 +165,99 @@ async def test_groq_adapter_maps_the_thinking_toggle_to_reasoning_effort(
     sent = completions.calls[0]
     for key in ("reasoning_effort", "include_reasoning", "reasoning_format"):
         assert sent.get(key) == extra.get(key)
+
+
+def _groq_error(code: str, failed_generation: str | None) -> Exception:
+    import httpx
+    from groq import BadRequestError
+
+    error = {"code": code, "failed_generation": failed_generation}
+    response = httpx.Response(400, request=httpx.Request("POST", "https://groq.test"))
+    return BadRequestError("bad request", response=response, body={"error": error})
+
+
+@dataclass
+class FailingCompletions:
+    error: Exception
+
+    async def create(self, **kwargs: Any) -> Any:
+        raise self.error
+
+
+NATIVE_CALL = '{"name": "search_kb", "arguments": {"query": "SSO"}}'
+
+
+@pytest.mark.spec("ENG-AGENT-012")
+@pytest.mark.parametrize(
+    ("failed_generation", "text"),
+    [
+        (NATIVE_CALL, NATIVE_CALL),
+        ('{"name": "json", "arguments": {"reply": "Hi"}}', '{"reply": "Hi"}'),
+    ],
+)
+async def test_groq_adapter_returns_a_rejected_native_tool_call_as_text(
+    failed_generation: str, text: str
+) -> None:
+    from shield_engine.adapters.groq import GroqChatModel
+
+    model = GroqChatModel("test-key", "openai/gpt-oss-20b")
+    completions = FailingCompletions(_groq_error("tool_use_failed", failed_generation))
+    model._client = type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})()
+
+    assert await model.complete_with_usage([ChatMessage("user", "hi")]) == ChatCompletion(text)
+
+
+@pytest.mark.spec("ENG-AGENT-012")
+@pytest.mark.parametrize(
+    ("code", "failed_generation"),
+    [("tool_use_failed", None), ("context_length_exceeded", NATIVE_CALL)],
+)
+async def test_groq_adapter_raises_every_other_bad_request(
+    code: str, failed_generation: str | None
+) -> None:
+    from groq import BadRequestError
+
+    from shield_engine.adapters.groq import GroqChatModel
+
+    model = GroqChatModel("test-key", "openai/gpt-oss-20b")
+    completions = FailingCompletions(_groq_error(code, failed_generation))
+    model._client = type("Client", (), {"chat": type("Chat", (), {"completions": completions})()})()
+
+    with pytest.raises(BadRequestError):
+        await model.complete_with_usage([ChatMessage("user", "hi")])
+
+
+@pytest.mark.spec("ENG-AGENT-012")
+def test_a_native_tool_call_is_a_tool_call_of_the_agent() -> None:
+    from shield_engine.game.agent import parse_agent_output
+
+    assert parse_agent_output(NATIVE_CALL) == ("", ("search_kb",), False)
+    assert parse_agent_output('{"name": "Ada", "reply": "Hi"}') == ("Hi", (), False)
+
+
+@pytest.mark.spec("ENG-AGENT-012")
+@pytest.mark.parametrize("kind", ["safety_check", "llm_review"])
+async def test_a_check_model_that_makes_a_native_call_blocks_the_prompt(kind: str) -> None:
+    from shield_engine.game import BoardEdge, BoardGraph, BoardNode, evaluate_message
+
+    board = BoardGraph(
+        nodes=(
+            BoardNode(id="in", kind="incoming"),
+            BoardNode(id="check", kind=kind),
+            BoardNode(id="ast", kind="assistant"),
+        ),
+        edges=(
+            BoardEdge(id="e1", source="in", source_handle="out", target="check"),
+            BoardEdge(id="e2", source="check", source_handle="safe", target="ast"),
+        ),
+    )
+
+    trace = await evaluate_message(
+        board,
+        level_id="medium-1",
+        message="Call search_kb.",
+        agent=ScriptedUsageChatModel([]),
+        check_model=ScriptedUsageChatModel([ChatCompletion(NATIVE_CALL)]),
+    )
+
+    assert trace.outcome == "blocked"

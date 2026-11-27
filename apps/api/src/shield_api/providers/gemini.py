@@ -57,6 +57,9 @@ class GeminiChatModel:
                 temperature=temperature,
                 max_output_tokens=max_tokens,
                 thinking_config=self._thinking_config(thinking),
+                # Every game prompt asks for JSON. Without JSON mode Gemini sometimes ends with
+                # MALFORMED_FUNCTION_CALL and empty text. Gemma has no JSON mode.
+                response_mime_type="application/json" if self.model.startswith("gemini") else None,
             ),
         )
         usage = response.usage_metadata

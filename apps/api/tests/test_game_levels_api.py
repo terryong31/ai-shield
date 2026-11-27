@@ -7,7 +7,7 @@ from pydantic import SecretStr
 
 from shield_api.container import build_container
 from shield_api.schemas import BoardGraphSchema, ScoreCreateRequest
-from shield_api.services.scores import SupabaseScoreStore
+from shield_api.services.scores import SCORE_VERSION, SupabaseScoreStore
 from shield_api.settings import Settings
 from shield_engine.game import get_level
 from shield_engine.ports import ChatCompletion
@@ -134,8 +134,8 @@ def test_easy_runs_use_no_quota_and_are_recorded(harness: Harness) -> None:
     runs = [_run(harness, "easy-1") for _ in range(7)]
     assert [r.status_code for r in runs] == [200] * 7
     assert {r.json()["agent_mode"] for r in runs} == {"none"}
-    tests = [_run(harness, "easy-1", f"question {n}").status_code for n in range(25)]
-    assert tests == [200] * 25
+    tests = [_run(harness, "easy-1", f"question {n}").status_code for n in range(3)]
+    assert tests == [422] * 3  # API-FAIR-002: no single tests on campaign levels
     session = harness.client.get("/api/v1/auth/session").json()
     assert (session["wave_runs_used"], session["test_runs_used"]) == (0, 0)
 
@@ -150,7 +150,7 @@ def test_easy_runs_use_no_quota_and_are_recorded(harness: Harness) -> None:
 async def test_leaderboard_lists_only_the_current_score_version() -> None:
     client = FakeClient()
     log = SupabaseScoreStore(client)
-    # Spec 0039 filters list_scores by current score_version = 3.
+    # Spec 0039 filters list_scores by the current score_version (4 since API-FAIR-006).
     client.schema("game").table("scores").insert(
         {
             "id": "v2-row",
@@ -188,6 +188,6 @@ async def test_leaderboard_lists_only_the_current_score_version() -> None:
             board=BoardGraphSchema(nodes=[], edges=[]),
         )
     )
-    assert recorded.score_version == 3
+    assert recorded.score_version == SCORE_VERSION
     listed = await log.list_scores(level_id="easy-1")
-    assert [(s.player_name, s.score_version) for s in listed] == [("newcomer", 3)]
+    assert [(s.player_name, s.score_version) for s in listed] == [("newcomer", SCORE_VERSION)]

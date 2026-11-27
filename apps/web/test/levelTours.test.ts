@@ -2,33 +2,33 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { hasSeenTour, levelTourSteps, markTourSeen, tourSeenKey } from '../app/utils/levelTours'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
 
 describe('introductory level tours (spec 0040)', () => {
-  it('[WEB-CAMP-007] defines a tour for each introductory level that points at the nodes it teaches', () => {
+  it('[WEB-CAMP-007][WEB-LADDER-002] gives Easy 1 to 4 a tour for the tools each teaches', () => {
     const taught: Record<string, string[]> = {
-      'easy-1': ['word_filter', 'length_limit'],
-      'easy-2': ['text_cleanup', 'secret_scan'],
-      'easy-3': ['ml_classifier']
+      'easy-1': ['tool-word_filter', 'tool-length_limit'],
+      'easy-2': ['tool-text_cleanup', 'tool-secret_scan'],
+      'easy-3': ['node-secret_scan'],
+      'easy-4': ['tool-ml_classifier', 'node-ml_classifier']
     }
     for (const [levelId, kinds] of Object.entries(taught)) {
       const steps = levelTourSteps(levelId)
       const targets = steps.map(s => s.target)
 
       expect(steps[0]?.target).toBeNull()
-      for (const kind of kinds) expect(targets).toContain(`[data-tour="tool-${kind}"]`)
-      expect(targets).toContain('[data-tour="test-bar"]')
+      for (const kind of kinds) expect(targets).toContain(`[data-tour="${kind}"]`)
+      expect(targets).not.toContain('[data-tour="test-bar"]')
       expect(targets.at(-1)).toBe('[data-tour="run-wave"]')
       for (const step of steps) {
         expect(step.title.length).toBeGreaterThan(0)
         expect(step.body.length).toBeGreaterThan(0)
       }
     }
-    expect(levelTourSteps('easy-3').map(s => s.target)).toContain('[data-tour="node-ml_classifier"]')
-    expect(levelTourSteps('medium-1')).toEqual([])
-    expect(levelTourSteps('custom')).toEqual([])
+    for (const levelId of ['easy-5', 'medium-1', 'hard-1', 'custom']) expect(levelTourSteps(levelId)).toEqual([])
     expect(tourSeenKey('easy-3')).toBe('ai-shield:tour-seen:easy-3')
   })
 
@@ -52,7 +52,7 @@ describe('introductory level tours (spec 0040)', () => {
   })
 
   it('[WEB-CAMP-007] runs the tour on /game with useTour, one UPopover and a Guide button', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const nodeSource = read('components', 'workflow', 'GameNode.vue')
 
     expect(gameSource).toMatch(/useTour\(/)
@@ -65,7 +65,7 @@ describe('introductory level tours (spec 0040)', () => {
     expect(gameSource).toMatch(/v-if="hasLevelTour"[\s\S]*?label="Guide"/)
     for (const label of ['label="Back"', 'label="Skip"', '\'Finish\' : \'Next\'']) expect(gameSource).toContain(label)
     expect(gameSource).toContain('[data-tour="canvas"]')
-    for (const target of ['data-tour="run-wave"', 'data-tour="test-bar"', 'data-tour="canvas"']) expect(gameSource).toContain(target)
+    for (const target of ['data-tour="run-wave"', 'data-tour="canvas"']) expect(gameSource).toContain(target)
     expect(gameSource).toContain(':data-tour="`tool-${chk.kind}`"')
     expect(nodeSource).toContain(':data-tour="`node-${data.kind}`"')
   })

@@ -26,12 +26,14 @@ import {
   isNewRecord,
   nextHighStars,
   waveStars,
+  breakdownStats,
   scoreBreakdown,
   summarizeNodeTraffic,
   toApiBoard,
   travelledEdgeIds,
   unwiredHandles
 } from '../app/utils/gameBoard'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -78,7 +80,7 @@ describe('game AI agent (spec 0020)', () => {
       expect(board.nodes.find(n => n.id === 'assistant')?.data?.label).toBe(level.startsWith('easy-') ? 'Help Desk' : 'Protected Agent')
     }
     expect(Object.keys(NODE_CATALOG)).not.toContain('blocked')
-    expect(read('pages', 'game.vue')).not.toContain('\'blocked\'')
+    expect(readGamePage()).not.toContain('\'blocked\'')
   })
 
   it('[WEB-AGENT-002] edits up to 5 rules of 200 characters and sends them as config.rules', () => {
@@ -109,7 +111,7 @@ describe('game AI agent (spec 0020)', () => {
     const payload = toApiBoard(withRules)
     expect(payload.nodes.find(n => n.kind === 'assistant')?.config.rules).toEqual(rules)
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('levelAgent?.objective')
     expect(gameSource).toContain(':maxlength="AGENT_RULE_MAX_CHARS"')
     expect(gameSource).toContain('/ {{ AGENT_RULE_MAX_CHARS }}')
@@ -124,17 +126,17 @@ describe('game AI agent (spec 0020)', () => {
     expect(runsRemaining(anonSession, 'test')).toBe(0)
     expect(runsRemaining({ ...anonSession, daily_wave_limit: null }, 'wave')).toBeNull()
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('v-model:open="isSignInPromptOpen"')
     expect(gameSource).toContain('to="/auth/login"')
   })
 
   it('[WEB-AGENT-015] shows attempts left beside the score and runs without a sign-in prompt', () => {
-    expect(attemptsLeftLabel(anonSession)).toBe('1/1 attempts left today')
-    expect(attemptsLeftLabel({ ...anonSession, wave_runs_used: 1 })).toBe('0/1 attempts left today')
+    expect(attemptsLeftLabel(anonSession)).toBe('1 / 1 runs left today')
+    expect(attemptsLeftLabel({ ...anonSession, wave_runs_used: 1 })).toBe('0 / 1 runs left today')
     expect(attemptsLeftLabel({ ...anonSession, daily_wave_limit: null })).toBe('')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('Run anyway')
     expect(gameSource).not.toContain('Sign in to keep your score')
     expect(gameSource).not.toContain('openSignInPrompt(\'wave\')')
@@ -147,7 +149,7 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-016] puts the wave stats beside the score and the attempts counter beside Save', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const header = gameSource.slice(gameSource.indexOf('<header'), gameSource.indexOf('</header>'))
     const runBar = gameSource.slice(gameSource.indexOf('</header>'), gameSource.indexOf('placeholder="Test a message..."'))
 
@@ -163,7 +165,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(nextHighScore(1500, 1200)).toBe(1500)
     expect(nextHighScore(1500, 2100)).toBe(2100)
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const header = gameSource.slice(gameSource.indexOf('<header'), gameSource.indexOf('</header>'))
     const results = gameSource.slice(
       gameSource.indexOf('v-model:open="isResultsOpen"'),
@@ -180,9 +182,8 @@ describe('game AI agent (spec 0020)', () => {
     expect(header).toMatch(/<UInputRating[\s\S]*?readonly[\s\S]*?\/>/)
 
     expect(results).toContain('scoreBreakdown(waveScore, currentLevelId)')
-    expect(results).toContain('waveScore.avg_latency_ms')
-    expect(results).toContain('waveScore.total_cost_usd')
-    expect(results).toContain('waveScore.total_tokens')
+    // The stat boxes come from breakdownStats, which leaves out tokens on Easy (WEB-FAIR-002).
+    expect(results).toContain('breakdownStats(waveScore, currentLevelId)')
 
     expect(gameSource).toMatch(/highScore\.value = nextHighScore\(highScore\.value, response\.score\.total_score\)/)
   })
@@ -192,7 +193,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(nextHighStars(9000, 3, 8000, 1)).toBe(3)
     expect(nextHighStars(8000, 1, 9500, 2)).toBe(2)
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const header = gameSource.slice(gameSource.indexOf('<header'), gameSource.indexOf('</header>'))
     expect(header).toMatch(/High Score:[\s\S]*?<\/span>\s*<UInputRating[\s\S]*?:model-value="highStars"[\s\S]*?readonly/)
     const waveOnly = header.slice(header.indexOf('v-if="waveScore"'), header.indexOf('High Score:'))
@@ -213,7 +214,7 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-023] saves the board automatically after a won wave for signed-in players', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const persist = gameSource.slice(gameSource.indexOf('const persistBoard'), gameSource.indexOf('const handleSaveBoard'))
     expect(persist).toContain('putSave(saveLevelKey.value, payload)')
     expect(persist).toContain('setCachedBoard(')
@@ -224,7 +225,7 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-020] shows the confusion matrix in Score breakdown, not in Run results', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const modal = (marker: string) => {
       const start = gameSource.indexOf(marker)
       return gameSource.slice(start, gameSource.indexOf('</UModal>', start))
@@ -238,7 +239,7 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-021] folds the points into a collapsed accordion and polishes the breakdown modal', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const start = gameSource.indexOf('v-model:open="isBreakdownOpen"')
     const breakdown = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
 
@@ -250,15 +251,18 @@ describe('game AI agent (spec 0020)', () => {
     expect(breakdown).not.toContain('border-t border-default pt-4')
     expect(breakdown).not.toContain('<USeparator')
     expect(breakdown).toMatch(/<UTooltip text="Click a cell to see the prompts">/)
-    for (const icon of ['i-lucide-timer', 'i-lucide-coins', 'i-lucide-cpu']) expect(breakdown).toContain(icon)
+    expect(breakdown).toContain('breakdownStats(waveScore, currentLevelId)')
+    const icons = breakdownStats({ avg_latency_ms: 1, total_cost_usd: 0, total_tokens: 5 } as WaveScoreSchema, 'medium-1').map(s => s.icon)
+    expect(icons).toEqual(['i-lucide-timer', 'i-lucide-coins', 'i-lucide-cpu'])
   })
 
-  it('[WEB-AGENT-022] lists only the prompt text in a matrix cell modal', () => {
-    const gameSource = read('pages', 'game.vue')
+  it('[WEB-AGENT-022] lists the prompts of a matrix cell modal without hop details', () => {
+    const gameSource = readGamePage()
     const start = gameSource.indexOf('v-model:open="isResultCellOpen"')
     const cellModal = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
 
-    expect(cellModal).toMatch(/v-for="item in selectedResultCell\.items"[\s\S]*?\{\{ item\.text \}\}/)
+    // WEB-FAIR-004 replaced the prompt text with the number, family and stopping node.
+    expect(cellModal).toMatch(/v-for="group in promptGroups\(selectedResultCell\.items, traces, nodeLabel\)"/)
     expect(cellModal).not.toContain('lastHopDetail')
     expect(gameSource).not.toContain('lastHopDetail')
   })
@@ -268,7 +272,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(isNewRecord(9000, 9000)).toBe(false)
     expect(isNewRecord(9000, 9500)).toBe(true)
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const start = gameSource.indexOf('v-model:open="isResultsOpen"')
     const results = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
 
@@ -284,7 +288,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(gameSource).toContain('v-model:open="isBreakdownOpen"')
     expect(gameSource).toContain('title="Score breakdown"')
     expect(gameSource).toContain('v-model:open="isResultCellOpen"')
-    expect(gameSource).toMatch(/v-for="item in selectedResultCell\.items"/)
+    expect(gameSource).toMatch(/v-for="group in promptGroups\(selectedResultCell\.items/)
     expect(gameSource).toMatch(/newRecord\.value = isNewRecord\(highScore\.value, response\.score\.total_score\)/)
   })
 
@@ -309,19 +313,22 @@ describe('game AI agent (spec 0020)', () => {
       avg_latency_ms: 400,
       total_cost_usd: 0.002
     }
-    expect(scoreBreakdown(score)).toEqual([
-      { label: 'Protection', points: 3200 },
-      { label: 'Helpfulness', points: 1300 },
-      { label: 'Tool use', points: 500 },
-      { label: 'Tokens', points: 1125 },
+    // Spec 0050 replaced these parts: a loss shows one part, a clear shows five.
+    expect(scoreBreakdown({ ...score, won: false, total_score: 2100 })).toEqual([
+      { label: 'Attacks and normal prompts', points: 2100 }
+    ])
+    const cleared = { ...score, won: true, cleared_points: 5000, accuracy_points: 2000, simplicity_points: 500 }
+    expect(scoreBreakdown(cleared)).toEqual([
+      { label: 'Cleared', points: 5000 },
+      { label: 'Accuracy', points: 2000 },
       { label: 'Speed', points: 600 },
       { label: 'Cost', points: 600 },
-      { label: 'Leak penalty', points: -1000 }
+      { label: 'Simplicity', points: 500 }
     ])
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('scoreBreakdown(waveScore, currentLevelId)')
-    expect(gameSource).toContain('waveScore.total_tokens')
+    expect(gameSource).toContain('breakdownStats(waveScore, currentLevelId)')
   })
 
   it('[WEB-AGENT-005] renders nodes with labelled ports and traffic counts, without status, info or unwired clutter', () => {
@@ -362,12 +369,12 @@ describe('game AI agent (spec 0020)', () => {
     expect(done.nodes.find(n => n.id === 'word_filter')?.data?.status).toBe('passed')
     expect(done.nodes.find(n => n.id === 'assistant')?.data?.status).toBe('idle')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('markBoardRunning(')
   })
 
   it('[WEB-AGENT-007] lays out the AI Agent modal with tool rows and a rules composer', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('\'Restricted\'')
     expect(gameSource).not.toContain('Never call')
     expect(gameSource).toContain('<UTextarea')
@@ -380,7 +387,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(formatToolName('issue_discount')).toBe('Issue Discount')
     expect(formatToolName('run_sql')).toBe('Run SQL')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('Set by the level')
     expect(gameSource).not.toContain('Suggested rules')
     expect(gameSource).not.toContain('font-mono')
@@ -390,7 +397,7 @@ describe('game AI agent (spec 0020)', () => {
   })
 
   it('[WEB-AGENT-009] gives the Input and tool node modals the AI Agent modal layout', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const nodeModal = gameSource.slice(gameSource.indexOf('<!-- Double-Click Node Settings Modal -->'))
     expect(nodeModal).toContain('content: \'sm:max-w-2xl\'')
     expect(nodeModal).toContain('What this node does')
@@ -410,7 +417,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(nodeCostLine(0.2, 0)).toBe('0.2 ms per message · Free')
     expect(nodeCostLine(85, 0.0002)).toBe('85 ms per message · $0.0002')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const nodeModal = gameSource.slice(gameSource.indexOf('<!-- Double-Click Node Settings Modal -->'))
     expect(nodeModal).not.toContain('Remove node')
     expect(gameSource).not.toContain('handleRemoveSelectedNode')
@@ -463,7 +470,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(ids(matrix.attackStopped)).toEqual(['blocked', 'resisted'])
     expect(ids(matrix.attackPassed)).toEqual(['leaked', 'reached-desk'])
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const nodeModal = gameSource.slice(gameSource.indexOf('<!-- Double-Click Node Settings Modal -->'))
     expect(nodeModal).not.toContain('Last wave')
     expect(gameSource).not.toContain('lastWaveStats')
@@ -500,7 +507,7 @@ describe('game AI agent (spec 0020)', () => {
     }
     expect(boardFromSave(legacy, 'medium-1')?.edges.map(e => e.sourceHandle)).toEqual(['out'])
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const nodeModal = gameSource.slice(gameSource.indexOf('<!-- Double-Click Node Settings Modal -->'))
     expect(nodeModal).not.toContain('Outputs')
     expect(nodeModal).not.toContain('Stops here')
@@ -520,9 +527,9 @@ describe('game AI agent (spec 0020)', () => {
     expect(nodeSource).toMatch(/height: '0px'/)
     expect(nodeSource).not.toContain('translate(50%, -50%)')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     // The wording under the title is now the wiring hint (WEB-LEVEL-005, spec 0021).
-    expect(gameSource).toContain('Wire your last check here.')
+    expect(gameSource).toContain('This is the agent you need to protect. Only let safe prompts get through here.')
     expect(gameSource).not.toContain('Latency and cost are measured on the first run')
   })
 
@@ -531,7 +538,7 @@ describe('game AI agent (spec 0020)', () => {
     expect(nodeSource).toMatch(/<p[^>]*>\s*\{\{ summary \}\}/)
     expect(nodeSource).not.toContain('<UTooltip')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const nodeModal = gameSource.slice(gameSource.indexOf('<!-- Double-Click Node Settings Modal -->'))
     // No section heading is followed by a muted helper paragraph any more.
     expect(nodeModal).not.toMatch(/<\/h3>\s*<p class="text-xs text-muted">/)

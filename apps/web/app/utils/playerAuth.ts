@@ -141,3 +141,16 @@ export function loginFailure(statusCode: number | undefined, detail?: string): L
   if (statusCode === 401) return 'invalid'
   return 'unavailable'
 }
+
+// Messages for the error codes an auth link can carry (spec 0053). The link's own
+// error_description is never shown: anyone can write it into a URL.
+const AUTH_LINK_ERRORS: Record<string, string> = {
+  otp_expired: 'This link has expired. Request a new email.',
+  access_denied: 'This link is no longer valid. Request a new email.',
+  flow_state_expired: 'This link has expired. Request a new email.',
+  flow_state_not_found: 'This link is no longer valid. Request a new email.'
+}
+
+export function authLinkErrorMessage(errorCode: string | null | undefined, fallback: string): string {
+  return (errorCode && AUTH_LINK_ERRORS[errorCode]) || fallback
+}

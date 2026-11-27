@@ -130,6 +130,7 @@ def test_model_free_easy_run_without_cookie_still_returns_200(harness: Harness) 
 
 @pytest.mark.spec("API-SPEND-004")
 def test_easy_level_with_safety_check_counts_against_daily_quota(harness: Harness) -> None:
+    # Since spec 0051 a model check fits only the Easy exam (easy-5, a paid level).
     check_reply = ChatCompletion(
         text=json.dumps({"blocked": False, "reason": "ok"}),
         input_tokens=10,
@@ -137,31 +138,28 @@ def test_easy_level_with_safety_check_counts_against_daily_quota(harness: Harnes
     )
     check_model = ScriptedUsageChatModel(replies=[], default=check_reply)
     harness.container.check_model_for = lambda _: check_model  # type: ignore[assignment]
-    _register_and_login(harness, "free@example.com")
+    _register_and_login(harness, "paid@example.com", paid=True)
 
-    first = harness.client.post(
-        "/api/v1/game/run",
-        json={"level_id": "easy-1", "board": _safety_board()},
-    )
-    assert first.status_code == 200
-    assert harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 1
-
-    for _ in range(4):
+    for _ in range(50):
         assert (
             harness.client.post(
-                "/api/v1/game/run",
-                json={"level_id": "easy-1", "board": _safety_board()},
+                "/api/v1/game/run", json={"level_id": "easy-5", "board": _safety_board()}
             ).status_code
             == 200
         )
+    assert harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 50
 
     calls_before_limit = len(check_model.calls)
     exhausted = harness.client.post(
-        "/api/v1/game/run",
-        json={"level_id": "easy-1", "board": _safety_board()},
+        "/api/v1/game/run", json={"level_id": "easy-5", "board": _safety_board()}
     )
     assert exhausted.status_code == 429
     assert len(check_model.calls) == calls_before_limit
+    # A model-free Easy run still uses no run.
+    plain = harness.client.post(
+        "/api/v1/game/run", json={"level_id": "easy-1", "board": _simple_board()}
+    )
+    assert plain.status_code == 200
 
 
 @pytest.mark.spec("API-SPEND-007")
@@ -196,7 +194,9 @@ def test_custom_message_is_capped_at_1000_chars(harness: Harness) -> None:
         "/api/v1/game/run",
         json={"level_id": "medium-1", "board": _simple_board(), "custom_message": "x" * 1000},
     )
-    assert at_limit.status_code == 200
+    # API-FAIR-002: campaign levels take no single message at any length.
+    assert at_limit.status_code == 422
+    assert "custom sandbox" in at_limit.json()["detail"]
 
 
 @pytest.mark.spec("API-SPEND-010")
@@ -526,31 +526,38 @@ def test_jev_node_on_easy_requires_session_and_consumes_free_quota(harness: Harn
     harness.container.jev_client = jev
 
     no_session = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "easy-1", "board": _jev_board()}
+        "/api/v1/game/run", json={"level_id": "easy-5", "board": _jev_board()}
     )
     assert no_session.status_code == 401
     assert jev.calls == []
 
-    _register_and_login(harness, "ada@example.com")
-    ok = harness.client.post("/api/v1/game/run", json={"level_id": "easy-1", "board": _jev_board()})
+    _register_and_login(harness, "ada@example.com", paid=True)
+    ok = harness.client.post("/api/v1/game/run", json={"level_id": "easy-5", "board": _jev_board()})
     assert ok.status_code == 200
     assert harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 1
 
 
 @pytest.mark.spec("API-SPEND-022")
 def test_anonymous_jev_node_on_easy_consumes_anonymous_daily_quota(harness: Harness) -> None:
-    jev = ScriptedJevClient(replies=[JevEvaluation(probability=0.05, input_tokens=50)] * 20)
+    # Since spec 0051 a model check fits only the paid Easy exam, so an anonymous player
+    # meets the Pro gate there; on a free level the one anonymous run is used up.
+    jev = ScriptedJevClient(replies=[], default=JevEvaluation(probability=0.05, input_tokens=50))
     harness.container.jev_client = jev
     assert harness.client.post("/api/v1/auth/anonymous").status_code == 200
 
+    gated = harness.client.post(
+        "/api/v1/game/run", json={"level_id": "easy-5", "board": _jev_board()}
+    )
+    assert gated.status_code == 403
+    assert jev.calls == []
+
     first = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "easy-1", "board": _jev_board()}
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _jev_board()}
     )
     assert first.status_code == 200
     calls_after_first = len(jev.calls)
-
     second = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "easy-1", "board": _jev_board()}
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _jev_board()}
     )
     assert second.status_code == 429
     assert len(jev.calls) == calls_after_first

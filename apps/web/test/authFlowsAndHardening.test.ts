@@ -43,10 +43,12 @@ describe('auth flows and hardening (spec 0047)', () => {
     const authComposable = readApp('composables', 'usePlayerAuth.ts')
     expect(authComposable).toContain('ensureAuthBrowserCookie')
 
-    const nuxtConfig = readRoot('nuxt.config.ts')
-    expect(nuxtConfig).toContain('/auth/**')
-    expect(nuxtConfig).toContain('Referrer-Policy')
-    expect(nuxtConfig).toContain('no-referrer')
+    // The route headers moved to app/utils/securityHeaders.ts (spec 0053).
+    expect(readRoot('nuxt.config.ts')).toContain('routeRules: securityRouteRules(')
+    const headers = readRoot('app/utils/securityHeaders.ts')
+    expect(headers).toContain('/auth/**')
+    expect(headers).toContain('Referrer-Policy')
+    expect(headers).toContain('no-referrer')
   })
 
   it('[WEB-AUTH-005] /auth/reset-password strips params, uses PasswordStrengthField, and calls resetPassword', () => {
@@ -90,7 +92,8 @@ describe('auth flows and hardening (spec 0047)', () => {
     expect(dashboardLayout).toContain('loadAccess')
 
     const botidMod = await import('../shared/utils/botid')
-    expect(botidMod.BOTID_PROTECTED_ROUTES).toHaveLength(9)
+    // Nine auth and game routes, plus admin sign-in (spec 0054).
+    expect(botidMod.BOTID_PROTECTED_ROUTES).toHaveLength(10)
 
     const res = await apiProxy.proxyToGateway(
       new Request('https://shield-web.example/api/v1/auth/login', {

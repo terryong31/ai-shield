@@ -12,6 +12,11 @@ from dataclasses import dataclass, field
 from shield_engine.ports import ChatCompletion, ChatMessage, JevEvaluation
 from shield_engine.types import Signal, Verdict
 
+# The agent's closing turn after a tool ran (ENG-LADDER-012); no tokens, so totals stay as queued.
+DONE_TURN = ChatCompletion(
+    text='{"reply": "", "tool_calls": [], "refused": false}', input_tokens=0, output_tokens=0
+)
+
 
 @dataclass
 class StaticClassifier:

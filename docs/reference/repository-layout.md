@@ -58,25 +58,26 @@ ai-shield/
 │   │   └── tests/
 │   │
 │   └── web/                     # @ai-shield/web: Nuxt 4 + Nuxt UI + Vue Flow client
-│       ├── nuxt.config.ts       # app.head defaults, runtimeConfig.apiProxyTarget, runtimeConfig.public.siteUrl
+│       ├── nuxt.config.ts       # app.head defaults, security routeRules, runtimeConfig.apiProxyTarget, runtimeConfig.public.siteUrl
 │       ├── Dockerfile           # build from repo root
 │       ├── .env.example
 │       ├── public/              # twitter-card.png, twitter-card.svg, favicon.svg, robots.txt, sitemap.xml, llms.txt
 │       ├── app/
-│       │   ├── pages/           # index.vue (menu + levels), game.vue (board), plans.vue, settings.vue, auth/*, console/{index,settings}.vue (/_console)
+│       │   ├── pages/           # index.vue (menu + levels), game.vue (board layout; state in composables/useGamePage.ts, panels in components/game/), plans.vue, settings.vue, auth/*, console/{index,settings}.vue (/_console)
 │       │   ├── layouts/         # dashboard.vue (UAuthForm-guarded layout for /_console)
 │       │   ├── components/      # workflow/GameNode.vue, campaign/*, PasswordStrengthField.vue
-│       │   ├── composables/     # useShieldApi, usePlayerAuth, useLeaderboard, useAdminAccess, …
+│       │   ├── composables/     # useShieldApi, usePlayerAuth, useLeaderboard, useAdminAccess, useGamePage, …
 │       │   ├── utils/           # gameBoard.ts, campaignSelect.ts, billing.ts, sessionHint.ts, seo.ts, …
 │       │   └── types/           # api.gen.ts (generated), api.ts (aliases)
 │       └── test/                # Vitest
 │
 ├── contracts/
 │   └── shield-api.openapi.json  # generated HTTP contract (committed)
-├── supabase/                    # `supabase init` project: config.toml, migrations/, templates/, seed.sql
+├── supabase/                    # `supabase init` project: config.toml, migrations/, templates/, seed.sql, tests/ (pgTAP, spec 0056)
+├── perf/k6/                     # k6 load tests: lib/, scenarios/, serve_api.py (spec 0057)
 ├── compose.yaml                 # Docker Compose: redis, api, web
 ├── specs/                       # spec-driven development: README, _templates/, NNNN-slug/spec.md
-├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, e2e_gate.py, local_env.py, redact_traces.py, stripe_setup.py
+├── scripts/                     # sdd.py, new_spec.py, check_spec_coverage.py, e2e_gate.py, local_env.py, redact_traces.py, stripe_setup.py, with_secrets.py
 └── docs/                        # this documentation (Diátaxis)
 ```
 

@@ -9,22 +9,30 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from shield_api.container import Container
 from shield_api.dependencies import PLAYER_SESSION_COOKIE, ContainerDep, enforce_rate_limit
+from shield_api.routers.auth import rotate_player_session
 from shield_api.schemas import (
     AccountDeleteRequest,
     AccountEmailRequest,
+    AccountExportResponse,
     AccountPasswordRequest,
     AccountProfileRequest,
     AccountResetRequest,
     AccountResetResponse,
+    ExportAccountSchema,
+    ExportPurchaseSchema,
+    ExportSavedBoardSchema,
+    ExportScoreSchema,
     PlayerConfirmationResponse,
     PlayerSessionStatus,
 )
+from shield_api.services.audit import audit
 from shield_api.services.auth_flows import (
     BROWSER_COOKIE_NAME,
     SIGNUP_FLOW_TTL_SECONDS,
@@ -41,6 +49,8 @@ from shield_api.services.passes import PassDesk
 from shield_api.services.rate_limit import (
     ACCOUNT_EMAIL_LIMIT,
     ACCOUNT_EMAIL_WINDOW,
+    ACCOUNT_EXPORT_LIMIT,
+    ACCOUNT_EXPORT_WINDOW,
     ACCOUNT_NAME_LIMIT,
     ACCOUNT_NAME_WINDOW,
     RateLimitExceededError,
@@ -124,11 +134,44 @@ async def _store[T](step: Awaitable[T]) -> T:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
 
 
+@router.get(
+    "/export",
+    responses={
+        403: {"description": "Sign in to manage your account."},
+        429: {"description": "Too many exports for this account."},
+    },
+)
+async def export_account(
+    request: Request, response: Response, container: ContainerDep
+) -> AccountExportResponse:
+    """Download everything the gateway holds about the signed-in player (spec 0058)."""
+    _, email = await _player(request, container)
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "account_export",
+            email,
+            limit=ACCOUNT_EXPORT_LIMIT,
+            window_seconds=ACCOUNT_EXPORT_WINDOW,
+        )
+    data = await _store(container.players.export_data(email))
+    scores = await _store(container.scores.list_scores_for_owner(email))
+    response.headers["Cache-Control"] = "private, no-store"
+    audit("account.exported", outcome="exported", actor=email)
+    return AccountExportResponse(
+        exported_at=datetime.now(UTC),
+        account=ExportAccountSchema.model_validate(data.account) if data.account else None,
+        saved_boards=[ExportSavedBoardSchema.model_validate(b) for b in data.saved_boards],
+        scores=[ExportScoreSchema.model_validate(s.model_dump()) for s in scores],
+        purchases=[ExportPurchaseSchema.model_validate(p) for p in data.purchases],
+    )
+
+
 @router.post("/password", responses=_COMMON)
 async def change_password(
-    body: AccountPasswordRequest, request: Request, container: ContainerDep
+    body: AccountPasswordRequest, request: Request, response: Response, container: ContainerDep
 ) -> PlayerSessionStatus:
-    """Change the password and sign out every other session."""
+    """Change the password, sign out every session and give this browser a new one."""
     token, email = await _player(request, container)
     user_id = await _reauthenticate(container, email, body.current_password)
     try:
@@ -137,7 +180,10 @@ async def change_password(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
     await _store(container.players.revoke_sessions(email, keep=token))
     await container.models.purge_account(email, keep_token=token)
-    return await container.players.lookup(token)
+    # The old token is revoked too: a new credential gets a new session (spec 0054).
+    session_status = await rotate_player_session(token, response, container)
+    audit("account.password_changed", outcome="changed", actor=email)
+    return session_status
 
 
 @router.post(
@@ -184,6 +230,7 @@ async def change_email(
     except IdentityUnavailableError:
         await container.auth_flows.delete(flow_id)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    audit("account.email_change_started", outcome="sent", actor=email)
     return PlayerConfirmationResponse()
 
 
@@ -248,6 +295,7 @@ async def delete_account(
         await container.identity.delete_user(user_id)
     except (IdentityUnavailableError, IdentityConflictError):
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    audit("account.deleted", outcome="deleted", actor=email)
 
     settings = container.settings
     response = Response(status_code=status.HTTP_204_NO_CONTENT)

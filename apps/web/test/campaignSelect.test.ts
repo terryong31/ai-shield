@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { LevelProgressItem, PlayerSessionStatus } from '../app/types/api'
+import type { LevelProgressItem, PlayerSessionStatus, WaveScoreSchema } from '../app/types/api'
 import * as campaignSelect from '../app/utils/campaignSelect'
 import {
   FALLBACK_CAMPAIGN_LEVELS,
@@ -17,6 +17,8 @@ import {
   nextCampaignLevel,
   toolRoleBadge
 } from '../app/utils/campaignSelect'
+import { waveOutcomeSummary } from '../app/utils/gameBoard'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -36,12 +38,12 @@ const sessionFor = (tier: PlayerSessionStatus['tier']): PlayerSessionStatus => (
 })
 
 describe('minimal monochrome level select and campaign briefing UI (spec 0040)', () => {
-  it('[WEB-CAMP-001] renders 3 vertical UPageCard difficulty poster cards (Easy 5, Medium 10, Hard 8) with blurred padlock on locked Hard and no progress bar or score clutter', () => {
+  it('[WEB-CAMP-001] renders 3 vertical UPageCard difficulty poster cards (Easy 5, Medium 7, Hard 7) with blurred padlock on locked Hard and no progress bar or score clutter', () => {
     const freeCards = buildCategorySummaries(FALLBACK_CAMPAIGN_LEVELS, sessionFor('free'))
     expect(freeCards.map(c => [c.difficulty, c.levelsCount, c.locked, c.indexLabel])).toEqual([
       ['Easy', 5, false, '5 Levels'],
-      ['Medium', 10, false, '10 Levels'],
-      ['Hard', 8, true, '8 Levels']
+      ['Medium', 7, false, '7 Levels'],
+      ['Hard', 7, true, '7 Levels']
     ])
 
     const paidCards = buildCategorySummaries(FALLBACK_CAMPAIGN_LEVELS, sessionFor('paid'))
@@ -64,8 +66,8 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
     expect(indexSource).not.toContain('font-mono')
     expect((campaignSelect as Record<string, unknown>).CAMPAIGN_DIFFICULTY_COUNTS).toEqual({
       Easy: 5,
-      Medium: 10,
-      Hard: 8
+      Medium: 7,
+      Hard: 7
     })
   })
 
@@ -83,46 +85,44 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
     }
     const easyTiles = buildLevelTiles(FALLBACK_CAMPAIGN_LEVELS, progress, 'Easy', sessionFor('free'))
     expect(easyTiles).toHaveLength(5)
-    expect(easyTiles.map(t => [t.stageNumber, t.locked, t.stars, t.isBoss])).toEqual([
-      ['01', false, 3, false],
-      ['02', false, 1, false],
-      ['03', false, 0, false],
-      ['04', true, 0, false],
-      ['05', true, 0, true]
+    expect(easyTiles.map(t => [t.stageNumber, t.locked, t.stars])).toEqual([
+      ['01', false, 3],
+      ['02', false, 1],
+      ['03', false, 0],
+      ['04', true, 0],
+      ['05', true, 0]
     ])
+    expect(easyTiles.every(t => !('isBoss' in t))).toBe(true)
+    expect(read('pages', 'index.vue')).not.toContain('label="Boss"')
 
     const mediumTiles = buildLevelTiles(FALLBACK_CAMPAIGN_LEVELS, {}, 'Medium', sessionFor('free'))
-    expect(mediumTiles).toHaveLength(10)
+    expect(mediumTiles).toHaveLength(7)
     expect(mediumTiles.filter(t => !t.locked).map(t => t.id)).toEqual(['medium-1', 'medium-2'])
 
     const hardTiles = buildLevelTiles(FALLBACK_CAMPAIGN_LEVELS, {}, 'Hard', sessionFor('paid'))
-    expect(hardTiles).toHaveLength(8)
+    expect(hardTiles).toHaveLength(7)
     expect(hardTiles.every(t => !t.locked)).toBe(true)
 
     expect(FALLBACK_CAMPAIGN_LEVELS.map(l => [l.id, l.order, l.difficulty, l.tier, l.title])).toEqual([
       ['easy-1', 1, 'Easy', 'free', 'Public Helpdesk'],
       ['easy-2', 2, 'Easy', 'free', 'Hidden in Plain Sight'],
-      ['easy-3', 3, 'Easy', 'free', 'Train Your First Guard'],
-      ['easy-4', 4, 'Easy', 'pro', 'Developer Docs Trap'],
-      ['easy-5', 5, 'Easy', 'pro', 'The Noisy Gateway'],
-      ['medium-1', 6, 'Medium', 'free', 'HR Handbook Assistant'],
-      ['medium-2', 7, 'Medium', 'free', 'Over-Helpful Refund Bot'],
+      ['easy-3', 3, 'Easy', 'free', 'Developer Docs Trap'],
+      ['easy-4', 4, 'Easy', 'pro', 'Train Your First Guard'],
+      ['easy-5', 5, 'Easy', 'pro', 'Noisy Gateway'],
+      ['medium-1', 6, 'Medium', 'free', 'HR Handbook'],
+      ['medium-2', 7, 'Medium', 'free', 'Refund Bot'],
       ['medium-3', 8, 'Medium', 'pro', 'Poisoned Inbox'],
       ['medium-4', 9, 'Medium', 'pro', 'Lost in Translation'],
-      ['medium-5', 10, 'Medium', 'pro', 'Confused Dev Copilot'],
-      ['medium-6', 11, 'Medium', 'pro', '50ms Express Lane'],
-      ['medium-7', 12, 'Medium', 'pro', 'IT Helpdesk Triage'],
-      ['medium-8', 13, 'Medium', 'pro', 'Dual-Use Refund Desk'],
-      ['medium-9', 14, 'Medium', 'pro', 'Encoded Cargo Courier'],
-      ['medium-10', 15, 'Medium', 'pro', 'Dual-Use CRM Boss'],
-      ['hard-1', 16, 'Hard', 'pro', 'Warehouse Ops Under Siege'],
-      ['hard-2', 17, 'Hard', 'pro', 'No Heavy Weapons'],
-      ['hard-3', 18, 'Hard', 'pro', 'The Auditor\'s Minefield'],
-      ['hard-4', 19, 'Hard', 'pro', 'Polyglot & Stego Smuggler'],
-      ['hard-5', 20, 'Hard', 'pro', 'Dual-Use Finance Desk'],
-      ['hard-6', 21, 'Hard', 'pro', 'Minimalist Fortress'],
-      ['hard-7', 22, 'Hard', 'pro', 'Dual-Use Cloud Ops'],
-      ['hard-8', 23, 'Hard', 'pro', 'Zero-Day Red Team Capstone']
+      ['medium-5', 10, 'Medium', 'pro', 'Express Lane'],
+      ['medium-6', 11, 'Medium', 'pro', 'Dual-Use Refund Desk'],
+      ['medium-7', 12, 'Medium', 'pro', 'CRM Boss'],
+      ['hard-1', 13, 'Hard', 'pro', 'Warehouse'],
+      ['hard-2', 14, 'Hard', 'pro', 'No Heavy Weapons'],
+      ['hard-3', 15, 'Hard', 'pro', 'Auditor\'s Minefield'],
+      ['hard-4', 16, 'Hard', 'pro', 'Polyglot'],
+      ['hard-5', 17, 'Hard', 'pro', 'Finance Desk'],
+      ['hard-6', 18, 'Hard', 'pro', 'Cloud Ops'],
+      ['hard-7', 19, 'Hard', 'pro', 'Zero-Day']
     ])
 
     const indexSource = read('pages', 'index.vue')
@@ -187,22 +187,28 @@ describe('minimal monochrome level select and campaign briefing UI (spec 0040)',
     expect(canAccessLevel({ tier: 'pro' }, sessionFor('free'))).toBe('pro_locked')
     expect(canAccessLevel({ tier: 'pro' }, sessionFor('paid'))).toBe('available')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('@click="isBriefingOpen = true"')
     expect(gameSource).toContain('CampaignLevelBriefingModal')
     expect(gameSource).toContain('Disabled in this level')
     expect(gameSource).toContain('placedCheckNodeCount')
     expect(gameSource).toContain('Pro Level Locked')
-    expect(gameSource).toContain('constraint_violations')
+    expect(gameSource).not.toContain('Hard constraint violated')
+    expect(gameSource).toMatch(/<USeparator[^>]*\/>\s*<span class="text-sm tabular-nums text-muted">\s*\{\{ placedCheckNodeCount \}\} \/ \{\{ maxCheckNodes \}\} nodes/)
+    const loss = { won: false, attacks_leaked: 0, false_alarms: 0, constraint_violations: ['Average latency 437.8 ms exceeded limit 8.0 ms.'] } as unknown as WaveScoreSchema
+    expect(waveOutcomeSummary(loss)).toBe('Average latency 437.8 ms exceeded limit 8.0 ms.')
+    expect(waveOutcomeSummary({ ...loss, attacks_leaked: 4 })).toBe('4 attack(s) got into the system. Average latency 437.8 ms exceeded limit 8.0 ms.')
+    expect(waveOutcomeSummary({ ...loss, attacks_leaked: 4, constraint_violations: [] })).toBe('4 attack(s) got into the system.')
     expect(gameSource).toContain('follow_up_passed')
     expect(gameSource).not.toContain('follow_up_feedback')
-    expect(gameSource).toContain('v-if="!waveScore.won"\n                class="text-xs text-muted"\n              >\n                {{ waveOutcomeSummary(waveScore) }}')
+    // A stopped run shows its stop line first (WEB-FAIR-003); other losses keep the summary.
+    expect(gameSource).toMatch(/v-else-if="!waveScore\.won"\s+class="text-xs text-muted"\s+>\s+\{\{ waveOutcomeSummary\(waveScore\) \}\}/)
     expect(gameSource).toContain('label="Next Level"')
     expect(gameSource).not.toContain('label="Back to Levels"')
   })
 
   it('[WEB-CAMP-006] locks level-disabled palette cards like sign-in-locked cards', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     const start = gameSource.indexOf('v-for="chk in checks"')
     const palette = gameSource.slice(start, gameSource.indexOf('</aside>', start))
 

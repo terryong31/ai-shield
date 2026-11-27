@@ -14,6 +14,7 @@ actionlint = "1.7.12"
 zizmor = "1.33.1"
 shellcheck = "0.11.0"
 semgrep = "1.186.0"
+k6 = "2.4.0"
 
 [env]
 UV_PYTHON = "3.12"
@@ -43,16 +44,16 @@ run = [
 ]
 
 [tasks."api:dev"]
-description = "Run the gateway API with reload on :8000 (Infisical dev /api + local Supabase)"
+description = "Run the gateway API with reload on :8000 (Infisical dev /api when signed in, else .env; local Supabase)"
 dir = "apps/api"
 env = { APP_ENV = "development" }
 depends = ["infra:up"]
-run = "infisical run --env=dev --path=/api -- python3 ../../scripts/local_env.py -- uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
+run = "python3 ../../scripts/with_secrets.py --env=dev --path=/api -- python3 ../../scripts/local_env.py -- uv run uvicorn shield_api.main:app --reload --reload-include '*.py' --reload-include .env --port 8000 --timeout-graceful-shutdown 1"
 
 [tasks."web:dev"]
-description = "Run the Nuxt web client on :3000 (Infisical dev /web)"
+description = "Run the Nuxt web client on :3000 (Infisical dev /web when signed in, else .env)"
 dir = "apps/web"
-run = "infisical run --env=dev --path=/web -- bun run dev"
+run = "python3 ../../scripts/with_secrets.py --env=dev --path=/web -- bun run dev"
 
 [tasks.dev]
 description = "Run API and web together"
@@ -122,6 +123,45 @@ run = "uv run pytest scripts/tests"
 description = "Web unit tests (Vitest)"
 dir = "apps/web"
 run = "bun run test"
+
+[tasks."test:db"]
+description = "Database tests against local Supabase: pgTAP SQL tests and pytest -m db (spec 0056)"
+depends = ["db:start"]
+run = [
+  "supabase test db",
+  "uv run pytest apps/api/tests/db -m db --no-cov",
+]
+
+# --- load tests (spec 0057) -----------------------------------------------------
+# Every scenario refuses a non-loopback K6_TARGET_URL unless K6_ALLOW_REMOTE=1.
+
+[tasks."perf:serve"]
+description = "Serve the gateway with in-memory stores on :8000 for k6 (MODE=prod for production rules)"
+run = "uv run python perf/k6/serve_api.py --mode ${MODE:-dev} --port ${PORT:-8000}"
+
+[tasks."perf:smoke"]
+description = "k6 smoke: every main route with a few VUs (K6_TARGET_URL, default http://127.0.0.1:8000)"
+run = "k6 run perf/k6/scenarios/smoke.js"
+
+[tasks."perf:load"]
+description = "k6 load: the real-play arrival-rate mix"
+run = "k6 run perf/k6/scenarios/load.js"
+
+[tasks."perf:spike"]
+description = "k6 spike: 120 readers at once on the leaderboard"
+run = "k6 run perf/k6/scenarios/spike.js"
+
+[tasks."perf:stress"]
+description = "k6 stress: bursts on rate-limited routes (run against MODE=prod perf:serve with K6_PROXY_SECRET)"
+run = "k6 run perf/k6/scenarios/stress.js"
+
+[tasks."perf:soak"]
+description = "k6 soak: steady load for K6_SOAK_DURATION (default 10m)"
+run = "k6 run perf/k6/scenarios/soak.js"
+
+[tasks."perf:check"]
+description = "Validate every k6 scenario with k6 inspect"
+run = "for f in perf/k6/scenarios/*.js; do k6 inspect \"$f\" >/dev/null || exit 1; done"
 
 [tasks."test:e2e"]
 description = "Playwright tests against the local stack (mise run dev) or E2E_BASE_URL"
@@ -194,6 +234,22 @@ run = [
   "git diff --exit-code -- contracts apps/web/app/types/api.gen.ts",
 ]
 
+[tasks."levels:build"]
+description = "Build the campaign waves from the reviewed content drafts (spec 0051)"
+run = "uv run python scripts/build_level_waves.py"
+
+[tasks."levels:check"]
+description = "Fail if the waves are stale or a level has no passing calibration report"
+run = [
+  "uv run python scripts/build_level_waves.py --check",
+  "uv run python -m shield_engine.game.calibration packages/engine/calibration/report.json",
+]
+
+[tasks."levels:calibrate"]
+description = "Run the lazy bots and reference boards with the real models; writes the report"
+dir = "apps/api"
+run = "infisical run --env=dev --path=/api -- uv run python -m shield_api.calibrate ../../packages/engine/calibration/report.json"
+
 [tasks."spec:check"]
 description = "Every acceptance criterion in accepted specs has a test"
 run = "uv run python scripts/check_spec_coverage.py"
@@ -264,7 +320,7 @@ run = 'infisical run --env=prod --path=/api -- uv run python -m shield_api.admin
 [tasks."db:start"]
 description = "Start the local Supabase stack (applies migrations + seed on first run)"
 depends = ["docker:ensure"]
-run = "supabase status >/dev/null 2>&1 || supabase start"
+run = "supabase status -o json 2>/dev/null | grep -q '\"API_URL\"' || (supabase stop >/dev/null 2>&1 || true; supabase start)"
 
 [tasks."db:stop"]
 description = "Stop the local Supabase stack (data is kept)"
@@ -359,7 +415,7 @@ run = "uv run shield-engine train --data packages/engine/data/seed/train.jsonl"
 
 [tasks.check]
 description = "Everything CI runs. Must pass before pushing."
-depends = ["lint", "typecheck", "test", "spec:check", "contract:check", "secrets:scan", "sast"]
+depends = ["lint", "typecheck", "test", "spec:check", "contract:check", "levels:check", "secrets:scan", "sast"]
 
 [tasks."build:web"]
 description = "Production build of the web client"

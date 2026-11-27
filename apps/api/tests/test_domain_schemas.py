@@ -126,7 +126,9 @@ async def test_supabase_score_store_persists_game_scores(
     reopened = SupabaseScoreStore(client)
     listed = await reopened.list_scores(level_id="medium-1")
     assert [(s.player_name, s.total_score) for s in listed] == [("grace", 7000), ("ada", 6000)]
-    assert {s.score_version for s in listed} == {3}
+    from shield_api.services.scores import SCORE_VERSION
+
+    assert {s.score_version for s in listed} == {SCORE_VERSION}
 
     await reopened.clear_scores()
     assert await reopened.list_scores() == []

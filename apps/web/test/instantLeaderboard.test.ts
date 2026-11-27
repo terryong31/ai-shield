@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -31,12 +32,22 @@ describe('instant leaderboard (spec 0028 / 0044)', () => {
   })
 
   it('[WEB-SCORE-002] refreshes leaderboard in background after score recording in game.vue and reset in settings.vue', () => {
-    const gamePage = read('pages', 'game.vue')
+    const gamePage = readGamePage()
     expect(gamePage).toContain('useLeaderboard')
     expect(gamePage).toMatch(/refreshScores\(\s*\{\s*background:\s*true\s*\}\s*\)/)
 
     const settingsPage = read('pages', 'settings.vue')
     expect(settingsPage).toContain('useLeaderboard')
     expect(settingsPage).toMatch(/refreshScores\(\s*\{\s*background:\s*true\s*\}\s*\)/)
+  })
+
+  it('[WEB-LBOARD-009] tracks loading per difficulty so an unfetched tab shows its loading state', () => {
+    const composable = read('composables', 'useLeaderboard.ts')
+    expect(composable).toContain('shield_leaderboard_loaded_by_difficulty')
+    expect(composable).toContain('shield_leaderboard_loading_by_difficulty')
+    expect(composable).toContain('loadedBy.value[selectedDifficulty.value]')
+    expect(composable).toContain('inFlightRefresh.get(activeDiff)')
+    expect(composable).not.toContain('let inFlightRefresh: Promise<void> | null')
+    expect(composable).toContain('DIFFICULTIES.filter(diff => loadedBy.value[diff])')
   })
 })

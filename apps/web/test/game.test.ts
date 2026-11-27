@@ -21,6 +21,7 @@ import {
   resolveConsoleAccess,
   toApiBoard
 } from '../app/utils/gameBoard'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 
@@ -119,7 +120,7 @@ describe('admin console access and routing', () => {
 
   it('[WEB-GAME-005] enforces ai-shield main menu, hidden console with UAuthForm, Safe/Assistant labels, quit modal, and double-click node settings with ML dataset upload', () => {
     const indexSource = readFileSync(join(APP_DIR, 'pages', 'index.vue'), 'utf-8')
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const appSource = readFileSync(join(APP_DIR, 'app.vue'), 'utf-8')
     const dashboardLayout = readFileSync(join(APP_DIR, 'layouts', 'dashboard.vue'), 'utf-8')
 
@@ -154,7 +155,7 @@ describe('admin console access and routing', () => {
 
   it('[WEB-GAME-006] enforces client player auth, removes BYOK in settings, locks AI agent nodes for anonymous users, and displays free daily quotas', () => {
     const indexSource = readFileSync(join(APP_DIR, 'pages', 'index.vue'), 'utf-8')
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
 
     // BYOK is completely removed from Settings and Game pages
     expect(indexSource).not.toContain('Configure secrets')
@@ -209,7 +210,7 @@ describe('admin console access and routing', () => {
     }
     expect(canUseNodeKind('safety_check', freeSession)).toBe(true)
     expect(canUseNodeKind('llm_review', freeSession)).toBe(true)
-    expect(attemptsLeftLabel(freeSession)).toBe('2/3 attempts left today')
+    expect(attemptsLeftLabel(freeSession)).toBe('2 / 3 runs left today')
 
     const paidSession = {
       ...freeSession,
@@ -250,8 +251,8 @@ describe('admin console access and routing', () => {
     expect(free[1]!.highlight).toBe(true)
     expect(free.map(p => p.price)).toEqual(['$0', '$0'])
     expect(free[0]!.features.join(' ')).toContain('5 wave runs a day')
-    expect(free[1]!.features.join(' ')).toContain('300 wave runs a day')
-    expect(free[1]!.features.join(' ')).toContain('1,000 tests a day')
+    expect(free[1]!.features.join(' ')).toContain('50 wave runs a day')
+    expect(free[1]!.features.join(' ')).toContain('All 19 campaign levels')
     expect(free[1]!.features.join(' ').toLowerCase()).toContain('sandbox')
 
     expect(anon.map(p => [p.button?.label, p.button?.to])).toEqual([['Sign in', '/auth/login'], ['Sign in', '/auth/login']])
@@ -271,7 +272,7 @@ describe('admin console access and routing', () => {
     expect(plansSource).toMatch(/if \(session\.value\.tier === 'paid'\) await goBack\('\/'\)/)
 
     for (const page of ['index.vue', 'game.vue']) {
-      const source = readFileSync(join(APP_DIR, 'pages', page), 'utf-8')
+      const source = page === 'game.vue' ? readGamePage() : readFileSync(join(APP_DIR, 'pages', page), 'utf-8')
       expect(source).not.toContain('@click="upgradeToPaid"')
       expect(source).toContain('to="/plans"')
     }
@@ -319,7 +320,7 @@ describe('admin console access and routing', () => {
 
   it('[WEB-GAME-012] provides dedicated /settings, /auth/login, /auth/register, and /auth/recover pages', () => {
     const indexSource = readFileSync(join(APP_DIR, 'pages', 'index.vue'), 'utf-8')
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const authSource = readFileSync(join(APP_DIR, 'composables', 'usePlayerAuth.ts'), 'utf-8')
     const apiSource = readFileSync(join(APP_DIR, 'composables', 'useShieldApi.ts'), 'utf-8')
 
@@ -369,7 +370,7 @@ describe('admin console access and routing', () => {
   })
 
   it('[WEB-GAME-008] renders the Tools panel as a two-column grid of portrait cards', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
 
     // Each check is a portrait UCard in a two-column grid, not a button row
     expect(gameSource).toContain('grid grid-cols-2')
@@ -397,7 +398,7 @@ describe('admin console access and routing', () => {
   })
 
   it('[WEB-GAME-009] fixes the Tools panel width and adds a state-aware chevron, hover hint, drag to canvas, and tool info modal', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
 
     // Fixed width with no resize handle
     expect(gameSource).not.toContain('sidebarWidth')
@@ -434,7 +435,7 @@ describe('admin console access and routing', () => {
   })
 
   it('[WEB-GAME-011] shows only an explanation in the Input node modal and trims the tool info modal', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
 
     // Input node modal: explanation only, no wiring controls
     expect(gameSource).toContain('Connect the node with a tool and the prompt will flow into the next node.')
@@ -524,7 +525,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-GAME-001] word_filter modal removes Rule sets presets and shows only Custom blocked words', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('Rule sets')
     expect(gameSource).not.toContain('toggleRuleGroup')
     expect(gameSource).not.toContain('hasRuleGroup')
@@ -534,7 +535,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-GAME-002] Run results modal displays Won vs Lost state and failure reason on loss', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const start = gameSource.indexOf('v-model:open="isResultsOpen"')
     const results = gameSource.slice(start, gameSource.indexOf('</UModal>', start))
     expect(results).toContain('waveScore.won')
@@ -542,7 +543,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-TOOL-001] configures text_cleanup transforms, regex secret_scan, Tool policy extensions, and Jev noul question', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
     expect(boardSource).toContain('jev:')
     expect(gameSource).toContain('\'jev\'')
@@ -573,7 +574,7 @@ describe('design hygiene and anti-slop copy standard', () => {
     expect(canUseNodeKind('llm_review', signedIn, { jevKeyAvailable: false, aiKeyAvailable: false })).toBe(false)
     expect(canUseNodeKind('safety_check', signedIn, { jevKeyAvailable: false, aiKeyAvailable: true })).toBe(true)
 
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
     expect(boardSource).toContain('nodeKeyRequirement')
     expect(boardSource).toContain('Insert Jev API key to continue')
@@ -589,7 +590,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-LIVE-002] forbids user-entered Jev or AI API keys and shows a .env toast when missing', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('isApiKeyModalOpen')
     expect(gameSource).not.toContain('jevApiKey')
     expect(gameSource).not.toContain('aiApiKey')
@@ -602,7 +603,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-CHECK-001] distinguishes safety_check (guardrail USelectMenu) from llm_review (LLM USelectMenu + prompt)', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const boardSource = readFileSync(join(APP_DIR, 'utils', 'gameBoard.ts'), 'utf-8')
 
     expect(boardSource).toContain('SAFETY_CHECK_MODELS')
@@ -615,7 +616,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-CHECK-002] offers only models the providers still serve, and defaults to the engine defaults', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
 
     expect(SAFETY_CHECK_MODELS.map(m => m.value)).toEqual([
       'openai/gpt-oss-safeguard-20b',
@@ -638,7 +639,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-CHECK-003] lets players switch thinking on for LLM checks, never for Prompt Guard', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
 
     expect(makeGameNode('lr', 'llm_review', { x: 0, y: 0 }).data.config.thinking).toBe(false)
     expect(makeGameNode('sc', 'safety_check', { x: 0, y: 0 }).data.config.thinking).toBe(false)
@@ -663,7 +664,7 @@ describe('design hygiene and anti-slop copy standard', () => {
     expect(mlNode.data?.config.safe_threshold).toBe(0.3)
     expect(mlNode.data?.config.block_threshold).toBe(0.75)
 
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('quick_screen')
     expect(gameSource).toContain('{ id: \'tfidf\', label: \'TF-IDF\' }')
     expect(gameSource).toContain('config.safe_threshold')
@@ -671,7 +672,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-GAME-010] removes tool_filter from palette and renders Tool policy toggles on jev, safety_check, and llm_review', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     const toolKindsBlock = gameSource.slice(
       gameSource.indexOf('const toolKinds: NodeKind[] = ['),
       gameSource.indexOf('const checks = ref<')
@@ -724,7 +725,7 @@ describe('design hygiene and anti-slop copy standard', () => {
   })
 
   it('[WEB-ML-002] removes pre-trained TF-IDF baseline wording and starts mlCsvDraft empty with a placeholder', () => {
-    const gameSource = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('pre-trained')
     expect(gameSource).not.toContain('TF-IDF baseline')
     expect(gameSource).toContain('Not trained yet')

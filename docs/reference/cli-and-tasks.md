@@ -47,7 +47,7 @@ into the contract. Prints `wrote <path>`.
 
 Defined in [`mise.toml`](../../mise.toml). Run from anywhere in the repository
 with `mise run <task>`; list them with `mise tasks`. Tools pinned by mise:
-node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0, infisical 0.44.11, lefthook 2.2.2,
+node 24.20.0, bun 1.4.0, uv 0.12.13, python 3.12, supabase 2.116.0, infisical 0.44.11, k6 2.4.0, lefthook 2.2.2,
 gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.186.0.
 
 | Task | Runs | Description |
@@ -55,8 +55,8 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `setup` | `mise install`; `uv sync --all-packages`; `bun install`; `lefthook install` | Install tools, all Python and JavaScript dependencies, and the git hooks |
 | `hooks:install` | `lefthook install` | Install the git hooks from `lefthook.yml` |
 | `docker:ensure` | `docker info`, or `orbctl start` | Make sure that Docker runs |
-| `api:dev` | `infisical run --env=dev --path=/api`, then `scripts/local_env.py`, then `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development`; depends on `infra:up` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
-| `web:dev` | `infisical run --env=dev --path=/web -- bun run dev` in `apps/web` | Run the Nuxt web client on :3000 |
+| `api:dev` | `scripts/with_secrets.py --env=dev --path=/api` (Infisical when signed in, else the command directly with a notice; spec 0055), then `scripts/local_env.py`, then `uv run uvicorn shield_api.main:app --reload --port 8000` in `apps/api`, with `APP_ENV=development`; depends on `infra:up` | Run the gateway API with reload on :8000 (Swagger at `/api/v1/docs`) |
+| `web:dev` | `scripts/with_secrets.py --env=dev --path=/web -- bun run dev` in `apps/web` (Infisical when signed in, else directly) | Run the Nuxt web client on :3000 |
 | `dev` | depends on `api:dev`, `web:dev` | Run API and web together |
 | `stop` | `kill`, `docker compose stop`, `supabase stop` | Stop the dev servers, Stripe listener, Redis and local Supabase of this repo (data is kept) |
 | `stripe:setup` | `python3 scripts/stripe_setup.py <web URL>` | Ask for the sandbox key, store the Stripe variables in Infisical `dev` and `prod`, and make the production webhook endpoint |
@@ -66,6 +66,8 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `test:api` | `uv run pytest apps/api --cov=shield_api --cov-fail-under=85` | Gateway tests with coverage (fails under 85%) |
 | `test:tooling` | `uv run pytest scripts/tests` | Tests for repo tooling (SDD workflow, spec checker) |
 | `test:web` | `bun run test` (Vitest) in `apps/web` | Web unit tests |
+| `test:db` | `supabase start`, `supabase test db`, then `uv run pytest apps/api/tests/db -m db`; depends on `db:start` | pgTAP SQL tests in `supabase/tests/` and the Python database tests (row level security, constraints, stored functions, concurrency, the Supabase stores). `test:api` leaves out `@pytest.mark.db` tests (spec 0056) |
+| `perf:serve`, `perf:smoke`, `perf:load`, `perf:spike`, `perf:stress`, `perf:soak`, `perf:check` | `perf/k6/serve_api.py`; `k6 run perf/k6/scenarios/<name>.js`; `k6 inspect` | k6 load tests against a loopback gateway (spec 0057). See [Run load tests](../how-to/run-load-tests.md) |
 | `test:e2e` | `bunx playwright test` in `apps/web` | Browser tests against the local stack or `E2E_BASE_URL` ([how-to](../how-to/run-e2e-tests.md)) |
 | `e2e:gate` | `python3 scripts/e2e_gate.py` | Run the browser tests against local Supabase; starts and stops the servers when needed |
 | `test` | depends on the three test tasks | All tests |
@@ -84,7 +86,10 @@ gitleaks 8.30.1, actionlint 1.7.12, zizmor 1.33.1, shellcheck 0.11.0, semgrep 1.
 | `spec:check` | `uv run python scripts/check_spec_coverage.py` | Every acceptance criterion in accepted specs has a test |
 | `spec:new` | `uv run python scripts/new_spec.py <slug>` | Scaffold a new spec folder: `mise run spec:new <slug>` |
 | `train` | `uv run shield-engine train --data packages/engine/data/seed/train.jsonl` | Retrain the bundled baseline classifier |
-| `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check`, `secrets:scan`, `sast` | Everything CI runs. Must pass before pushing |
+| `levels:build` | `uv run python scripts/build_level_waves.py` | Generate `shield_engine/game/level_waves.py` from the spec 0051 content drafts |
+| `levels:check` | `scripts/build_level_waves.py --check`, then `python -m shield_engine.game.calibration packages/engine/calibration/report.json` | Fail if the generated waves are stale, or if the offline or live calibration checks fail |
+| `levels:calibrate` | `infisical run --env=dev --path=/api -- uv run python -m shield_api.calibrate ../../packages/engine/calibration/report.json` in `apps/api` | Run the reference boards and lazy bots on the live models and write the report (uses dev model keys) |
+| `check` | depends on `lint`, `typecheck`, `test`, `spec:check`, `contract:check`, `levels:check`, `secrets:scan`, `sast` | Everything CI runs. Must pass before pushing |
 | `build:web` | `bun run build` in `apps/web` | Production build of the web client |
 | `sdd:start` | `python3 scripts/sdd.py start` | Start a cycle: `<spec> [IDs…]` or `--refactor "reason"` |
 | `sdd:red` | `python3 scripts/sdd.py red` | Run target tests; advance only if each criterion has a legitimately failing test |

@@ -9,6 +9,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from shield_api.schemas import (
@@ -31,6 +32,9 @@ from shield_engine.game import (
 )
 
 logger = logging.getLogger(__name__)
+
+# How long one process reuses a leaderboard read. The CDN already caches for 10 s.
+READ_CACHE_SECONDS = 5.0
 
 BoardName = DifficultyCategory | Literal["All"]
 ALL_BOARDS: tuple[BoardName, ...] = ("Easy", "Medium", "Hard", "All")
@@ -213,20 +217,14 @@ def _board_levels_total(board: BoardName) -> int:
     return len(LEVEL_IDS_BY_DIFFICULTY[board])
 
 
-def _entry_sort_key(entry: DifficultyLeaderboardEntry) -> tuple[int, int, float, float, str]:
-    return (
-        -entry.total_score,
-        -entry.levels_mastered,
-        entry.avg_latency_ms,
-        entry.total_cost_usd,
-        entry.player_name,
-    )
+def _entry_sort_key(entry: DifficultyLeaderboardEntry) -> tuple[int, int, float, str]:
+    return scores_mod.leaderboard_sort_key(entry)
 
 
 def _decode_member_entry(
     board: BoardName, levels_total: int, raw: list[str | None]
 ) -> DifficultyLeaderboardEntry | None:
-    name, _name_at, total_s, mastered_s, solved_s, lat_s, cost_s = raw
+    name, name_at, total_s, mastered_s, solved_s, lat_s, cost_s = raw
     if (
         name is None
         or total_s is None
@@ -250,6 +248,7 @@ def _decode_member_entry(
         levels_total=levels_total,
         avg_latency_ms=round(int(lat_s) / 1000 / solved, 2),
         total_cost_usd=round(int(cost_s) / 1_000_000_000, 6),
+        reached_at=datetime.fromtimestamp(float(name_at), UTC) if name_at else None,
     )
 
 
@@ -282,6 +281,8 @@ class LeaderboardService:
         self._fallback_rows: list[tuple[str | None, ScoreRecord]] | None = None
         self._fallback_fetched_at: float | None = None
         self._fallback_lock = asyncio.Lock()
+        # Recent board reads, so a busy page does not read Redis on every request.
+        self._read_cache: dict[tuple[str, int], tuple[float, list[DifficultyLeaderboardEntry]]] = {}
 
     @staticmethod
     def _prefix() -> str:
@@ -301,6 +302,7 @@ class LeaderboardService:
     def _invalidate_fallback_cache(self) -> None:
         self._fallback_rows = None
         self._fallback_fetched_at = None
+        self._read_cache.clear()
 
     async def _fallback_owned_scores(self) -> list[tuple[str | None, ScoreRecord]]:
         now = self._clock()
@@ -469,6 +471,18 @@ class LeaderboardService:
             return aggregate_difficulty_leaderboard(owned, difficulty=difficulty, limit=limit)
 
         board = _board_name(difficulty)
+        # Keyed by the versioned board key, so a score-version change is a miss.
+        cache_key = (self._keys(board)[0], limit)
+        cached = self._read_cache.get(cache_key)
+        if cached is not None and self._clock() - cached[0] < READ_CACHE_SECONDS:
+            return list(cached[1])
+        entries = await self._read_board(board, difficulty=difficulty, limit=limit)
+        self._read_cache[cache_key] = (self._clock(), entries)
+        return list(entries)
+
+    async def _read_board(
+        self, board: BoardName, *, difficulty: DifficultyCategory | None, limit: int
+    ) -> list[DifficultyLeaderboardEntry]:
         z_key, d_key, _, _, _ = self._keys(board)
         try:
             if not await self._ensure_board_ready(board):

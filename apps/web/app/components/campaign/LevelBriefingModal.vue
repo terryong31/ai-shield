@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { GameLevelSchema } from '~/types/api'
+import { starCriteria } from '~/utils/campaignSelect'
 
 const open = defineModel<boolean>('open', { default: false })
 
@@ -33,11 +34,31 @@ withDefaults(
     <template #body>
       <div
         v-if="level"
-        class="space-y-4 text-sm"
+        class="space-y-5 text-sm"
       >
         <p class="leading-relaxed text-default">
-          {{ level.summary }}
+          {{ level.new_idea }}
         </p>
+
+        <section class="space-y-1">
+          <h3 class="font-semibold text-highlighted">
+            Objective
+          </h3>
+          <dl class="space-y-1">
+            <div
+              v-for="star in starCriteria(level)"
+              :key="star.label"
+              class="flex gap-2"
+            >
+              <dt class="shrink-0 text-muted">
+                {{ star.label }}:
+              </dt>
+              <dd class="text-default">
+                {{ star.goal }}
+              </dd>
+            </div>
+          </dl>
+        </section>
 
         <div class="space-y-4 flex flex-col items-center">
           <UInputRating

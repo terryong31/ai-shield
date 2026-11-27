@@ -64,7 +64,7 @@ def test_missing_supabase_raises_configuration_error_in_every_env(
                 APP_ENV=app_env,  # type: ignore[arg-type]
                 SUPABASE_URL=url,
                 SUPABASE_KEY=key,
-                REDIS_URL=SecretStr("redis://localhost:6379/0"),
+                REDIS_URL=SecretStr("rediss://localhost:6379/0"),
             )
         )
 

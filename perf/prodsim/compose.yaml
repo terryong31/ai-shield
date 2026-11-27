@@ -1,0 +1,37 @@
+# Production-like load lab (local only). Sizes follow the free tiers that production uses:
+# - gateway: one Vercel Hobby function instance, 1 vCPU and 2 GB
+# - redis-lab: Upstash free, 256 MB
+# - the local Supabase database is limited to Supabase Nano (0.5 GB) by run.py while a run lasts
+# The AI models are a fake with 0.6 to 2.5 s replies (serve.py), so a run costs nothing.
+name: ai-shield-prodsim
+
+services:
+  redis-lab:
+    image: redis:8-alpine
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--save", ""]
+    ports:
+      - "127.0.0.1:6390:6379"
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    command: ["python", "/lab/serve.py"]
+    cpus: 1.0
+    mem_limit: 2g
+    environment:
+      APP_ENV: development
+      LAB_OUT: /lab/out
+      LAB_PROXY_SECRET: ${LAB_PROXY_SECRET:?set by run.py}
+      SUPABASE_URL: http://host.docker.internal:54421
+      SUPABASE_KEY: ${LAB_SUPABASE_KEY:?set by run.py}
+      REDIS_URL: redis://redis-lab:6379/0
+      WEB_BASE_URL: https://ai-shield.lab
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./:/lab
+    ports:
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      - redis-lab

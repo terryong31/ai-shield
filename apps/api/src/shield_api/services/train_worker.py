@@ -5,12 +5,22 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import sys
+from collections.abc import Mapping
 from contextlib import suppress
 
 from shield_engine.game import BoardValidationError, fit_classifier, sign_model
 
 _STARTUP_TIMEOUT_SECONDS = 15.0
+# The only parent variables a training child sees; keys and secrets stay out (spec 0054).
+WORKER_ENV_ALLOWLIST = ("PATH", "PYTHONPATH", "PYTHONUNBUFFERED", "HOME", "TMPDIR", "LANG")
+
+
+def worker_environment(parent: Mapping[str, str]) -> dict[str, str]:
+    return {name: parent[name] for name in WORKER_ENV_ALLOWLIST if name in parent}
+
+
 _STREAM_LIMIT_BYTES = 4 * 1024 * 1024
 
 
@@ -55,6 +65,7 @@ class TrainWorkerRunner:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=_STREAM_LIMIT_BYTES,
+            env=worker_environment(os.environ),
         )
         try:
             assert proc.stdout is not None

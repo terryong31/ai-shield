@@ -68,19 +68,16 @@ To see names without values, use the Infisical dashboard. `infisical secrets` pr
 
 ## Work without access to Infisical
 
-The mise tasks `api:dev`, `web:dev` and `up` need an Infisical session. Without one, start the
-processes directly:
+`mise run dev` (and `api:dev`, `web:dev`) works without Infisical (spec 0055). The tasks run
+through `scripts/with_secrets.py`. When the Infisical CLI is missing or not signed in, it shows a
+short notice and starts the command directly, so the apps read only their `.env` files:
 
 ```bash
-mise run infra:up
-cd apps/api && APP_ENV=development python3 ../../scripts/local_env.py -- uv run uvicorn shield_api.main:app --reload --port 8000
+mise run dev
 ```
 
-In a second terminal:
-
-```bash
-cd apps/web && bun run dev
-```
+To set optional local values, copy `apps/api/.env.example` to `apps/api/.env` and
+`apps/web/.env.example` to `apps/web/.env`. The `up` task still needs an Infisical session.
 
 The game works without provider keys. See
 [Configure LLM providers](configure-llm-providers.md). CI and the tests do not use Infisical.

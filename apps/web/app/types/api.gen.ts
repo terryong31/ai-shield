@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/account/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Account
+         * @description Download everything the gateway holds about the signed-in player (spec 0058).
+         */
+        get: operations["export_account_api_v1_auth_account_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/account/password": {
         parameters: {
             query?: never;
@@ -55,7 +75,7 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change the password and sign out every other session.
+         * @description Change the password, sign out every session and give this browser a new one.
          */
         post: operations["change_password_api_v1_auth_account_password_post"];
         delete?: never;
@@ -641,6 +661,24 @@ export interface components {
             new_email: string;
         };
         /**
+         * AccountExportResponse
+         * @description Everything the gateway holds about the signed-in player (spec 0058).
+         */
+        AccountExportResponse: {
+            account: components["schemas"]["ExportAccountSchema"] | null;
+            /**
+             * Exported At
+             * Format: date-time
+             */
+            exported_at: string;
+            /** Purchases */
+            purchases: components["schemas"]["ExportPurchaseSchema"][];
+            /** Saved Boards */
+            saved_boards: components["schemas"]["ExportSavedBoardSchema"][];
+            /** Scores */
+            scores: components["schemas"]["ExportScoreSchema"][];
+        };
+        /**
          * AccountPasswordRequest
          * @description Change password (spec 0025). The current password is checked first.
          */
@@ -771,6 +809,13 @@ export interface components {
             /** Kind */
             kind: ("incoming" | "word_filter" | "text_cleanup" | "length_limit" | "secret_scan" | "ml_classifier" | "jev" | "safety_check" | "llm_review" | "tool_filter" | "assistant") | "blocked";
         };
+        /** BriefingExampleSchema */
+        BriefingExampleSchema: {
+            /** Family */
+            family: string;
+            /** Text */
+            text: string;
+        };
         /**
          * ByokModelSchema
          * @description Provider, model and key for one custom run. There is deliberately no URL field.
@@ -889,6 +934,8 @@ export interface components {
             max_possible_score: number;
             /** Player Name */
             player_name: string;
+            /** Reached At */
+            reached_at?: string | null;
             /** Total Cost Usd */
             total_cost_usd: number;
             /** Total Score */
@@ -912,6 +959,86 @@ export interface components {
             /** Total Score */
             total_score: number;
         };
+        /** ExportAccountSchema */
+        ExportAccountSchema: {
+            /** Created At */
+            created_at?: string | null;
+            /** Email */
+            email: string;
+            /** Paid Until */
+            paid_until?: string | null;
+            /** Player Name */
+            player_name: string;
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "anonymous" | "free" | "paid";
+        };
+        /** ExportPurchaseSchema */
+        ExportPurchaseSchema: {
+            /** Amount Cents */
+            amount_cents: number;
+            /** Created At */
+            created_at?: string | null;
+            /** Currency */
+            currency: string;
+            /** Ends At */
+            ends_at?: string | null;
+            /** Id */
+            id: string;
+            /** Settled At */
+            settled_at?: string | null;
+            /** Starts At */
+            starts_at?: string | null;
+            /** Status */
+            status: string;
+        };
+        /** ExportSavedBoardSchema */
+        ExportSavedBoardSchema: {
+            /** Level Id */
+            level_id: string;
+            /** Save */
+            save: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ExportScoreSchema */
+        ExportScoreSchema: {
+            /** Attacks Blocked */
+            attacks_blocked: number;
+            /** Attacks Total */
+            attacks_total: number;
+            /** Avg Latency Ms */
+            avg_latency_ms: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** False Alarms */
+            false_alarms: number;
+            /** Level Id */
+            level_id: string;
+            /** Mastered */
+            mastered: boolean;
+            /**
+             * Medal
+             * @enum {string}
+             */
+            medal: "none" | "bronze" | "silver" | "gold";
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /** Total Score */
+            total_score: number;
+            /** Won */
+            won: boolean;
+        };
         /** FollowUpChallengeSchema */
         FollowUpChallengeSchema: {
             /** Description */
@@ -926,6 +1053,8 @@ export interface components {
             max_tokens?: number | null;
             /** Max Total Cost Usd */
             max_total_cost_usd?: number | null;
+            /** Max Training Rows */
+            max_training_rows?: number | null;
         };
         /** GameCatalogResponse */
         GameCatalogResponse: {
@@ -959,6 +1088,12 @@ export interface components {
             agent: components["schemas"]["AgentProfileSchema"] | null;
             /** Agent Tier */
             agent_tier: ("standard" | "budget") | null;
+            /** Attack Floor */
+            attack_floor?: number | null;
+            /** Benign Floor */
+            benign_floor?: number | null;
+            /** Briefing */
+            briefing?: components["schemas"]["BriefingExampleSchema"][];
             constraints?: components["schemas"]["LevelConstraintsSchema"];
             /**
              * Difficulty
@@ -972,13 +1107,18 @@ export interface components {
              * Id
              * @enum {string}
              */
-            id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
+            id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7";
             /** Max Cost Usd */
             max_cost_usd: number;
             /** Max Latency Ms */
             max_latency_ms: number;
             /** Messages */
             messages: components["schemas"]["LevelMessageSchema"][];
+            /**
+             * New Idea
+             * @default
+             */
+            new_idea: string;
             /** Order */
             order: number;
             /** Protected Asset */
@@ -994,6 +1134,11 @@ export interface components {
             tier: "free" | "pro";
             /** Title */
             title: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
         };
         /** GameRunRequest */
         GameRunRequest: {
@@ -1005,7 +1150,7 @@ export interface components {
              * Level Id
              * @default easy-1
              */
-            level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
+            level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7") | "custom";
         };
         /** GameRunResponse */
         GameRunResponse: {
@@ -1017,6 +1162,7 @@ export interface components {
             /** Level Id */
             level_id: string;
             score: components["schemas"]["WaveScoreSchema"];
+            stop?: components["schemas"]["RunStopSchema"] | null;
             /** Traces */
             traces: components["schemas"]["MessageTraceSchema"][];
             /** Untrained Model Nodes */
@@ -1034,7 +1180,7 @@ export interface components {
             /** Dataset */
             dataset?: components["schemas"]["TrainingRowSchema"][] | null;
             /** Level Id */
-            level_id?: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom" | null;
+            level_id?: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7") | "custom" | null;
         };
         /** GameTrainResponse */
         GameTrainResponse: {
@@ -1093,6 +1239,8 @@ export interface components {
             latency_ms: number;
             /** Node Id */
             node_id: string;
+            /** Score */
+            score?: number | null;
         };
         /** LeaderboardRankResponse */
         LeaderboardRankResponse: {
@@ -1118,6 +1266,8 @@ export interface components {
             max_tokens?: number | null;
             /** Max Total Cost Usd */
             max_total_cost_usd?: number | null;
+            /** Max Training Rows */
+            max_training_rows?: number | null;
         };
         /** LevelMessageSchema */
         LevelMessageSchema: {
@@ -1147,7 +1297,7 @@ export interface components {
              * Level Id
              * @enum {string}
              */
-            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
+            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7";
             /** Mastered */
             mastered: boolean;
             /**
@@ -1161,6 +1311,11 @@ export interface components {
         /** MessageTraceSchema */
         MessageTraceSchema: {
             agent?: components["schemas"]["AgentRunSchema"] | null;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /** Hops */
             hops: components["schemas"]["HopTraceSchema"][];
             /** Is Attack */
@@ -1185,6 +1340,17 @@ export interface components {
             x: number;
             /** Y */
             y: number;
+        };
+        /** PathStepSchema */
+        PathStepSchema: {
+            /** Cost Usd */
+            cost_usd: number;
+            /** Kind */
+            kind: string;
+            /** Latency Ms */
+            latency_ms: number;
+            /** Node Id */
+            node_id: string;
         };
         /**
          * PlayerConfirmRequest
@@ -1341,6 +1507,27 @@ export interface components {
              */
             wave_runs_used: number;
         };
+        /**
+         * RunStopSchema
+         * @description A run that a limit stopped (spec 0050): the prompt, the path and the node that went over.
+         */
+        RunStopSchema: {
+            /** Limit */
+            limit: number;
+            /** Node Id */
+            node_id: string;
+            /** Path */
+            path: components["schemas"]["PathStepSchema"][];
+            /** Prompt Index */
+            prompt_index: number;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "time_limit" | "budget";
+            /** Used */
+            used: number;
+        };
         /** SavedBoardRequest */
         SavedBoardRequest: {
             board: components["schemas"]["BoardGraphSchema"];
@@ -1355,7 +1542,7 @@ export interface components {
             board: components["schemas"]["BoardGraphSchema"];
             custom?: components["schemas"]["CustomSetupSchema"] | null;
             /** Level Id */
-            level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
+            level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7") | "custom";
             /** Positions */
             positions?: {
                 [key: string]: components["schemas"]["NodePositionSchema"];
@@ -1388,7 +1575,7 @@ export interface components {
              * Level Id
              * @enum {string}
              */
-            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8";
+            level_id: "easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7";
             /**
              * Mastered
              * @default false
@@ -1438,6 +1625,11 @@ export interface components {
         };
         /** WaveScoreSchema */
         WaveScoreSchema: {
+            /**
+             * Accuracy Points
+             * @default 0
+             */
+            accuracy_points: number;
             /** Attacks Leaked */
             attacks_leaked: number;
             /** Attacks Protected */
@@ -1450,6 +1642,11 @@ export interface components {
             benign_helped: number;
             /** Benign Total */
             benign_total: number;
+            /**
+             * Cleared Points
+             * @default 0
+             */
+            cleared_points: number;
             /** Constraint Violations */
             constraint_violations?: string[];
             /** Cost Points */
@@ -1471,12 +1668,32 @@ export interface components {
             /** Leak Penalty */
             leak_penalty: number;
             /**
+             * List Cost Usd
+             * @default 0
+             */
+            list_cost_usd: number;
+            /**
+             * List Latency Ms
+             * @default 0
+             */
+            list_latency_ms: number;
+            /**
              * Medal
              * @enum {string}
              */
             medal: "none" | "bronze" | "silver" | "gold";
             /** Protection Points */
             protection_points: number;
+            /**
+             * Quality
+             * @default 0
+             */
+            quality: number;
+            /**
+             * Simplicity Points
+             * @default 0
+             */
+            simplicity_points: number;
             /** Speed Points */
             speed_points: number;
             /** Token Points */
@@ -1624,6 +1841,40 @@ export interface operations {
             };
             /** @description The change could not be completed. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    export_account_api_v1_auth_account_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountExportResponse"];
+                };
+            };
+            /** @description Sign in to manage your account. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many exports for this account. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2600,7 +2851,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
+                level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7") | "custom";
             };
             cookie?: never;
         };
@@ -2645,7 +2896,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | "custom";
+                level_id: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7") | "custom";
             };
             cookie?: never;
         };
@@ -2690,7 +2941,7 @@ export interface operations {
     list_game_scores_api_v1_game_scores_get: {
         parameters: {
             query?: {
-                level_id?: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "medium-8" | "medium-9" | "medium-10" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7" | "hard-8") | null;
+                level_id?: ("easy-1" | "easy-2" | "easy-3" | "easy-4" | "easy-5" | "medium-1" | "medium-2" | "medium-3" | "medium-4" | "medium-5" | "medium-6" | "medium-7" | "hard-1" | "hard-2" | "hard-3" | "hard-4" | "hard-5" | "hard-6" | "hard-7") | null;
                 limit?: number;
             };
             header?: never;

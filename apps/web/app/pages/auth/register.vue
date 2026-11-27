@@ -151,6 +151,14 @@ onMounted(async () => {
               class="font-medium text-highlighted"
             >Sign in</ULink>.
           </template>
+
+          <template #footer>
+            By creating an account, you agree to how we handle your data in our
+            <ULink
+              to="/privacy"
+              class="font-medium text-highlighted"
+            >Privacy Policy</ULink>.
+          </template>
         </UAuthForm>
       </UPageCard>
     </div>

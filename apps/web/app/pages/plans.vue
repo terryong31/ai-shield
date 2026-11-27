@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import type { BillingSyncResponse } from '~/types/api'
+import type { BillingSyncResponse, GameCatalogResponse } from '~/types/api'
 import { errorDetail } from '~/utils/account'
-import { waitForPass } from '~/utils/billing'
+import { isAllowedCheckoutUrl, waitForPass } from '~/utils/billing'
 import { planCards } from '~/utils/gameBoard'
 import { buildPageSeo } from '~/utils/seo'
+import { withSsrTimeout } from '~/utils/ssr'
 
 const runtimeConfig = useRuntimeConfig()
 useSeoMeta(buildPageSeo({
   title: 'Plans',
-  description: 'Compare Free and Paid plans for ai-shield. Unlock 300 daily wave runs, 1,000 daily tests, AI safety nodes, and the custom BYOK agent sandbox.',
+  description: 'Compare Free and Paid plans for ai-shield. Unlock 50 daily wave runs, all 19 campaign levels, AI safety nodes, and the custom BYOK agent sandbox.',
   path: '/plans',
   siteUrl: runtimeConfig.public.siteUrl
 }))
@@ -20,8 +21,34 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const goBack = useGoBack()
-const selfUpgradeEnabled = ref(false)
-const billingEnabled = ref(false)
+interface BillingFlags {
+  selfUpgradeEnabled: boolean
+  billingEnabled: boolean
+}
+
+// Null until the gateway answers.
+const billing = useState<BillingFlags | null>('shield_billing_flags', () => null)
+const billingEnabled = computed(() => billing.value?.billingEnabled ?? false)
+// The session hint has no pass end date, so a Paid player waits for the real session.
+const sessionReady = ref(false)
+const ready = ref(false)
+const pending = computed(() =>
+  (billing.value === null && !ready.value) || (session.value.tier === 'paid' && !sessionReady.value)
+)
+
+const loadBilling = async (request: Promise<GameCatalogResponse>) => {
+  try {
+    const catalog = await request
+    billing.value = {
+      selfUpgradeEnabled: Boolean(catalog.self_upgrade_enabled),
+      billingEnabled: Boolean(catalog.billing_enabled)
+    }
+  } catch (err) {
+    console.warn('Billing state unavailable:', (err as Error).message)
+  }
+}
+
+onServerPrefetch(() => loadBilling(withSsrTimeout(getLevels())))
 const redirecting = ref(false)
 
 // Stripe-hosted checkout (spec 0049): only the webhook grants the pass.
@@ -29,6 +56,10 @@ const buyPass = async () => {
   redirecting.value = true
   try {
     const { url } = await startCheckout()
+    // Leave the site only for Stripe's own checkout page (spec 0053).
+    if (!isAllowedCheckoutUrl(url)) {
+      throw new Error('Payments are unavailable. Try again later.')
+    }
     await navigateTo(url, { external: true })
   } catch (err) {
     redirecting.value = false
@@ -85,8 +116,9 @@ useEventListener('pageshow', () => {
 })
 
 const plans = computed(() => planCards(session.value, {
-  selfUpgradeEnabled: selfUpgradeEnabled.value,
-  billingEnabled: billingEnabled.value
+  selfUpgradeEnabled: billing.value?.selfUpgradeEnabled ?? false,
+  billingEnabled: billingEnabled.value,
+  pending: pending.value
 }).map((plan) => {
   if (plan.action === 'checkout' && plan.button) {
     return { ...plan, button: { ...plan.button, loading: redirecting.value, onClick: buyPass } }
@@ -109,14 +141,12 @@ onMounted(async () => {
   const checkout = route.query.checkout
   if (checkout !== undefined) await router.replace({ query: {} })
   await Promise.all([
-    refreshSession(),
-    getLevels()
-      .then((catalog) => {
-        selfUpgradeEnabled.value = Boolean(catalog.self_upgrade_enabled)
-        billingEnabled.value = Boolean(catalog.billing_enabled)
-      })
-      .catch(() => {})
+    refreshSession().finally(() => {
+      sessionReady.value = true
+    }),
+    loadBilling(getLevels())
   ])
+  ready.value = true
   if (checkout === 'success') await confirmPass()
   else await syncPass(checkout === 'cancelled')
 })
@@ -144,6 +174,14 @@ onMounted(async () => {
         :plans="plans"
         scale
       />
+
+      <p class="text-center text-sm text-muted">
+        Stripe takes the payment on its own page; we never see your card. See our
+        <ULink
+          to="/privacy"
+          class="font-medium text-highlighted"
+        >Privacy Policy</ULink>.
+      </p>
     </div>
   </main>
 </template>

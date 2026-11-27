@@ -16,6 +16,7 @@
     "contract": "openapi-typescript ../../contracts/shield-api.openapi.json -o app/types/api.gen.ts"
   },
   "dependencies": {
+    "@iconify-json/tabler": "^1.2.47",
     "@nuxt/ui": "^4.13.0",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.1.0",
@@ -32,14 +33,14 @@
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.153",
-    "@nuxt/eslint": "latest",
+    "@nuxt/eslint": "^1.17.0",
     "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
     "ai": "^7.0.170",
     "eslint": "^9.39.5",
-    "openapi-typescript": "latest",
+    "openapi-typescript": "^7.13.0",
     "typescript": "^5.9.3",
-    "vitest": "latest",
-    "vue-tsc": "latest"
+    "vitest": "^5.1.2",
+    "vue-tsc": "^3.3.14"
   }
 }

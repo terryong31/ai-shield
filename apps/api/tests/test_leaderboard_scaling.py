@@ -18,6 +18,7 @@ from shield_api.services import leaderboard as leaderboard_mod
 from shield_api.services import scores as scores_mod
 from shield_api.services.leaderboard import LeaderboardService
 from shield_api.services.scores import (
+    SCORE_VERSION,
     InMemoryScoreStore,
     SupabaseScoreStore,
     aggregate_difficulty_leaderboard,
@@ -554,9 +555,9 @@ async def test_read_5000_owners_uses_bounded_redis_commands_and_zero_store_reads
     store = CountingInMemoryStore()
     redis = FakeLeaderboardRedis()
     service = LeaderboardService(store, redis)
-    z_key = "lb:v3:z:Easy"
-    d_key = "lb:v3:d:Easy"
-    redis.strings["lb:v3:ready:Easy"] = "1"
+    z_key = f"lb:v{SCORE_VERSION}:z:Easy"
+    d_key = f"lb:v{SCORE_VERSION}:d:Easy"
+    redis.strings[f"lb:v{SCORE_VERSION}:ready:Easy"] = "1"
     z_map: dict[str, float] = {}
     d_map: dict[str, str] = {}
     for i in range(5000):
@@ -586,7 +587,8 @@ async def test_read_5000_owners_uses_bounded_redis_commands_and_zero_store_reads
 
 
 @pytest.mark.spec("API-LBOARD-013")
-async def test_boundary_tie_group_is_ordered_by_latency_cost_and_name() -> None:
+@pytest.mark.spec("API-FAIR-005")
+async def test_boundary_tie_group_is_ordered_by_stars_then_date() -> None:
     store = InMemoryScoreStore()
     redis = FakeLeaderboardRedis()
     service = LeaderboardService(store, redis)
@@ -605,9 +607,10 @@ async def test_boundary_tie_group_is_ordered_by_latency_cost_and_name() -> None:
         )
         await service.on_score_recorded(f"{name.lower()}@example.com", c)
 
-    # Top-2 cut splits a 4-way primary tie: Ada & Bob must win the tie-break.
+    # Top-2 cut splits a 4-way primary tie: the two earliest (Zed, Amy) win; latency counts
+    # for nothing (API-FAIR-005 replaced the latency tie-break).
     top2 = await service.get_leaderboard(difficulty="Easy", limit=2)
-    assert [e.player_name for e in top2] == ["Ada", "Bob"]
+    assert [e.player_name for e in top2] == ["Zed", "Amy"]
 
 
 @pytest.mark.spec("API-LBOARD-014")
@@ -693,8 +696,8 @@ async def test_incremental_writes_mastery_flip_and_ignored_non_replacing_runs() 
     easy_after = await service.get_leaderboard(difficulty="Easy", limit=10)
     assert easy_after[0].levels_mastered == 1
     member = hashlib.sha256(b"email:ada@example.com").hexdigest()
-    assert redis.zsets["lb:v3:z:Easy"][member] == 7000 * 32 + 1
-    assert redis.zsets["lb:v3:z:All"][member] == 7000 * 32 + 1
+    assert redis.zsets[f"lb:v{SCORE_VERSION}:z:Easy"][member] == 7000 * 32 + 1
+    assert redis.zsets[f"lb:v{SCORE_VERSION}:z:All"][member] == 7000 * 32 + 1
 
 
 @pytest.mark.spec("API-LBOARD-019")
@@ -710,8 +713,8 @@ async def test_mid_script_failure_leaves_redis_atomic_logs_warning_and_marks_reb
     )
     await service.on_score_recorded("ada@example.com", c1)
 
-    z_before = dict(redis.zsets["lb:v3:z:Easy"])
-    h_before = dict(redis.hashes["lb:v3:d:Easy"])
+    z_before = dict(redis.zsets[f"lb:v{SCORE_VERSION}:z:Easy"])
+    h_before = dict(redis.hashes[f"lb:v{SCORE_VERSION}:d:Easy"])
 
     redis.fail_mid_script = True
     with caplog.at_level(logging.WARNING):
@@ -719,9 +722,11 @@ async def test_mid_script_failure_leaves_redis_atomic_logs_warning_and_marks_reb
             _req("Ada", total_score=8000, won=True), email="ada@example.com"
         )
         await service.on_score_recorded("ada@example.com", c2)
-    assert redis.zsets["lb:v3:z:Easy"] == z_before
-    assert redis.hashes["lb:v3:d:Easy"] == h_before
-    assert "ready" not in "|".join(k for k in redis.strings if "lb:v3:ready:Easy" in k)
+    assert redis.zsets[f"lb:v{SCORE_VERSION}:z:Easy"] == z_before
+    assert redis.hashes[f"lb:v{SCORE_VERSION}:d:Easy"] == h_before
+    assert "ready" not in "|".join(
+        k for k in redis.strings if f"lb:v{SCORE_VERSION}:ready:Easy" in k
+    )
     assert any(r.levelno >= logging.WARNING for r in caplog.records)
 
     redis.fail_mid_script = False
@@ -753,7 +758,7 @@ async def test_clear_delete_and_email_rename_mutations() -> None:
     easy_names = [e.player_name for e in await service.get_leaderboard(difficulty="Easy", limit=10)]
     assert easy_names == ["Ada", "Bob"]
     old_member = hashlib.sha256(b"email:bob@example.com").hexdigest()
-    assert old_member not in redis.zsets.get("lb:v3:z:Easy", {})
+    assert old_member not in redis.zsets.get(f"lb:v{SCORE_VERSION}:z:Easy", {})
 
     # Delete ada (two boards)
     await store.delete_scores_for("ada@example.com")
@@ -795,21 +800,21 @@ async def test_rebuild_singleflight_dirty_flag_and_version_bump(monkeypatch) -> 
     assert [(e.player_name, e.total_score) for e in res_a] == [("Ada", 5000)]
     assert res_b == res_a
     assert store.list_all_calls == 1
-    assert redis.strings.get("lb:v3:ready:Easy") == "1"
+    assert redis.strings.get(f"lb:v{SCORE_VERSION}:ready:Easy") == "1"
 
     # Simulate lock held while a write arrives -> dirty flag -> next read rebuilds again.
-    redis.strings["lb:v3:lock:Easy"] = "other-holder"
+    redis.strings[f"lb:v{SCORE_VERSION}:lock:Easy"] = "other-holder"
     c2 = await store.record_score_change(
         _req("Bob", level_id="easy-1", total_score=9000), email="bob@example.com"
     )
     await svc_a.on_score_recorded("bob@example.com", c2)
-    assert "lb:v3:dirty:Easy" in redis.strings
+    assert f"lb:v{SCORE_VERSION}:dirty:Easy" in redis.strings
 
     # Simulate finishing the earlier rebuild: clear lock and apply dirty clearing check
-    del redis.strings["lb:v3:lock:Easy"]
-    if "lb:v3:dirty:Easy" in redis.strings:
-        redis.strings.pop("lb:v3:dirty:Easy", None)
-        redis.strings.pop("lb:v3:ready:Easy", None)
+    del redis.strings[f"lb:v{SCORE_VERSION}:lock:Easy"]
+    if f"lb:v{SCORE_VERSION}:dirty:Easy" in redis.strings:
+        redis.strings.pop(f"lb:v{SCORE_VERSION}:dirty:Easy", None)
+        redis.strings.pop(f"lb:v{SCORE_VERSION}:ready:Easy", None)
     rebuilt = await svc_a.get_leaderboard(difficulty="Easy", limit=10)
     assert [(e.player_name, e.total_score) for e in rebuilt] == [("Bob", 9000), ("Ada", 5000)]
 
