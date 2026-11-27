@@ -136,12 +136,32 @@ def test_a_model_failure_uses_no_run_and_a_lower_score_keeps_the_best(harness: H
     assert harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 0
     assert asyncio.run(harness.scores.list_scores()) == []
 
-    best = _run(harness, "easy-1", _board(*WORDS))
+    # A perfect Easy 1 board (one miss loses since ENG-LADDER-015).
+    perfect = [
+        {
+            "id": "wf",
+            "kind": "word_filter",
+            "config": {
+                "custom_words": [
+                    "ignore previous",
+                    "ignore all prior",
+                    "forget your earlier",
+                    "admin password",
+                    "database password",
+                    "secret key",
+                    "pretend you are the store owner",
+                    "act as devmode",
+                ]
+            },
+        },
+        {"id": "len", "kind": "length_limit", "config": {"max_chars": 600}},
+    ]
+    best = _run(harness, "easy-1", _board(*perfect))
     assert best.json()["score"]["won"] is True
     padded = _board(
-        *WORDS,
-        {"id": "l1", "kind": "length_limit", "config": {}},
-        {"id": "l2", "kind": "length_limit", "config": {}},
+        *perfect,
+        {"id": "l1", "kind": "length_limit", "config": {"max_chars": 600}},
+        {"id": "l2", "kind": "length_limit", "config": {"max_chars": 600}},
     )
     lower = _run(harness, "easy-1", padded)
     assert lower.json()["score"]["won"] is True
@@ -248,16 +268,20 @@ def test_daily_counts_and_a_stopped_run_counts(make_harness: Any) -> None:
     )
     assert again.status_code == 429
 
+    # A run that the cost budget of medium-5 stops still uses a run (spec 0051 levels).
     stopped_harness = make_harness()
-    check = ScriptedUsageChatModel(
+    review = ScriptedUsageChatModel(
         replies=[],
         default=ChatCompletion(
-            text=json.dumps({"flagged": False, "reason": "ok"}), input_tokens=10, output_tokens=5
+            text=json.dumps({"blocked": False, "reason": "ok"}), input_tokens=10, output_tokens=5
         ),
     )
-    stopped_harness.container.check_model_for = lambda _: check  # type: ignore[assignment]
+    stopped_harness.container.check_model_for = lambda _: review  # type: ignore[assignment]
+    stopped_harness.container.game_agents = {"standard": agent}
     _sign_in(stopped_harness, "slow@example.com", paid=True)
-    stopped = _run(stopped_harness, "easy-5", _board({"id": "sc", "kind": "safety_check"}))
+    stopped = _run(
+        stopped_harness, "medium-5", _board({"id": "rv", "kind": "llm_review", "config": {}})
+    )
     assert stopped.status_code == 200
-    assert stopped.json()["stop"]["reason"] == "time_limit"
+    assert stopped.json()["stop"]["reason"] == "budget"
     assert stopped_harness.client.get("/api/v1/auth/session").json()["wave_runs_used"] == 1

@@ -270,10 +270,8 @@ export function makeGameNode(
 
 export const ALL_LEVEL_IDS: readonly LevelId[] = [
   'easy-1', 'easy-2', 'easy-3', 'easy-4', 'easy-5',
-  'medium-1', 'medium-2', 'medium-3', 'medium-4', 'medium-5',
-  'medium-6', 'medium-7', 'medium-8', 'medium-9', 'medium-10',
-  'hard-1', 'hard-2', 'hard-3', 'hard-4', 'hard-5',
-  'hard-6', 'hard-7', 'hard-8'
+  'medium-1', 'medium-2', 'medium-3', 'medium-4', 'medium-5', 'medium-6', 'medium-7',
+  'hard-1', 'hard-2', 'hard-3', 'hard-4', 'hard-5', 'hard-6', 'hard-7'
 ]
 
 const ALL_LEVEL_ID_SET = new Set<string>(ALL_LEVEL_IDS)
@@ -296,17 +294,13 @@ export const FINAL_NODE_LABELS: Record<LevelId, string> = {
   'medium-5': 'Protected Agent',
   'medium-6': 'Protected Agent',
   'medium-7': 'Protected Agent',
-  'medium-8': 'Protected Agent',
-  'medium-9': 'Protected Agent',
-  'medium-10': 'Protected Agent',
   'hard-1': 'Protected Agent',
   'hard-2': 'Protected Agent',
   'hard-3': 'Protected Agent',
   'hard-4': 'Protected Agent',
   'hard-5': 'Protected Agent',
   'hard-6': 'Protected Agent',
-  'hard-7': 'Protected Agent',
-  'hard-8': 'Protected Agent'
+  'hard-7': 'Protected Agent'
 }
 
 export function isClassifyOnlyLevel(levelId: LevelId): boolean {
@@ -735,19 +729,7 @@ export function stopSummary(
     const takes = step ? formatMs(step.latency_ms) : formatMs(stop.used)
     return `Time limit exceeded ${where}: ${labelFor(stop.node_id)} takes ${takes}, the limit is ${formatMs(stop.limit)}.`
   }
-  return `Budget exceeded ${where}: the run cost ${formatUsd(stop.used)}, the budget is ${formatUsd(stop.limit)}.`
-}
-
-/** The stopped prompt's path, each node with its latency or cost, and the node that went over. */
-export function stopPath(
-  stop: RunStopSchema,
-  labelFor: (nodeId: string) => string
-): Array<{ label: string, value: string, over: boolean }> {
-  return stop.path.map(step => ({
-    label: labelFor(step.node_id),
-    value: stop.reason === 'time_limit' ? formatMs(step.latency_ms) : formatUsd(step.cost_usd),
-    over: step.node_id === stop.node_id
-  }))
+  return `Budget exceeded ${where}: ${labelFor(stop.node_id)} takes the run to ${formatUsd(stop.used)}, the budget is ${formatUsd(stop.limit)}.`
 }
 
 const FAMILY_NAMES: Record<string, string> = {
@@ -758,9 +740,17 @@ const FAMILY_NAMES: Record<string, string> = {
 export function familyName(category: string): string {
   const known = FAMILY_NAMES[category]
   if (known) return known
-  const words = category.split('_').join(' ').trim()
+  const words = category
+    .replace(/_s_/g, '\'s_')
+    .split('_')
+    .filter(Boolean)
+    .map(word => FAMILY_WORDS[word] ?? word)
+    .join(' ')
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : 'Prompt'
 }
+
+/** Words that keep their own capitals in a family label. */
+const FAMILY_WORDS: Record<string, string> = { url: 'URL', sql: 'SQL', base64: 'Base64', ml: 'ML', llm: 'LLM' }
 
 /**
  * Rows of a result cell (WEB-FAIR-004): the prompt number, its family and the node that
@@ -784,6 +774,26 @@ export function promptRows(
     }
     return { key: item.message_id, title: `Prompt ${number} · ${familyName(item.category ?? '')}`, detail }
   })
+}
+
+/**
+ * The prompts of a results cell, one group a family in wave order (owner, 2026-11-27).
+ */
+export function promptGroups(
+  items: MessageTraceSchema[],
+  wave: MessageTraceSchema[],
+  labelFor: (nodeId: string) => string
+): Array<{ family: string, rows: Array<{ key: string, title: string, detail: string }> }> {
+  const byFamily = new Map<string, Array<{ key: string, title: string, detail: string }>>()
+  const rows = promptRows(items, wave, labelFor)
+  items.forEach((item, index) => {
+    const family = familyName(item.category ?? '')
+    const row = rows[index]!
+    const group = byFamily.get(family) ?? []
+    group.push({ ...row, title: row.title.split(' · ')[0]! })
+    byFamily.set(family, group)
+  })
+  return [...byFamily].map(([family, groupRows]) => ({ family, rows: groupRows }))
 }
 
 export function resolveConsoleAccess(status: ClearanceStatus): {
@@ -924,7 +934,7 @@ export function planCards(
     description: 'For players who sign in.',
     price: '$0',
     highlight: false,
-    features: ['5 wave runs a day', '20 tests a day', 'AI agent tools', 'Scores on the leaderboard']
+    features: ['5 wave runs a day', 'Easy 1 to 3 and Medium 1 to 2', 'AI agent tools', 'Scores on the leaderboard']
   }
   const paid: PlanCard = {
     title: 'Paid',
@@ -933,8 +943,8 @@ export function planCards(
     billingCycle: '/month',
     highlight: true,
     features: [
-      '300 wave runs a day',
-      '1,000 tests a day',
+      '50 wave runs a day',
+      'All 19 campaign levels',
       'Everything in Free',
       'Custom sandbox with your own dataset and model key'
     ]

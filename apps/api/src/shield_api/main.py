@@ -1,15 +1,18 @@
-import hmac
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from shield_api.container import Container, build_container
 from shield_api.routers import api_router
+from shield_api.security import SecurityMiddleware, proxy_secret
 from shield_api.settings import Settings
+from shield_engine.game import RETIRED_LEVEL_IDS
 
 
 def create_app(container: Container | None = None, settings: Settings | None = None) -> FastAPI:
@@ -40,6 +43,28 @@ def create_app(container: Container | None = None, settings: Settings | None = N
     if container is not None:
         app.state.container = container
 
+    @app.exception_handler(RequestValidationError)
+    async def retired_level_is_not_found(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        # A level that spec 0051 removed is gone, not malformed (API-LADDER-001).
+        for error in exc.errors():
+            loc = error.get("loc", ())
+            if "level_id" in loc and error.get("input") in RETIRED_LEVEL_IDS:
+                return JSONResponse(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    content={"detail": "This level was removed from the campaign."},
+                )
+        # Never echo what was sent: it can be a password or a token (spec 0054).
+        cleaned = [
+            {key: value for key, value in error.items() if key not in ("input", "ctx", "url")}
+            for error in exc.errors()
+        ]
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": jsonable_encoder(cleaned)},
+        )
+
     botid_paths = frozenset(
         {
             f"{settings.API_PREFIX}/auth/anonymous",
@@ -51,19 +76,13 @@ def create_app(container: Container | None = None, settings: Settings | None = N
             f"{settings.API_PREFIX}/auth/reset-password",
             f"{settings.API_PREFIX}/game/run",
             f"{settings.API_PREFIX}/game/train",
+            f"{settings.API_PREFIX}/clearance",
         }
     )
-    auth_prefix = f"{settings.API_PREFIX}/auth/"
-    clearance_path = f"{settings.API_PREFIX}/clearance"
-    proxy_secret = (
-        settings.TRUSTED_PROXY_SECRET.get_secret_value().strip()
-        if settings.TRUSTED_PROXY_SECRET
-        else ""
-    )
-    if not is_dev and not proxy_secret:
+    if not is_dev and not proxy_secret(settings):
         logging.getLogger(__name__).error(
-            "APP_ENV is production and TRUSTED_PROXY_SECRET is unset; "
-            "blocking BotID-protected routes."
+            "APP_ENV is production and TRUSTED_PROXY_SECRET is unset; every route but "
+            "health and the Stripe webhook answers 403."
         )
     signing_secret = (
         settings.MODEL_SIGNING_KEY.get_secret_value().strip() if settings.MODEL_SIGNING_KEY else ""
@@ -73,52 +92,6 @@ def create_app(container: Container | None = None, settings: Settings | None = N
             "APP_ENV is production and MODEL_SIGNING_KEY is unset; /game/train is disabled."
         )
 
-    train_path = f"{settings.API_PREFIX}/game/train"
-    max_train_body = 1_310_720
-
-    @app.middleware("http")
-    async def verify_botid(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        active_container = getattr(app.state, "container", None)
-        active_settings = active_container.settings if active_container is not None else settings
-        if request.method == "POST" and request.url.path == train_path:
-            raw_len = request.headers.get("content-length")
-            if raw_len is not None:
-                try:
-                    if int(raw_len) > max_train_body:
-                        return JSONResponse(
-                            {"detail": "Training upload exceeds the maximum size."},
-                            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                        )
-                except ValueError:
-                    pass
-            if len(await request.body()) > max_train_body:
-                return JSONResponse(
-                    {"detail": "Training upload exceeds the maximum size."},
-                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                )
-        if (
-            active_settings.APP_ENV == "production"
-            and request.method == "POST"
-            and request.url.path in botid_paths
-        ):
-            expected = (
-                active_settings.TRUSTED_PROXY_SECRET.get_secret_value().strip()
-                if active_settings.TRUSTED_PROXY_SECRET
-                else ""
-            )
-            presented = request.headers.get("x-shield-proxy-secret", "")
-            botid = request.headers.get("x-shield-botid", "")
-            if not expected or not hmac.compare_digest(presented, expected) or botid != "pass":
-                return JSONResponse(
-                    {"detail": "Request blocked."}, status_code=status.HTTP_403_FORBIDDEN
-                )
-        response = await call_next(request)
-        if request.url.path.startswith(auth_prefix) or request.url.path == clearance_path:
-            response.headers["Cache-Control"] = "no-store"
-        return response
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -126,6 +99,18 @@ def create_app(container: Container | None = None, settings: Settings | None = N
         # PUT saves boards (spec 0023, API-SAVE-007).
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
+    )
+
+    def active_settings() -> Settings:
+        active_container = getattr(app.state, "container", None)
+        return active_container.settings if active_container is not None else settings
+
+    # Outermost: the proxy secret, BotID, cross-site checks, body limits and headers (spec 0054).
+    app.add_middleware(
+        SecurityMiddleware,
+        settings=active_settings,
+        prefix=settings.API_PREFIX,
+        botid_paths=botid_paths,
     )
     app.include_router(api_router, prefix=settings.API_PREFIX)
     return app

@@ -7,6 +7,7 @@ import {
   createStarterBoard,
   scoreBreakdown
 } from '../app/utils/gameBoard'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -35,14 +36,14 @@ describe('game level tiers (spec 0021)', () => {
     expect(scoreBreakdown(won, 'medium-1').map(r => r.label)).not.toContain('Tool use')
     expect(breakdownStats(won, 'easy-1').map(s => s.label)).not.toContain('Agent tokens')
 
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('Every prompt that reaches the help desk is answered. Stop the injections before they get here.')
     expect(gameSource).toContain('scoreBreakdown(waveScore, currentLevelId)')
     expect(gameSource).toMatch(/v-else-if="selectedNode\.data\.kind === 'assistant' && levelAgent"/)
   })
 
   it('[WEB-LEVEL-002] [WEB-LEVEL-004] shows no model section in the AI Agent modal', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).not.toContain('modelTierCopy')
     expect(gameSource).not.toContain('levelModel')
     expect(read('utils', 'gameBoard.ts')).not.toContain('Modern model')
@@ -60,7 +61,7 @@ describe('game level tiers (spec 0021)', () => {
 
 describe('final node naming (spec 0021)', () => {
   it('[WEB-LEVEL-005] explains the final node and heads its objective System Instruction', () => {
-    const gameSource = read('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toContain('This is the agent you need to protect. Only let safe prompts get through here.')
     expect(gameSource).toContain('System Instruction')
     expect(gameSource).not.toMatch(/>\s*Objective\s*</)

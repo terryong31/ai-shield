@@ -1,8 +1,9 @@
 import asyncio
-import hashlib
+import functools
 import logging
 import secrets
 import sys
+from contextlib import nullcontext
 from dataclasses import asdict
 from typing import Annotated, Any
 
@@ -41,6 +42,11 @@ from shield_api.schemas import (
     WaveScoreSchema,
 )
 from shield_api.services.agent_cache import CachedChatModel, level_canary
+from shield_api.services.anonymous_scores import (
+    ANONYMOUS_SCORE_TTL,
+    pending_score_record,
+)
+from shield_api.services.audit import audit
 from shield_api.services.clearance import Clearance
 from shield_api.services.models import (
     CAMPAIGN_TRAIN_MAX_BYTES,
@@ -91,6 +97,9 @@ from shield_engine.game.custom import (
 from shield_engine.ports import JevClient, ProbabilityModel, UsageChatModel
 
 logger = logging.getLogger(__name__)
+
+# Prompts of one wave that wait on the models together, on levels with no limits.
+WAVE_CONCURRENCY = 4
 
 BYOK_KEY_MAX_CHARS = 200
 MODEL_CHECK_NODE_KINDS = frozenset({"safety_check", "llm_review", "jev"})
@@ -163,11 +172,20 @@ async def _load_board_ml_models(
     return loaded, untrained
 
 
-@router.get("/levels")
-async def list_game_levels(container: ContainerDep) -> GameCatalogResponse:
-    """Return built-in levels and placeable check definitions."""
+@functools.cache
+def _public_catalogue() -> tuple[list[GameLevelSchema], list[CheckDefinitionSchema]]:
+    """The levels and checks never change while the process runs, so build them once."""
     levels = [_public_level(lvl) for lvl in get_levels()]
     checks = [CheckDefinitionSchema.model_validate(asdict(chk)) for chk in get_check_catalog()]
+    return levels, checks
+
+
+@router.get("/levels")
+async def list_game_levels(container: ContainerDep, response: Response) -> GameCatalogResponse:
+    """Return built-in levels and placeable check definitions."""
+    levels, checks = _public_catalogue()
+    # Public and the same for everyone: the CDN can serve it without calling the gateway.
+    response.headers["Cache-Control"] = "public, s-maxage=300, stale-while-revalidate=86400"
     return GameCatalogResponse(
         levels=levels,
         checks=checks,
@@ -206,15 +224,10 @@ async def run_game_board(
             window_seconds=GAME_RUN_IP_WINDOW,
         )
         if player.authenticated:
-            actor_key = (
-                player.email
-                if player.email
-                else hashlib.sha256((token or "").encode("utf-8")).hexdigest()
-            )
             await enforce_rate_limit(
                 container.rate_limiter,
                 "game_run_actor",
-                actor_key,
+                _spend_owner(player, token),
                 limit=GAME_RUN_ACTOR_LIMIT,
                 window_seconds=GAME_RUN_ACTOR_WINDOW,
             )
@@ -276,81 +289,90 @@ async def run_game_board(
 
     is_custom_test = False
     spend_owner = _spend_owner(player, token)
-    if counts_quota:
-        try:
-            await container.spend.ensure_within(spend_owner, player.tier)
-        except SpendBudgetExceededError as err:
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
-        try:
-            player = await container.players.reserve_run(token, is_custom_test=is_custom_test)
-        except QuotaExceededError as err:
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
+    # A counted run holds its owner's lock from the budget check to the recorded spend,
+    # so two runs of one player cannot both pass the budget (spec 0054).
+    guard = container.spend_locks.hold(spend_owner) if counts_quota else nullcontext()
+    async with guard:
+        if counts_quota:
+            try:
+                await container.spend.ensure_within(spend_owner, player.tier)
+            except SpendBudgetExceededError as err:
+                raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
+            try:
+                player = await container.players.reserve_run(token, is_custom_test=is_custom_test)
+            except QuotaExceededError as err:
+                raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from err
 
-    try:
-        result = await run_wave(
-            board,
-            level_id=body.level_id,
-            classifier=container.classifier,
-            agent=(
-                None
-                if container.game_agent is None
-                else _cached(container.game_agent, container, level.id, "default")
-            ),
-            agents={
-                tier: _cached(model, container, level.id, tier)
-                for tier, model in container.game_agents.items()
-            },
-            canary_factory=lambda: level_canary(container.canary_seed, level.id),
-            jev_client=jev_client,
-            check_model=check_model,
-            check_model_for=container.check_model_for,
-            ml_models=ml_models,
-        )
-    except BoardValidationError as err:
-        if counts_quota:
-            await container.players.release_run(token, is_custom_test=is_custom_test)
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
-    except AgentUnavailableError as err:
-        if counts_quota:
-            await container.players.release_run(token, is_custom_test=is_custom_test)
-        cause = err.__cause__
-        if isinstance(cause, ProviderAuthError):
+        try:
+            result = await run_wave(
+                board,
+                level_id=body.level_id,
+                classifier=container.classifier,
+                agent=(
+                    None
+                    if container.game_agent is None
+                    else _cached(container.game_agent, container, level.id, "default")
+                ),
+                agents={
+                    tier: _cached(model, container, level.id, tier)
+                    for tier, model in container.game_agents.items()
+                },
+                canary_factory=lambda: level_canary(container.canary_seed, level.id),
+                jev_client=jev_client,
+                check_model=check_model,
+                check_model_for=container.check_model_for,
+                ml_models=ml_models,
+                concurrency=WAVE_CONCURRENCY,
+            )
+        except BoardValidationError as err:
+            if counts_quota:
+                await container.players.release_run(token, is_custom_test=is_custom_test)
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(err)) from err
+        except AgentUnavailableError as err:
+            if counts_quota:
+                await container.players.release_run(token, is_custom_test=is_custom_test)
+            cause = err.__cause__
+            if isinstance(cause, ProviderAuthError):
+                raise HTTPException(
+                    status.HTTP_502_BAD_GATEWAY, "The model provider rejected the API key."
+                ) from None
+            logger.exception("Game AI Agent model failed; run not counted")
             raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY, "The model provider rejected the API key."
-            ) from None
-        logger.exception("Game AI Agent model failed; run not counted")
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "The AI Agent is unavailable right now. This run was not counted.",
-        ) from err
-    except BaseException:
-        if counts_quota:
-            await container.players.release_run(token, is_custom_test=is_custom_test)
-        raise
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "The AI Agent is unavailable right now. This run was not counted.",
+            ) from err
+        except BaseException:
+            if counts_quota:
+                await container.players.release_run(token, is_custom_test=is_custom_test)
+            raise
 
-    await container.spend.add(spend_owner, result.score.total_cost_usd)
+        await container.spend.add(spend_owner, result.score.total_cost_usd)
     score_schema = WaveScoreSchema.model_validate(asdict(result.score))
     # Simulated agent runs are practice; live and model-free (Easy) runs are recorded.
     recordable = result.agent_mode in ("live", "none")
-    if not is_custom_test and player.can_record_scores and recordable:
-        change = await container.scores.record_score_change(
-            ScoreCreateRequest(
-                player_name=player.player_name,
-                level_id=body.level_id,
-                total_score=score_schema.total_score,
-                medal=score_schema.medal,
-                attacks_blocked=score_schema.attacks_protected,
-                attacks_total=score_schema.attacks_total,
-                false_alarms=score_schema.false_alarms,
-                avg_latency_ms=score_schema.avg_latency_ms,
-                total_cost_usd=score_schema.total_cost_usd,
-                board=_strip_board_schema(body.board),
-                won=score_schema.won,
-                mastered=score_schema.follow_up_passed,
-            ),
-            email=player.email,
+    if not is_custom_test and recordable:
+        payload = ScoreCreateRequest(
+            player_name=player.player_name,
+            level_id=body.level_id,
+            total_score=score_schema.total_score,
+            medal=score_schema.medal,
+            attacks_blocked=score_schema.attacks_protected,
+            attacks_total=score_schema.attacks_total,
+            false_alarms=score_schema.false_alarms,
+            avg_latency_ms=score_schema.avg_latency_ms,
+            total_cost_usd=score_schema.total_cost_usd,
+            board=_strip_board_schema(body.board),
+            won=score_schema.won,
+            mastered=score_schema.follow_up_passed,
         )
-        await container.leaderboard.on_score_recorded(player.email, change)
+        if player.can_record_scores:
+            change = await container.scores.record_score_change(payload, email=player.email)
+            await container.leaderboard.on_score_recorded(player.email, change)
+        elif token and player.authenticated and player.is_anonymous:
+            # Kept on the server until sign-in, never on the leaderboard (spec 0052).
+            await container.anonymous_scores.record(
+                owner_hash(token), payload, ttl=ANONYMOUS_SCORE_TTL
+            )
 
     return GameRunResponse(
         level_id=result.level_id,
@@ -373,9 +395,7 @@ def _public_level(level: GameLevel) -> GameLevelSchema:
 
 
 def _spend_owner(player: PlayerSessionStatus, token: str | None) -> str:
-    if player.email:
-        return player.email
-    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+    return player.email or owner_hash(token or "")
 
 
 def _cached(
@@ -637,7 +657,11 @@ async def get_my_leaderboard_rank(
 @router.get("/progress")
 async def get_player_progress(request: Request, container: ContainerDep) -> PlayerProgressResponse:
     """Return the authenticated player's per-level status and difficulty summaries."""
-    player = await container.players.lookup(request.cookies.get(PLAYER_SESSION_COOKIE))
+    token = request.cookies.get(PLAYER_SESSION_COOKIE)
+    player = await container.players.lookup(token)
+    if token and player.authenticated and player.is_anonymous:
+        pending = await container.anonymous_scores.list_for(owner_hash(token))
+        return build_player_progress([pending_score_record(row) for row in pending])
     if not player.authenticated or player.is_anonymous or not player.email:
         return build_player_progress([])
     owned = await container.scores.list_scores_for_owner(player.email)
@@ -649,12 +673,17 @@ async def get_player_progress(request: Request, container: ContainerDep) -> Play
     status_code=status.HTTP_204_NO_CONTENT,
     responses={401: {"description": "Admin access required."}},
 )
-async def clear_game_scores(clearance: ClearanceDep, container: ContainerDep) -> Response:
+async def clear_game_scores(
+    request: Request, clearance: ClearanceDep, container: ContainerDep
+) -> Response:
     """Clear scoreboard records. Requires an active admin clearance session."""
+    client = client_address(request)
     if clearance is not Clearance.GRANTED:
+        audit("scores.cleared", outcome="denied", client=client, warning=True)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Admin access required.")
     await container.scores.clear_scores()
     await container.leaderboard.on_scores_cleared()
+    audit("scores.cleared", outcome="cleared", client=client)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -665,6 +694,11 @@ def _parse_train_input(body: GameTrainRequest) -> tuple[list[tuple[str, int]], i
             f"Unsupported ML algorithm '{body.algorithm}'. Choose one of: {allowed_str}."
         )
     max_rows = 2000 if body.level_id == "custom" else 200
+    if body.level_id not in (None, "custom"):
+        # A level may limit how many rows the ML filter learns from (spec 0051).
+        level_limit = get_level(body.level_id).constraints.max_training_rows
+        if level_limit is not None:
+            max_rows = min(max_rows, level_limit)
     if body.csv_text is not None:
         rows = parse_dataset_csv(body.csv_text, max_rows=max_rows)
     elif body.dataset is not None:

@@ -37,7 +37,7 @@ case "$target" in
       contracts supabase ':(exclude,glob)apps/api/*.md' ':(exclude,glob)packages/engine/*.md'
     ) ;;
   ci-database)
-    paths=("${ci[@]}" supabase) ;;
+    paths=("${ci[@]}" supabase apps/api/tests/db) ;;
   *)
     echo "Unknown target: $target" >&2
     exit 2 ;;

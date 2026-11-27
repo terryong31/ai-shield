@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import * as apiProxy from '../shared/utils/apiProxy'
 import { errorDetail } from '../app/utils/account'
+import { readGamePage } from './support/gameSource'
 
 const ROOT = join(import.meta.dirname, '..')
 const WEB = 'https://shield-web.example'
@@ -78,7 +79,7 @@ describe('rate limiting, client IP and BotID (spec 0043)', () => {
     expect(errorDetail({})).toBe('Something went wrong. Try again.')
 
     const playerAuthSource = readFileSync(join(ROOT, 'app', 'composables', 'usePlayerAuth.ts'), 'utf-8')
-    const gameSource = readFileSync(join(ROOT, 'app', 'pages', 'game.vue'), 'utf-8')
+    const gameSource = readGamePage()
     expect(playerAuthSource).toContain('errorDetail')
     expect(gameSource).toContain('errorDetail')
   })
@@ -94,7 +95,9 @@ describe('rate limiting, client IP and BotID (spec 0043)', () => {
       { path: '/api/v1/auth/confirm', method: 'POST' },
       { path: '/api/v1/auth/reset-password', method: 'POST' },
       { path: '/api/v1/game/run', method: 'POST' },
-      { path: '/api/v1/game/train', method: 'POST' }
+      { path: '/api/v1/game/train', method: 'POST' },
+      // Spec 0054 put admin sign-in behind BotID.
+      { path: '/api/v1/clearance', method: 'POST' }
     ])
     const pluginSource = readFileSync(join(ROOT, 'app', 'plugins', 'botid.client.ts'), 'utf-8')
     expect(pluginSource).toContain('botid/client/core')

@@ -62,6 +62,20 @@ flowchart LR
 The checks are Text cleaner, Word filter, Length limit, Secret scanner, ML filter, Jev,
 Safety check, LLM review and Tool filter.
 
+![A player drags a check onto the board, wires it and runs a wave](docs/assets/gameplay-demo.webp)
+
+### Engineering highlights
+
+- [Architecture](docs/explanation/architecture.md): a pure engine, a thin gateway and a web
+  client that knows only the contract.
+- [Architecture decision records](docs/explanation/decisions/README.md): why the main
+  choices were made.
+- [OpenAPI contract](contracts/shield-api.openapi.json): the committed interface that the
+  web client's types are generated from.
+- [Model card](packages/engine/MODEL_CARD.md): what the bundled classifier can and cannot do.
+- Spec-driven and test-driven: every behaviour change has a spec in [`specs/`](specs) and a
+  failing test before the code.
+
 ### Architecture
 
 | Path | What | Stack |
@@ -93,8 +107,7 @@ logic: that is in the engine. See [Architecture](docs/explanation/architecture.m
 
 - [mise](https://mise.jdx.dev). It installs the pinned versions of the other tools.
 - Docker, for local Supabase and Redis.
-- Access to the Infisical project. If you do not have access, see
-  [Manage secrets](docs/how-to/manage-secrets.md).
+- Optional: access to the team's Infisical project. You do not need it to run the game.
 
 ### Installation
 
@@ -112,16 +125,23 @@ logic: that is in the engine. See [Architecture](docs/explanation/architecture.m
    mise run setup
    ```
 
-3. Log in to Infisical. Do this one time on each computer.
-
-   ```bash
-   infisical login
-   ```
-
-4. Start the gateway on port 8000 and the web client on port 3000.
+3. Start the gateway on port 8000 and the web client on port 3000.
 
    ```bash
    mise run dev
+   ```
+
+   This works without Infisical. Without a signed-in Infisical session, `mise run dev`
+   shows a short notice and starts with local Supabase and the offline defaults: the AI
+   Agent and the model checks use their stand-ins until you add provider keys. To set
+   optional local values, copy `apps/api/.env.example` to `apps/api/.env` and
+   `apps/web/.env.example` to `apps/web/.env`.
+
+4. Optional, for team members with access to the Infisical project: log in one time on
+   each computer, and `mise run dev` loads the team's development secrets.
+
+   ```bash
+   infisical login
    ```
 
 Open <http://localhost:3000>. The API documentation is at

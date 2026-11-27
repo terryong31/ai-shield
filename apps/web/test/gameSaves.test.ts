@@ -10,6 +10,7 @@ import {
   saveFromBoard
 } from '../app/utils/gameBoard'
 import { datasetRowsToCsv, parseDatasetCsv } from '../app/utils/customSandbox'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -40,7 +41,7 @@ describe('saved boards (spec 0023)', () => {
     expect(api).toContain('putSave:')
     expect(api).toContain('/game/saves/')
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toContain('label="Save"')
     expect(game).toContain('putSave(')
     expect(game).toContain('<UChip')
@@ -71,7 +72,7 @@ describe('saved boards (spec 0023)', () => {
     ]
     expect(parseDatasetCsv(datasetRowsToCsv(rows), ['lookup_order']).rows).toEqual(rows)
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toContain('getSave(')
     expect(game).toContain('boardFromSave(')
     expect(game).toContain('Your saved board could not be loaded')
@@ -79,7 +80,7 @@ describe('saved boards (spec 0023)', () => {
   })
 
   it('[WEB-SAVE-003] skips quit confirmation when there are no unsaved changes and prompts only on unsaved edits', () => {
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toContain('handleReturnClick')
     expect(game).toContain('@click="handleReturnClick"')
     expect(game).not.toContain('@click="isQuitModalOpen = true"')
@@ -91,7 +92,7 @@ describe('saved boards (spec 0023)', () => {
   })
 
   it('[WEB-SAVE-004] parallelizes mount fetches, caches saved boards, and shows a loading overlay over the canvas', () => {
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toContain('useSavedBoardCache')
     expect(game).toContain('isLoadingBoard')
     expect(game).toContain('Loading workflow...')

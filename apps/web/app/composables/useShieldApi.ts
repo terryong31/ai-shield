@@ -4,6 +4,7 @@ import type {
   AccountPasswordRequest,
   AccountProfileRequest,
   AccountResetRequest,
+  AccountExportResponse,
   AccountResetResponse,
   BillingCheckoutResponse,
   BillingSyncResponse,
@@ -82,6 +83,9 @@ export const useShieldApi = () => {
       api<PlayerConfirmationResponse>('/auth/account/email', { method: 'POST', body }),
     resetProgress: (body: AccountResetRequest) =>
       api<AccountResetResponse>('/auth/account/reset-progress', { method: 'POST', body }),
+    // Everything the gateway holds about the player (spec 0058).
+    exportAccount: () =>
+      api<AccountExportResponse>('/auth/account/export'),
     deleteAccount: (body: AccountDeleteRequest) =>
       api('/auth/account', { method: 'DELETE', body }),
     getLevels: () => api<GameCatalogResponse>('/game/levels'),

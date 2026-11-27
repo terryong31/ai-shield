@@ -73,6 +73,25 @@ def _replaces(
     return new_rank >= prev_rank
 
 
+def best_of(previous: ScoreCreateRequest | None, new: ScoreCreateRequest) -> ScoreCreateRequest:
+    """The run to keep, by the leaderboard rules; won and mastered never go back (spec 0039)."""
+    if previous is None:
+        return new
+    keep = (
+        new
+        if _replaces(
+            previous.won,
+            _rank(previous.total_score, previous.avg_latency_ms, previous.total_cost_usd),
+            new.won,
+            _rank(new.total_score, new.avg_latency_ms, new.total_cost_usd),
+        )
+        else previous
+    )
+    return keep.model_copy(
+        update={"won": previous.won or new.won, "mastered": previous.mastered or new.mastered}
+    )
+
+
 @dataclass(frozen=True)
 class ScoreChange:
     """Stored best score before and after a write (spec 0044)."""

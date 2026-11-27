@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -21,6 +23,34 @@ DAILY_PROVIDER_BUDGET_USD: dict[PlayerTier, float] = {
 }
 _MICRO = 1_000_000
 _KEY_TTL_SECONDS = 2 * 24 * 3600
+
+
+class OwnerLocks:
+    """One asyncio lock per spend owner (spec 0054).
+
+    A run checks the budget, calls the models and records the spend while it holds
+    the owner's lock, so a second run of the same owner sees the first run's spend.
+    Locks are per process; the Redis ledger keeps the totals across processes.
+    """
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._users: dict[str, int] = {}
+
+    @asynccontextmanager
+    async def hold(self, owner: str) -> AsyncIterator[None]:
+        lock = self._locks.get(owner)
+        if lock is None:
+            lock = self._locks[owner] = asyncio.Lock()
+        self._users[owner] = self._users.get(owner, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            self._users[owner] -= 1
+            if self._users[owner] == 0:
+                del self._users[owner]
+                del self._locks[owner]
 
 
 class SpendBudgetExceededError(Exception):

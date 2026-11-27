@@ -120,7 +120,7 @@ The list price of a model node with thinking is $0.006, so the level budget also
 - **API-FAIR-005**: Given a not-cleared run, then it does not change the leaderboard; given equal totals, then more mastery stars rank first, then the earlier date.
 - **API-FAIR-006**: Given the version 4 migration, then all scores of version 3 are deleted, and the leaderboard and progress start empty.
 - **WEB-FAIR-001**: Given a campaign level, then the game page has no `Test a message` input and shows the runs left today; given the custom sandbox, then the input stays.
-- **WEB-FAIR-003**: Given a stopped run, then the present result modal shows `Time limit exceeded` or `Budget exceeded`, the prompt number, the path with each node's latency or cost, and the node that went over.
+- **WEB-FAIR-003**: Given a stopped run, then the present result modal shows `Time limit exceeded` or `Budget exceeded`, the prompt number and the node that went over, in one line. It shows no path of badges, because the line already gives that data (owner, 2026-11-27).
 - **WEB-FAIR-004**: Given a click on a result cell, then each row of the list shows the prompt number, the family name and the stopping node with its score when it has one, and no prompt text and no badge.
 - **WEB-FAIR-002**: Given a run result, then the present result modal shows the score and only the score parts that count on that level, with the result for each family; a part that does not count on the level is not shown.
 
@@ -191,4 +191,11 @@ None.
 - Criteria: WEB-FAIR-002, WEB-FAIR-004
 - Red: 2 failing test(s) before implementation (`Scored runs on the game page (spec 0050) [WEB-FAIR-002] shows only the score parts that count on the level`, `Scored runs on the game page (spec 0050) [WEB-FAIR-004] lists the prompt number, family and stopping node, with no text or badge`)
 - Green: 2 passing test(s)
+- Gate: `mise run check` passed
+
+### 2026-11-27 · commit 9c2136c (+ uncommitted changes)
+
+- Criteria: WEB-FAIR-003
+- Red: 1 failing test(s) before implementation (`Scored runs on the game page (spec 0050) [WEB-FAIR-003] names the limit, the prompt and the node that went over in one line, with no path badges`)
+- Green: 1 passing test(s)
 - Gate: `mise run check` passed

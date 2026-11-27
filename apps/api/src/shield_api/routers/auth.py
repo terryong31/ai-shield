@@ -28,6 +28,7 @@ from shield_api.schemas import (
     PlayerResetPasswordResponse,
     PlayerSessionStatus,
 )
+from shield_api.services.audit import audit
 from shield_api.services.auth_flows import (
     BROWSER_COOKIE_NAME,
     RECOVERY_FLOW_TTL_SECONDS,
@@ -44,6 +45,7 @@ from shield_api.services.identity import (
     PasswordRejectedError,
     VerifiedPlayer,
 )
+from shield_api.services.models import owner_hash
 from shield_api.services.rate_limit import (
     ANON_IP_LIMIT,
     ANON_IP_WINDOW,
@@ -88,6 +90,31 @@ def _set_player_cookie(response: Response, token: str, settings: Settings, ttl: 
     )
 
 
+async def rotate_player_session(
+    old_token: str, response: Response, container: Container
+) -> PlayerSessionStatus:
+    """Give a signed-in player a new session token and revoke the old one (spec 0054).
+
+    The session's trained model moves to the new token, so the player keeps it.
+    """
+    current = await container.players.lookup(old_token)
+    if not current.authenticated or current.is_anonymous or not current.email:
+        return current
+    ttl = timedelta(minutes=container.settings.SESSION_TTL_MINUTES)
+    token, session_status = await container.players.sign_in_verified(
+        email=current.email, player_name=current.player_name, ttl=ttl
+    )
+    if container.model_signing_key is not None:
+        await container.models.move_session(
+            old_token, token, signing_key=container.model_signing_key
+        )
+    else:
+        await container.models.purge_session(old_token)
+    await container.players.revoke(old_token)
+    _set_player_cookie(response, token, container.settings, ttl)
+    return session_status
+
+
 @router.get("/session")
 async def get_player_session(request: Request, container: ContainerDep) -> PlayerSessionStatus:
     """Return current player authentication status, tier, and daily run usage."""
@@ -118,6 +145,34 @@ async def sign_in_anonymous_player(
     return session_status
 
 
+async def _live_anonymous_owner(previous: str, container: Container) -> str | None:
+    """The score key of a live anonymous session, else ``None`` (spec 0052).
+
+    An expired cookie or another player's signed-in cookie gives ``None``, so it
+    promotes nothing.
+    """
+    previous_status = await container.players.lookup(previous)
+    if not previous_status.authenticated or not previous_status.is_anonymous:
+        return None
+    return owner_hash(previous)
+
+
+async def _promote_anonymous_scores(
+    owner: str, signed_in: PlayerSessionStatus, container: Container
+) -> None:
+    """Move the anonymous scores to the account; a storage error never blocks sign-in."""
+    if not signed_in.email:
+        return
+    try:
+        for pending in await container.anonymous_scores.list_for(owner):
+            payload = pending.model_copy(update={"player_name": signed_in.player_name})
+            change = await container.scores.record_score_change(payload, email=signed_in.email)
+            await container.leaderboard.on_score_recorded(signed_in.email, change)
+        await container.anonymous_scores.delete_for(owner)
+    except Exception:
+        logger.exception("anonymous score promotion failed; sign-in continues")
+
+
 async def _open_verified(
     player: VerifiedPlayer, request: Request, response: Response, container: Container
 ) -> PlayerSessionStatus:
@@ -139,12 +194,16 @@ async def _open_verified(
             logger.exception("failed to record profile_email in app_metadata")
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
 
+    anonymous_owner: str | None = None
     if previous := request.cookies.get(PLAYER_SESSION_COOKIE):
+        anonymous_owner = await _live_anonymous_owner(previous, container)
         await container.players.revoke(previous)
     ttl = timedelta(minutes=settings.SESSION_TTL_MINUTES)
     token, session_status = await container.players.sign_in_verified(
         email=player.email, player_name=player.player_name, ttl=ttl
     )
+    if anonymous_owner is not None:
+        await _promote_anonymous_scores(anonymous_owner, session_status, container)
     _set_player_cookie(response, token, settings, ttl)
     return session_status
 
@@ -179,6 +238,15 @@ async def register_player(
             window_seconds=AUTH_IP_WINDOW,
         )
     email = body.email.strip().lower()
+    if container.settings.APP_ENV == "production":
+        # One sign-up email per address per window, from any IP (spec 0054).
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "register_email",
+            email,
+            limit=EMAIL_SEND_LIMIT,
+            window_seconds=EMAIL_SEND_WINDOW,
+        )
     browser_hash = hash_browser_cookie(request.cookies.get(BROWSER_COOKIE_NAME))
     flow_id = await container.auth_flows.create(
         AuthFlowRecord(purpose="signup", browser_hash=browser_hash),
@@ -222,10 +290,21 @@ async def confirm_player_email(
     body: PlayerConfirmRequest, request: Request, response: Response, container: ContainerDep
 ) -> PlayerConfirmResponse:
     """Confirm an email link; auto-sign-in only when the originating browser cookie matches."""
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "auth_ip",
+            client_address(request),
+            limit=AUTH_IP_LIMIT,
+            window_seconds=AUTH_IP_WINDOW,
+        )
     if not body.token_hash and not body.code:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID)
 
     flow = await container.auth_flows.get(body.flow_id) if body.flow_id else None
+    # A flow of another purpose (a recovery link) is no flow here (spec 0054).
+    if flow is not None and flow.purpose != body.type:
+        flow = None
     same_browser = flow is not None and browser_cookie_matches(
         flow.browser_hash, request.cookies.get(BROWSER_COOKIE_NAME)
     )
@@ -269,6 +348,9 @@ async def confirm_player_email(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID) from None
         except IdentityUnavailableError:
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, CONFIRM_UNAVAILABLE) from None
+    else:
+        # Nothing could be verified, so nothing is confirmed (spec 0054).
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, CONFIRM_INVALID)
 
     if body.flow_id:
         await container.auth_flows.delete(body.flow_id)
@@ -323,6 +405,10 @@ async def login_player(
         raise HTTPException(status.HTTP_403_FORBIDDEN, NOT_CONFIRMED) from None
     except IdentityUnavailableError:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    if is_prod:
+        await container.rate_limiter.reset(
+            "login_fail", email, window_seconds=LOGIN_FAIL_EMAIL_WINDOW
+        )
     return await _open_verified(player, request, response, container)
 
 
@@ -408,13 +494,24 @@ async def recover_player_password(
     },
 )
 async def reset_player_password(
-    body: PlayerResetPasswordRequest, container: ContainerDep
+    body: PlayerResetPasswordRequest, request: Request, container: ContainerDep
 ) -> PlayerResetPasswordResponse:
     """Complete a password reset from a recovery link and revoke all existing sessions."""
+    if container.settings.APP_ENV == "production":
+        await enforce_rate_limit(
+            container.rate_limiter,
+            "auth_ip",
+            client_address(request),
+            limit=AUTH_IP_LIMIT,
+            window_seconds=AUTH_IP_WINDOW,
+        )
     if not body.token_hash and not body.code:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, RECOVERY_INVALID)
 
     flow = await container.auth_flows.get(body.flow_id) if body.flow_id else None
+    # Only a recovery flow may give its code verifier here (spec 0054).
+    if flow is not None and flow.purpose != "recovery":
+        flow = None
     try:
         email = await container.identity.complete_password_reset(
             code=body.code,
@@ -433,6 +530,7 @@ async def reset_player_password(
         await container.auth_flows.delete(body.flow_id)
     await container.players.revoke_sessions(email, keep=None)
     await container.models.purge_account(email)
+    audit("account.password_reset", outcome="reset", actor=email)
     return PlayerResetPasswordResponse()
 
 
@@ -440,15 +538,20 @@ async def reset_player_password(
     "/upgrade",
     responses={403: {"description": "Paid plans are disabled or sign-in is required."}},
 )
-async def upgrade_player_plan(request: Request, container: ContainerDep) -> PlayerSessionStatus:
+async def upgrade_player_plan(
+    request: Request, response: Response, container: ContainerDep
+) -> PlayerSessionStatus:
     """Upgrade the currently signed-in player from the free tier to the paid tier."""
     if not container.settings.ALLOW_SELF_UPGRADE:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Paid plans are not available yet.")
     token = request.cookies.get(PLAYER_SESSION_COOKIE)
     try:
-        return await container.players.upgrade(token)
+        await container.players.upgrade(token)
     except PermissionError as err:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(err)) from err
+    assert token is not None
+    # A change of privilege gets a new session token (spec 0054).
+    return await rotate_player_session(token, response, container)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

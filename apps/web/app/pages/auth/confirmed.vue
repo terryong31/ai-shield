@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { errorDetail } from '~/utils/account'
+import { authLinkErrorMessage } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
 // Handles Supabase email confirmation and email-change links (spec 0027, 0047).
@@ -70,7 +71,6 @@ onMounted(async () => {
   const query = route.query
   const error = firstParam(query.error)
   const errorCode = firstParam(query.error_code)
-  const errorDescription = firstParam(query.error_description)
   const code = firstParam(query.code)
   const tokenHash = firstParam(query.token_hash)
   const flowId = firstParam(query.flow)
@@ -86,7 +86,7 @@ onMounted(async () => {
   }
 
   if (error || errorCode) {
-    errorMessage.value = errorDescription || 'This confirmation link is invalid or has expired.'
+    errorMessage.value = authLinkErrorMessage(errorCode, 'This confirmation link is invalid or has expired.')
     viewState.value = 'error'
     return
   }

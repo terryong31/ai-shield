@@ -98,7 +98,12 @@ async def test_easy_wave_never_calls_a_model_and_counts_arrivals() -> None:
     assert result.score.benign_helped == sum(1 for t in normal if t.outcome == "assistant")
     assert result.score.benign_total == sum(1 for m in level.messages if not m.is_attack)
 
-    open_result = await run_wave(_open_board(), level_id="easy-1")
+    # Easy 1 teaches only the word filter and length limit (spec 0051): wire Input straight on.
+    direct = BoardGraph(
+        nodes=(BoardNode(id="in", kind="incoming"), BoardNode(id="ast", kind="assistant")),
+        edges=(BoardEdge(id="e1", source="in", source_handle="out", target="ast"),),
+    )
+    open_result = await run_wave(direct, level_id="easy-1")
     assert open_result.score.attacks_protected == 0
     assert open_result.score.attacks_leaked == open_result.score.attacks_total
     assert open_result.score.benign_helped == open_result.score.benign_total

@@ -51,4 +51,5 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "spec(id): links a test to an acceptance criterion in specs/ (traceability)",
+    "db: needs the local Supabase stack; runs only with `-m db` (mise run test:db, spec 0056)",
 ]

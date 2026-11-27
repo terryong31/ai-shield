@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FALLBACK_CAMPAIGN_LEVELS } from '../app/utils/campaignSelect'
 import { TWITTER_CARD_PATH, buildGameJsonLd, buildPageSeo } from '../app/utils/seo'
+import { readGamePage } from './support/gameSource'
 
 const WEB_DIR = join(import.meta.dirname, '..')
 const APP_DIR = join(WEB_DIR, 'app')
@@ -120,7 +121,7 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
       expect(source, parts.join('/')).toMatch(/noindex:\s*true|noindex,\s*nofollow/)
     }
 
-    const gameSource = readApp('pages', 'game.vue')
+    const gameSource = readGamePage()
     expect(gameSource).toMatch(/title:\s*\(\)\s*=>/)
     expect(gameSource).toMatch(/description:\s*\(\)\s*=>/)
     expect(gameSource).toMatch(/<h1[^>]*>\s*\{\{\s*currentLevel\.title\s*\}\}\s*<\/h1>/)
@@ -131,7 +132,7 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
     }
 
     for (const parts of H1_PAGES) {
-      const source = readApp(...parts)
+      const source = parts.at(-1) === 'game.vue' ? readGamePage() : readApp(...parts)
       expect(source, parts.join('/')).toContain('<h1')
     }
 
@@ -154,7 +155,8 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
     const robots = readPublic('robots.txt')
     expect(robots).toContain('User-agent: *')
     expect(robots).toContain('Allow: /')
-    expect(robots).toContain('Disallow: /_console')
+    // robots.txt does not name the console; the page is noindex (WEB-SEC-011).
+    expect(robots).not.toContain('/_console')
     expect(robots).toContain('Disallow: /settings')
     expect(robots).toContain('Sitemap:')
 
@@ -183,13 +185,14 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
 
     const urls = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]!)
     const levelUrls = FALLBACK_CAMPAIGN_LEVELS.map(level => `${site}/game?level=${level.id}`)
-    expect(levelUrls.length).toBeGreaterThan(20)
+    expect(levelUrls.length).toBe(19)
     expect(new Set(urls)).toEqual(new Set([
-      ...['/', '/game', '/plans', '/auth/login', '/auth/register'].map(path => `${site}${path}`),
+      // Spec 0058 added the privacy policy.
+      ...['/', '/game', '/plans', '/auth/login', '/auth/register', '/privacy'].map(path => `${site}${path}`),
       ...levelUrls
     ]))
 
-    for (const path of ['/_console', '/settings', '/auth/recover', '/auth/confirmed', '/auth/reset-password', '/api/']) {
+    for (const path of ['/settings', '/auth/recover', '/auth/confirmed', '/auth/reset-password', '/api/']) {
       expect(robots).toContain(`Disallow: ${path}`)
     }
     // A crawler follows only its own group, so every named bot shares the one group of rules.

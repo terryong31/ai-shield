@@ -28,3 +28,13 @@ export async function waitForPass({
 export function formatPassEnd(paidUntil: string): string {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(paidUntil))
 }
+
+/** Checkout may only leave the site for Stripe's own https page (spec 0053). */
+export function isAllowedCheckoutUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' && parsed.hostname === 'checkout.stripe.com'
+  } catch {
+    return false
+  }
+}

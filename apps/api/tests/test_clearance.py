@@ -42,7 +42,7 @@ def test_an_admin_account_is_granted_a_session_cookie(harness, admin_password: s
     header = set_cookie(response).lower()
     assert header.startswith(f"{COOKIE}=")
     assert "httponly" in header
-    assert "samesite=lax" in header
+    assert "samesite=strict" in header
     assert "path=/api/v1" in header
     assert admin_allowed(harness)
 

@@ -12,6 +12,7 @@ import {
   parseDatasetCsv,
   validateCustomAgent
 } from '../app/utils/customSandbox'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -49,7 +50,7 @@ describe('custom sandbox (spec 0022)', () => {
     expect(index).toContain('to="/game?level=custom"')
     expect(index).toContain('Upgrade to Paid')
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toMatch(/customModeAccess\(session\.value\) !== 'available'/)
     expect(game).toContain('navigateTo(\'/\')')
   })
@@ -74,7 +75,7 @@ describe('custom sandbox (spec 0022)', () => {
       tools: Array.from({ length: 11 }, (_, i) => ({ name: `t_${i}`, description: '', allowed: true }))
     })).toContain('The agent accepts at most 10 tools.')
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     const start = game.indexOf('System Instruction')
     const instruction = game.slice(start, game.indexOf('</section>', start))
     expect(instruction).toContain('class="text-error"')
@@ -142,7 +143,7 @@ describe('custom sandbox (spec 0022)', () => {
     expect(canRunCustom(agent, broken, 'sk-123')).toBe(false)
     expect(canRunCustom({ ...agent, objective: '' }, parsed, 'sk-123')).toBe(false)
 
-    const game = read('pages', 'game.vue')
+    const game = readGamePage()
     expect(game).toContain('parseDatasetCsv(')
     expect(game).toContain('customDataset.summary')
     expect(game).not.toContain('customDataset.rows.slice(')

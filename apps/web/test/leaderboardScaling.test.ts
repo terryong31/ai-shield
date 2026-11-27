@@ -7,6 +7,7 @@ import {
   formatRankLabel,
   ownRowPlacement
 } from '../app/utils/leaderboard'
+import { readGamePage } from './support/gameSource'
 
 const WEB_DIR = join(import.meta.dirname, '..')
 const APP_DIR = join(WEB_DIR, 'app')
@@ -102,7 +103,7 @@ describe('leaderboard read scaling & my rank (spec 0044)', () => {
     await poller.refreshActive({ force: true })
     expect(fetchedTabs).toEqual(['Easy'])
 
-    const gamePage = readFileSync(join(APP_DIR, 'pages', 'game.vue'), 'utf-8')
+    const gamePage = readGamePage()
     const settingsPage = readFileSync(join(APP_DIR, 'pages', 'settings.vue'), 'utf-8')
     expect(gamePage).toMatch(/refreshScores\(\s*\{\s*background:\s*true\s*\}\s*\)/)
     expect(settingsPage).toMatch(/refreshScores\(\s*\{\s*background:\s*true\s*\}\s*\)/)

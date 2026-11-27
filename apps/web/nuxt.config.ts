@@ -1,14 +1,12 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
+import { securityRouteRules } from './app/utils/securityHeaders'
+
 export default defineNuxtConfig({
   // @nuxt/ui v4 ships @nuxtjs/color-mode, so it is not registered separately
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    '@vueuse/nuxt',
-    // Vercel Web Analytics: the script only reports on Vercel deployments
-    '@vercel/analytics',
-    // Vercel Speed Insights: sends Core Web Vitals, only on Vercel deployments
-    '@vercel/speed-insights'
+    '@vueuse/nuxt'
   ],
   app: {
     head: {
@@ -39,17 +37,14 @@ export default defineNuxtConfig({
     apiProxySecret: '',
     clientIpHeader: 'x-vercel-forwarded-for',
     public: {
-      siteUrl: 'http://localhost:3000'
+      siteUrl: 'http://localhost:3000',
+      // Contact on /privacy (spec 0058); empty shows the project issues page instead.
+      privacyContactEmail: ''
     }
   },
-  routeRules: {
-    '/auth/**': {
-      headers: {
-        'Referrer-Policy': 'no-referrer',
-        'Cache-Control': 'no-store'
-      }
-    }
-  },
+  // Security headers on every page (spec 0053). Analytics are a client plugin
+  // (app/plugins/analytics.client.ts) so each event is scrubbed first.
+  routeRules: securityRouteRules(process.env.NODE_ENV === 'production'),
   devServer: {
     host: 'localhost'
   },

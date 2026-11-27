@@ -47,6 +47,56 @@
         "title": "AccountEmailRequest",
         "type": "object"
       },
+      "AccountExportResponse": {
+        "description": "Everything the gateway holds about the signed-in player (spec 0058).",
+        "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportAccountSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "exported_at": {
+            "format": "date-time",
+            "title": "Exported At",
+            "type": "string"
+          },
+          "purchases": {
+            "items": {
+              "$ref": "#/components/schemas/ExportPurchaseSchema"
+            },
+            "title": "Purchases",
+            "type": "array"
+          },
+          "saved_boards": {
+            "items": {
+              "$ref": "#/components/schemas/ExportSavedBoardSchema"
+            },
+            "title": "Saved Boards",
+            "type": "array"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/ExportScoreSchema"
+            },
+            "title": "Scores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "exported_at",
+          "account",
+          "saved_boards",
+          "scores",
+          "purchases"
+        ],
+        "title": "AccountExportResponse",
+        "type": "object"
+      },
       "AccountPasswordRequest": {
         "additionalProperties": false,
         "description": "Change password (spec 0025). The current password is checked first.",
@@ -211,6 +261,7 @@
         "type": "object"
       },
       "AgentToolSchema": {
+        "additionalProperties": false,
         "properties": {
           "allowed": {
             "title": "Allowed",
@@ -287,12 +338,15 @@
         "type": "object"
       },
       "BoardEdgeSchema": {
+        "additionalProperties": false,
         "properties": {
           "id": {
+            "maxLength": 128,
             "title": "Id",
             "type": "string"
           },
           "source": {
+            "maxLength": 128,
             "title": "Source",
             "type": "string"
           },
@@ -308,6 +362,7 @@
             "type": "string"
           },
           "target": {
+            "maxLength": 128,
             "title": "Target",
             "type": "string"
           }
@@ -322,6 +377,7 @@
         "type": "object"
       },
       "BoardGraphSchema": {
+        "additionalProperties": false,
         "properties": {
           "edges": {
             "items": {
@@ -346,6 +402,7 @@
         "type": "object"
       },
       "BoardNodeSchema": {
+        "additionalProperties": false,
         "properties": {
           "config": {
             "additionalProperties": true,
@@ -353,6 +410,7 @@
             "type": "object"
           },
           "id": {
+            "maxLength": 128,
             "title": "Id",
             "type": "string"
           },
@@ -387,6 +445,24 @@
           "kind"
         ],
         "title": "BoardNodeSchema",
+        "type": "object"
+      },
+      "BriefingExampleSchema": {
+        "properties": {
+          "family": {
+            "title": "Family",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "text"
+        ],
+        "title": "BriefingExampleSchema",
         "type": "object"
       },
       "ByokModelSchema": {
@@ -490,6 +566,7 @@
         "type": "object"
       },
       "ClearanceRequest": {
+        "additionalProperties": false,
         "description": "An admin's Supabase Auth credentials, checked once and never stored.",
         "properties": {
           "email": {
@@ -787,6 +864,229 @@
         "title": "DifficultyProgressSummary",
         "type": "object"
       },
+      "ExportAccountSchema": {
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "paid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid Until"
+          },
+          "player_name": {
+            "title": "Player Name",
+            "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "anonymous",
+              "free",
+              "paid"
+            ],
+            "title": "Tier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "player_name",
+          "tier"
+        ],
+        "title": "ExportAccountSchema",
+        "type": "object"
+      },
+      "ExportPurchaseSchema": {
+        "properties": {
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled At"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "amount_cents",
+          "currency",
+          "status"
+        ],
+        "title": "ExportPurchaseSchema",
+        "type": "object"
+      },
+      "ExportSavedBoardSchema": {
+        "properties": {
+          "level_id": {
+            "title": "Level Id",
+            "type": "string"
+          },
+          "save": {
+            "additionalProperties": true,
+            "title": "Save",
+            "type": "object"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level_id",
+          "updated_at",
+          "save"
+        ],
+        "title": "ExportSavedBoardSchema",
+        "type": "object"
+      },
+      "ExportScoreSchema": {
+        "properties": {
+          "attacks_blocked": {
+            "title": "Attacks Blocked",
+            "type": "integer"
+          },
+          "attacks_total": {
+            "title": "Attacks Total",
+            "type": "integer"
+          },
+          "avg_latency_ms": {
+            "title": "Avg Latency Ms",
+            "type": "number"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "false_alarms": {
+            "title": "False Alarms",
+            "type": "integer"
+          },
+          "level_id": {
+            "title": "Level Id",
+            "type": "string"
+          },
+          "mastered": {
+            "title": "Mastered",
+            "type": "boolean"
+          },
+          "medal": {
+            "enum": [
+              "none",
+              "bronze",
+              "silver",
+              "gold"
+            ],
+            "title": "Medal",
+            "type": "string"
+          },
+          "total_cost_usd": {
+            "title": "Total Cost Usd",
+            "type": "number"
+          },
+          "total_score": {
+            "title": "Total Score",
+            "type": "integer"
+          },
+          "won": {
+            "title": "Won",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "level_id",
+          "total_score",
+          "medal",
+          "won",
+          "mastered",
+          "attacks_blocked",
+          "attacks_total",
+          "false_alarms",
+          "avg_latency_ms",
+          "total_cost_usd",
+          "created_at"
+        ],
+        "title": "ExportScoreSchema",
+        "type": "object"
+      },
       "FollowUpChallengeSchema": {
         "properties": {
           "description": {
@@ -856,6 +1156,17 @@
               }
             ],
             "title": "Max Total Cost Usd"
+          },
+          "max_training_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Training Rows"
           }
         },
         "required": [
@@ -935,6 +1246,35 @@
             ],
             "title": "Agent Tier"
           },
+          "attack_floor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Floor"
+          },
+          "benign_floor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benign Floor"
+          },
+          "briefing": {
+            "items": {
+              "$ref": "#/components/schemas/BriefingExampleSchema"
+            },
+            "title": "Briefing",
+            "type": "array"
+          },
           "constraints": {
             "$ref": "#/components/schemas/LevelConstraintsSchema"
           },
@@ -975,17 +1315,13 @@
               "medium-5",
               "medium-6",
               "medium-7",
-              "medium-8",
-              "medium-9",
-              "medium-10",
               "hard-1",
               "hard-2",
               "hard-3",
               "hard-4",
               "hard-5",
               "hard-6",
-              "hard-7",
-              "hard-8"
+              "hard-7"
             ],
             "title": "Id",
             "type": "string"
@@ -1004,6 +1340,11 @@
             },
             "title": "Messages",
             "type": "array"
+          },
+          "new_idea": {
+            "default": "",
+            "title": "New Idea",
+            "type": "string"
           },
           "order": {
             "title": "Order",
@@ -1035,6 +1376,11 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -1056,6 +1402,7 @@
         "type": "object"
       },
       "GameRunRequest": {
+        "additionalProperties": false,
         "properties": {
           "board": {
             "$ref": "#/components/schemas/BoardGraphSchema"
@@ -1098,17 +1445,13 @@
                   "medium-5",
                   "medium-6",
                   "medium-7",
-                  "medium-8",
-                  "medium-9",
-                  "medium-10",
                   "hard-1",
                   "hard-2",
                   "hard-3",
                   "hard-4",
                   "hard-5",
                   "hard-6",
-                  "hard-7",
-                  "hard-8"
+                  "hard-7"
                 ],
                 "type": "string"
               },
@@ -1191,6 +1534,7 @@
           "csv_text": {
             "anyOf": [
               {
+                "maxLength": 1310720,
                 "type": "string"
               },
               {
@@ -1205,6 +1549,7 @@
                 "items": {
                   "$ref": "#/components/schemas/TrainingRowSchema"
                 },
+                "maxItems": 2000,
                 "type": "array"
               },
               {
@@ -1229,17 +1574,13 @@
                   "medium-5",
                   "medium-6",
                   "medium-7",
-                  "medium-8",
-                  "medium-9",
-                  "medium-10",
                   "hard-1",
                   "hard-2",
                   "hard-3",
                   "hard-4",
                   "hard-5",
                   "hard-6",
-                  "hard-7",
-                  "hard-8"
+                  "hard-7"
                 ],
                 "type": "string"
               },
@@ -1512,6 +1853,17 @@
               }
             ],
             "title": "Max Total Cost Usd"
+          },
+          "max_training_rows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Training Rows"
           }
         },
         "title": "LevelConstraintsSchema",
@@ -1592,17 +1944,13 @@
               "medium-5",
               "medium-6",
               "medium-7",
-              "medium-8",
-              "medium-9",
-              "medium-10",
               "hard-1",
               "hard-2",
               "hard-3",
               "hard-4",
               "hard-5",
               "hard-6",
-              "hard-7",
-              "hard-8"
+              "hard-7"
             ],
             "title": "Level Id",
             "type": "string"
@@ -1852,6 +2200,7 @@
         "type": "object"
       },
       "PlayerLoginRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "maxLength": 254,
@@ -1899,6 +2248,7 @@
         "type": "object"
       },
       "PlayerRecoverRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "maxLength": 254,
@@ -1927,6 +2277,7 @@
         "type": "object"
       },
       "PlayerRegisterRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "maxLength": 254,
@@ -1963,6 +2314,7 @@
         "type": "object"
       },
       "PlayerResendRequest": {
+        "additionalProperties": false,
         "properties": {
           "email": {
             "maxLength": 254,
@@ -2227,6 +2579,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/NodePositionSchema"
             },
+            "maxProperties": 60,
             "title": "Positions",
             "type": "object"
           }
@@ -2269,17 +2622,13 @@
                   "medium-5",
                   "medium-6",
                   "medium-7",
-                  "medium-8",
-                  "medium-9",
-                  "medium-10",
                   "hard-1",
                   "hard-2",
                   "hard-3",
                   "hard-4",
                   "hard-5",
                   "hard-6",
-                  "hard-7",
-                  "hard-8"
+                  "hard-7"
                 ],
                 "type": "string"
               },
@@ -2294,6 +2643,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/NodePositionSchema"
             },
+            "maxProperties": 60,
             "title": "Positions",
             "type": "object"
           },
@@ -2355,17 +2705,13 @@
               "medium-5",
               "medium-6",
               "medium-7",
-              "medium-8",
-              "medium-9",
-              "medium-10",
               "hard-1",
               "hard-2",
               "hard-3",
               "hard-4",
               "hard-5",
               "hard-6",
-              "hard-7",
-              "hard-8"
+              "hard-7"
             ],
             "title": "Level Id",
             "type": "string"
@@ -2440,6 +2786,7 @@
             "title": "Label"
           },
           "text": {
+            "maxLength": 4000,
             "title": "Text",
             "type": "string"
           }
@@ -2760,9 +3107,37 @@
         ]
       }
     },
+    "/api/v1/auth/account/export": {
+      "get": {
+        "description": "Download everything the gateway holds about the signed-in player (spec 0058).",
+        "operationId": "export_account_api_v1_auth_account_export_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Sign in to manage your account."
+          },
+          "429": {
+            "description": "Too many exports for this account."
+          }
+        },
+        "summary": "Export Account",
+        "tags": [
+          "Account"
+        ]
+      }
+    },
     "/api/v1/auth/account/password": {
       "post": {
-        "description": "Change the password and sign out every other session.",
+        "description": "Change the password, sign out every session and give this browser a new one.",
         "operationId": "change_password_api_v1_auth_account_password_post",
         "requestBody": {
           "content": {
@@ -3756,17 +4131,13 @@
                     "medium-5",
                     "medium-6",
                     "medium-7",
-                    "medium-8",
-                    "medium-9",
-                    "medium-10",
                     "hard-1",
                     "hard-2",
                     "hard-3",
                     "hard-4",
                     "hard-5",
                     "hard-6",
-                    "hard-7",
-                    "hard-8"
+                    "hard-7"
                   ],
                   "type": "string"
                 },
@@ -3836,17 +4207,13 @@
                     "medium-5",
                     "medium-6",
                     "medium-7",
-                    "medium-8",
-                    "medium-9",
-                    "medium-10",
                     "hard-1",
                     "hard-2",
                     "hard-3",
                     "hard-4",
                     "hard-5",
                     "hard-6",
-                    "hard-7",
-                    "hard-8"
+                    "hard-7"
                   ],
                   "type": "string"
                 },
@@ -3937,17 +4304,13 @@
                     "medium-5",
                     "medium-6",
                     "medium-7",
-                    "medium-8",
-                    "medium-9",
-                    "medium-10",
                     "hard-1",
                     "hard-2",
                     "hard-3",
                     "hard-4",
                     "hard-5",
                     "hard-6",
-                    "hard-7",
-                    "hard-8"
+                    "hard-7"
                   ],
                   "type": "string"
                 },

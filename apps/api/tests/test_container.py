@@ -184,3 +184,28 @@ async def test_gemini_maps_thinking_to_a_level_and_bills_thought_tokens(
     config = sent[0]
     assert config.thinking_config.thinking_level.lower() == level  # type: ignore[attr-defined]
     assert result.output_tokens == 205
+
+
+@pytest.mark.spec("API-LADDER-004")
+@pytest.mark.parametrize(
+    ("model_name", "mime"),
+    [("gemini-3.5-flash-lite", "application/json"), ("gemma-4-31b-it", None)],
+)
+async def test_gemini_asks_for_json_output_so_no_malformed_function_call(
+    model_name: str, mime: str | None
+) -> None:
+    from shield_engine import ChatMessage
+
+    sent: list[object] = []
+
+    class FakeModels:
+        async def generate_content(self, *, model: str, contents: object, config: object) -> object:
+            sent.append(config)
+            return type("Response", (), {"text": "{}", "usage_metadata": None})()
+
+    model = GeminiChatModel("key", model_name)
+    model._client = type("Client", (), {"aio": type("Aio", (), {"models": FakeModels()})()})()  # type: ignore[assignment]
+
+    await model.complete_with_usage([ChatMessage("user", "hi")])
+
+    assert sent[0].response_mime_type == mime  # type: ignore[attr-defined]

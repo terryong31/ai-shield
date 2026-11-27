@@ -1,19 +1,18 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   attemptsLeftLabel,
   breakdownStats,
   familyName,
+  promptGroups,
   promptRows,
   scoreBreakdown,
-  stopPath,
   stopSummary
 } from '../app/utils/gameBoard'
 import type { MessageTraceSchema, RunStopSchema, WaveScoreSchema } from '../app/types/api'
 import { DEFAULT_ANONYMOUS_SESSION } from '../app/utils/sessionHint'
+import { readGamePage } from './support/gameSource'
 
-const page = readFileSync(join(import.meta.dirname, '..', 'app', 'pages', 'game.vue'), 'utf-8')
+const page = readGamePage()
 
 const SCORE = {
   total_score: 9310,
@@ -63,7 +62,7 @@ describe('Scored runs on the game page (spec 0050)', () => {
     expect(page).not.toMatch(/label: 'Agent tokens'/)
   })
 
-  it('[WEB-FAIR-003] names the limit, the prompt, the path and the node that went over', () => {
+  it('[WEB-FAIR-003] names the limit, the prompt and the node that went over in one line, with no path badges', () => {
     const slow = {
       reason: 'time_limit',
       prompt_index: 7,
@@ -78,19 +77,15 @@ describe('Scored runs on the game page (spec 0050)', () => {
     expect(stopSummary(slow, 24, label)).toBe(
       'Time limit exceeded at prompt 7 of 24: Safety check takes 85 ms, the limit is 8 ms.'
     )
-    expect(stopPath(slow, label)).toEqual([
-      { label: 'Word filter', value: '0.4 ms', over: false },
-      { label: 'Safety check', value: '85 ms', over: true }
-    ])
 
     const costly = { ...slow, reason: 'budget', prompt_index: 3, node_id: 'jv', limit: 0.00012, used: 0.00015, path: [{ node_id: 'jv', kind: 'jev', latency_ms: 12, cost_usd: 0.00005 }] } as RunStopSchema
     expect(stopSummary(costly, 12, label)).toBe(
-      'Budget exceeded at prompt 3 of 12: the run cost $0.00015, the budget is $0.00012.'
+      'Budget exceeded at prompt 3 of 12: Jev takes the run to $0.00015, the budget is $0.00012.'
     )
-    expect(stopPath(costly, label)).toEqual([{ label: 'Jev', value: '$0.00005', over: true }])
 
     expect(page).toMatch(/stopSummary\(runStop, /)
-    expect(page).toMatch(/v-for="step in stopPath\(runStop, /)
+    // The line already names the node and its value; no repeated path badges (owner, 2026-11-27).
+    expect(page).not.toMatch(/stopPath|Path of the stopped prompt/)
   })
 
   it('[WEB-FAIR-004] lists the prompt number, family and stopping node, with no text or badge', () => {
@@ -115,8 +110,17 @@ describe('Scored runs on the game page (spec 0050)', () => {
       { key: 'a', title: 'Prompt 1 · Normal request', detail: 'Got through' }
     ])
 
+    // One group a family, in wave order (owner, 2026-11-27).
+    expect(promptGroups([traces[0]!, traces[1]!, traces[2]!], traces, label)).toEqual([
+      { family: 'Normal request', rows: [
+        { key: 'a', title: 'Prompt 1', detail: 'Got through' },
+        { key: 'b', title: 'Prompt 2', detail: 'Stopped by Jev (score 0.81)' }
+      ] },
+      { family: 'Quick fix', rows: [{ key: 'c', title: 'Prompt 3', detail: 'Stopped by Word filter' }] }
+    ])
+
     const cellModal = page.slice(page.indexOf('<!-- Matrix Cell Modal'), page.indexOf('<!-- Double-Click Node Settings Modal'))
-    expect(cellModal).toMatch(/v-for="row in promptRows\(selectedResultCell.items, traces, nodeLabel\)"/)
+    expect(cellModal).toMatch(/v-for="group in promptGroups\(selectedResultCell\.items, traces, nodeLabel\)"/)
     expect(cellModal).not.toMatch(/item\.text|UBadge/)
   })
 })

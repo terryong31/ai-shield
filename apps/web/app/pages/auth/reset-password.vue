@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { resetPasswordSchema, type ResetPasswordSchema } from '~/utils/playerAuth'
+import { authLinkErrorMessage, resetPasswordSchema, type ResetPasswordSchema } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
 const runtimeConfig = useRuntimeConfig()
@@ -55,7 +55,6 @@ onMounted(async () => {
   const query = route.query
   const error = firstParam(query.error)
   const errorCode = firstParam(query.error_code)
-  const errorDescription = firstParam(query.error_description)
   const code = firstParam(query.code)
   const tokenHash = firstParam(query.token_hash)
   const flowId = firstParam(query.flow)
@@ -65,7 +64,7 @@ onMounted(async () => {
   }
 
   if (error || errorCode || (!code && !tokenHash)) {
-    invalidMessage.value = errorDescription || 'This recovery link is invalid or has expired.'
+    invalidMessage.value = authLinkErrorMessage(errorCode, 'This recovery link is invalid or has expired.')
     invalidLink.value = true
     return
   }

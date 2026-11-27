@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { hasInAppHistory } from '../app/utils/navigation'
+import { readGamePage } from './support/gameSource'
 
 const APP_DIR = join(import.meta.dirname, '..', 'app')
 const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
@@ -31,14 +32,15 @@ describe('back navigation (spec 0016)', () => {
     expect(goBack).toMatch(/navigateTo\(fallback, \{ replace: true \}\)/)
 
     for (const [parts, fallback] of BACK_PAGES) {
-      const source = read(...parts)
+      // The game page is split into parts (spec 0055), so its whole source is read.
+      const source = parts.at(-1) === 'game.vue' ? readGamePage() : read(...parts)
       const name = parts.join('/')
       expect(source, name).toContain(`goBack('${fallback}')`)
       // No Back/Return button jumps to a fixed page.
       expect(source, name).not.toMatch(/to="[^"]*"\s+label="(Back|Return)"/)
     }
 
-    expect(read('pages', 'game.vue')).not.toMatch(/router\.push\('\/'\)/)
+    expect(readGamePage()).not.toMatch(/router\.push\('\/'\)/)
   })
 
   it('[WEB-GAME-015] defines a catch-all 404 route so unmatched paths resolve without router warnings', () => {

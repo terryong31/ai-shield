@@ -89,6 +89,14 @@ class FakeModelRedis:
         self.sets[key] = (cur, exp)
         return len(cur) - before
 
+    async def srem(self, key: str, *members: str) -> int:
+        self._prune(key)
+        cur, exp = self.sets.get(key, (set(), None))
+        before = len(cur)
+        cur.difference_update(members)
+        self.sets[key] = (cur, exp)
+        return before - len(cur)
+
     async def smembers(self, key: str) -> set[str]:
         self._prune(key)
         entry = self.sets.get(key)
@@ -653,7 +661,7 @@ def test_train_discards_csv_enforces_model_max_bytes_and_prod_signing_key(
     # Restore MODEL_MAX_BYTES -> verify first_model_id still works
     monkeypatch.setattr(models_mod, "MODEL_MAX_BYTES", 1_048_576)
     run_ok = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(first_model_id)}
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(first_model_id)}
     )
     assert run_ok.status_code == 200
     assert first_model_id not in str(run_ok.json().get("untrained_model_nodes", []))
@@ -716,12 +724,16 @@ async def test_session_model_lifecycle_ttl_single_model_and_concurrency(make_har
 
     # Advance 1500s -> run resets TTL to +1800s -> 400s later still valid
     h_a.clock.advance(1500)
-    run1 = h_a.client.post("/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m1)})
+    run1 = h_a.client.post(
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m1)}
+    )
     assert run1.status_code == 200
     assert run1.json()["untrained_model_nodes"] == []
 
     h_a.clock.advance(400)
-    run2 = h_a.client.post("/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m1)})
+    run2 = h_a.client.post(
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m1)}
+    )
     assert run2.status_code == 200
     assert run2.json()["untrained_model_nodes"] == []
 
@@ -732,19 +744,21 @@ async def test_session_model_lifecycle_ttl_single_model_and_concurrency(make_har
     assert m2 != m1
     both = h_a.client.post(
         "/api/v1/game/run",
-        json={"level_id": "easy-3", "board": _ml_board(m2, extra_node=True)},
+        json={"level_id": "medium-2", "board": _ml_board(m2, extra_node=True)},
     )
     assert both.status_code == 200
     assert both.json()["untrained_model_nodes"] == ["ml_old"]
 
     # Session B's model was untouched
-    b_run = h_b.client.post("/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(mb)})
+    b_run = h_b.client.post(
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(mb)}
+    )
     assert b_run.json()["untrained_model_nodes"] == []
 
     # Advance 1801s -> expires
     h_a.clock.advance(MODEL_IDLE_TTL_SECONDS + 1)
     expired_run = h_a.client.post(
-        "/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m2)}
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m2)}
     )
     assert expired_run.status_code == 200
     assert expired_run.json()["untrained_model_nodes"] == ["ml"]
@@ -796,7 +810,9 @@ def test_purge_endpoints_logout_password_revoke_delete_and_cross_session_isolati
         ).json()["model_id"]
 
         # Cross-session access fails (API-TRAIN-023)
-        foreign = c2.post("/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m_s1)})
+        foreign = c2.post(
+            "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m_s1)}
+        )
         assert foreign.json()["untrained_model_nodes"] == ["ml"]
 
         # Password change revokes c1's session + model while keeping c2's model (API-TRAIN-022)
@@ -814,14 +830,14 @@ def test_purge_endpoints_logout_password_revoke_delete_and_cross_session_isolati
         )
         assert tok1_active is None
         still_s2 = c2.post(
-            "/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m_s2)}
+            "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m_s2)}
         )
         assert still_s2.json()["untrained_model_nodes"] == []
 
         # DELETE /game/models & POST /game/models/purge idempotent 204
         assert c2.delete("/api/v1/game/models").status_code == 204
         assert c2.delete("/api/v1/game/models").status_code == 204
-        gone = c2.post("/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m_s2)})
+        gone = c2.post("/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m_s2)})
         assert gone.json()["untrained_model_nodes"] == ["ml"]
 
         m_beacon = c2.post(
@@ -829,7 +845,7 @@ def test_purge_endpoints_logout_password_revoke_delete_and_cross_session_isolati
         ).json()["model_id"]
         assert c2.post("/api/v1/game/models/purge").status_code == 204
         assert c2.post(
-            "/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m_beacon)}
+            "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m_beacon)}
         ).json()["untrained_model_nodes"] == ["ml"]
 
         # Account delete purges trained model (API-TRAIN-022)
@@ -873,7 +889,7 @@ async def test_tampered_blob_not_unpickled_and_redis_shared_hashed_keys(
     monkeypatch.setattr(pickle, "loads", spy_loads)
     with caplog.at_level(logging.WARNING):
         res = harness.client.post(
-            "/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m1)}
+            "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m1)}
         )
     assert res.status_code == 200
     assert res.json()["untrained_model_nodes"] == ["ml"]
@@ -991,11 +1007,25 @@ def test_run_rejects_dataset_saves_and_scores_strip_training_data(harness: Harne
     m_live = harness.client.post(
         "/api/v1/game/train", json={"algorithm": "tfidf", "csv_text": _VALID_CSV}
     ).json()["model_id"]
+    # Only live-agent runs are recorded on Medium, so a scripted live agent answers.
+    from shield_engine.ports import ChatCompletion
+    from shield_engine.testing import ScriptedUsageChatModel
+
+    harness.container.game_agents = {
+        "standard": ScriptedUsageChatModel(
+            replies=[],
+            default=ChatCompletion(
+                text='{"reply": "ok", "tool_calls": [], "refused": false}',
+                input_tokens=5,
+                output_tokens=5,
+            ),
+        )
+    }
     run_res = harness.client.post(
-        "/api/v1/game/run", json={"level_id": "easy-3", "board": _ml_board(m_live)}
+        "/api/v1/game/run", json={"level_id": "medium-2", "board": _ml_board(m_live)}
     )
     assert run_res.status_code == 200
-    scores = harness.client.get("/api/v1/game/scores?level_id=easy-3").json()
+    scores = harness.client.get("/api/v1/game/scores?level_id=medium-2").json()
     assert len(scores) == 1
     recorded_cfg = next(n["config"] for n in scores[0]["board"]["nodes"] if n["id"] == "ml")
     assert "model_id" not in recorded_cfg

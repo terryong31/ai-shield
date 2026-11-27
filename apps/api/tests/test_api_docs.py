@@ -34,10 +34,15 @@ def test_development_serves_swagger_ui_and_the_schema() -> None:
 @pytest.mark.spec("API-DOCS-001")
 @pytest.mark.parametrize("env", [{"APP_ENV": "production"}, {}])
 def test_production_and_unset_serve_no_docs_or_schema(env: dict[str, str]) -> None:
-    client = _client(**env)
+    # Production refuses callers without the proxy secret first (API-SEC-013), so the
+    # test proves the secret and then finds no docs routes.
+    secret = "p" * 40
+    client = _client(**env, TRUSTED_PROXY_SECRET=secret)
 
     for path in DOC_PATHS:
-        assert client.get(path).status_code == 404, path
+        assert client.get(path).status_code == 403, path
+        res = client.get(path, headers={"x-shield-proxy-secret": secret})
+        assert res.status_code == 404, path
 
 
 @pytest.mark.spec("API-DOCS-001")

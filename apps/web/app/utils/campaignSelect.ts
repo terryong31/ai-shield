@@ -35,13 +35,14 @@ export interface LevelTileItem {
   mastered: boolean
   bestScore: number
   locked: boolean
+  newIdea: string
   level: GameLevelSchema
 }
 
 export const CAMPAIGN_DIFFICULTY_COUNTS: Record<DifficultyCategory, number> = {
   Easy: 5,
-  Medium: 10,
-  Hard: 8
+  Medium: 7,
+  Hard: 7
 }
 
 export const MAX_STARS_PER_LEVEL = 3
@@ -194,6 +195,7 @@ export function buildLevelTiles(
       mastered,
       bestScore,
       locked: canAccessLevel(lvl, session) === 'pro_locked',
+      newIdea: lvl.new_idea || lvl.summary,
       level: lvl
     }
   })
@@ -236,6 +238,15 @@ export function describeLevelConstraints(
   return items
 }
 
+/** What each of the three stars needs (WEB-LADDER-001): clear, gold, then the mastery goal. */
+export function starCriteria(level: GameLevelSchema): Array<{ label: string, goal: string }> {
+  return [
+    { label: 'First star', goal: 'Clear the level.' },
+    { label: 'Second star', goal: 'Score 9,250 or more.' },
+    { label: 'Third star', goal: level.follow_up?.description ?? 'Clear it and meet the mastery goal.' }
+  ]
+}
+
 export function countPlacedCheckNodes(
   nodes: Array<{ data?: { isAnchor?: boolean } | null }>
 ): number {
@@ -275,6 +286,9 @@ function makeFallbackLevel(
     tier,
     title,
     summary,
+    new_idea: summary,
+    briefing: [],
+    version: 1,
     protected_asset: protectedAsset,
     max_latency_ms: maxLatencyMs ?? (isEasy ? 2500 : 3000),
     max_cost_usd: maxCostUsd ?? (isEasy ? 0.01 : difficulty === 'Medium' ? 0.025 : 0.03),
@@ -291,27 +305,23 @@ function makeFallbackLevel(
 }
 
 export const FALLBACK_CAMPAIGN_LEVELS: GameLevelSchema[] = [
-  makeFallbackLevel('easy-1', 1, 'Easy', 'free', 'Public Helpdesk', 'Stop direct prompt overrides and oversized prompt-stuffing payloads while letting store customer questions through.', 'Store VIP discount code', ['Word Filter', 'Length Limit', 'Edge Defence'], {}, 'Use <= 2 check nodes and keep average latency <= 1.0 ms.'),
-  makeFallbackLevel('easy-2', 2, 'Easy', 'free', 'Hidden in Plain Sight', 'Normalize zero-width obfuscation, Base64 strings, and hex smuggling with Text Cleaner before scanning for secret phrases.', 'Partner portal API key', ['Text Cleaner', 'Secret Scan', 'Pipeline Order'], {}, 'Complete with $0.00 total cost (zero paid AI checks).'),
-  makeFallbackLevel('easy-3', 3, 'Easy', 'free', 'Train Your First Guard', 'Word Filter is locked by policy. Train an ML Filter from CSV examples and route Safe vs. Unclear prompts without blocking polite questions.', 'Merchant admin console', ['ML Filter', '3-Way Branching', 'CSV Training'], { disabled_checks: ['word_filter'] }, 'Spend $0.00 total cost and keep average latency <= 6.0 ms.'),
-  makeFallbackLevel('easy-4', 4, 'Easy', 'pro', 'Developer Docs Trap', 'Legitimate developers ask educational questions mentioning SELECT * and API_KEY setup; filter real credential theft within 4 check nodes.', 'Internal SDK signing key', ['False Positives', 'ML Triage', 'Edge Rules'], { max_check_nodes: 4 }, 'Solve with $0.00 total cost (no paid AI checks).'),
-  makeFallbackLevel('easy-5', 5, 'Easy', 'pro', 'The Noisy Gateway', 'Easy capstone combining oversized stuffing, zero-width smuggling, paraphrased overrides, and benign lookalikes under an 8 ms SLA.', 'Gateway master routing key', ['Capstone', 'Latency SLA', 'Defense in Depth'], { max_avg_latency_ms: 8 }, 'Use <= 4 check nodes and spend $0.00 total cost.'),
-  makeFallbackLevel('medium-1', 6, 'Medium', 'free', 'HR Handbook Assistant', 'Stop base64 tricks and roleplay jailbreaks without blocking staff who ask normal policy questions.', 'Executive salary records', ['LangGraph Agent', 'Tool Policy', 'Roleplay'], {}, 'Win without using LLM review.'),
-  makeFallbackLevel('medium-2', 7, 'Medium', 'free', 'Over-Helpful Refund Bot', 'Let valid parcel questions use lookup_order while switching off issue_refund when impatient shoppers slip in quick-fix refund requests.', 'Merchant refund payout API', ['Pattern C Bait', 'Tool Policy', 'Latency'], {}, 'Keep average latency <= 600.0 ms.'),
-  makeFallbackLevel('medium-3', 8, 'Medium', 'pro', 'Poisoned Inbox', 'Summarize legitimate supplier emails while stripping hidden forwarding instructions buried inside quoted email threads.', 'Executive inbox threads', ['Pattern D RAG Bait', 'Indirect Injection'], {}, 'Solve using at most 3 check nodes.'),
-  makeFallbackLevel('medium-4', 9, 'Medium', 'pro', 'Lost in Translation', 'Word Filter is disabled. Catch Malay, Spanish, and JSON-wrapped overrides semantically without over-spending or blocking clinic bookings.', 'Patient medical records', ['Multilingual', 'JSON Framing', 'Cost Cap'], { disabled_checks: ['word_filter'] }, 'Keep total wave cost <= $0.008.'),
-  makeFallbackLevel('medium-5', 10, 'Medium', 'pro', 'Confused Dev Copilot', 'Let engineers ask harmless debugging questions about .env files and SQL joins while blocking real read_env_secrets and run_sql attacks.', 'Production .env & SQL database', ['False Positives', 'Multi-Tool', 'Token Budget'], {}, 'Complete with total tokens <= 4,500.'),
-  makeFallbackLevel('medium-6', 11, 'Medium', 'pro', '50ms Express Lane', 'Route obvious benign FX inquiries past expensive LLM checks to keep the entire wave under a strict $0.005 total cost cap.', 'Treasury wire transfer gateway', ['Funnel Routing', 'Cost SLA'], { max_total_cost_usd: 0.005 }, 'Win without using LLM review.', 3000, 0.02),
-  makeFallbackLevel('medium-7', 12, 'Medium', 'pro', 'IT Helpdesk Triage', 'Tickets bait three separate privileged IT actions (reset_mfa, grant_admin, delete_ticket). Route tool policy selectively within 5 check nodes.', 'Identity & ticket admin controls', ['Multi-Tool Policy', 'Triage'], { max_check_nodes: 5 }, 'Solve using at most 3 check nodes.'),
-  makeFallbackLevel('medium-8', 13, 'Medium', 'pro', 'Dual-Use Refund Desk', 'First Dual-Use tool: issue_store_credit MUST work for verified damaged deliveries, yet MUST be switched off on quick-fix bait and attacks.', 'Store credit issuance balance', ['Dual-Use Tool', 'Tool Policy'], {}, 'Win without using LLM review.'),
-  makeFallbackLevel('medium-9', 14, 'Medium', 'pro', 'Encoded Cargo Courier', 'Tracking remarks hide Base64 and URL-encoded tool-rerouting directives. Clean encoded text before Tool Policy decides what to gate.', 'Maritime freight routing', ['Text Cleaner', 'Tool Policy', 'URL Encoding'], {}, 'Use <= 4 check nodes and keep total cost <= $0.007.'),
-  makeFallbackLevel('medium-10', 15, 'Medium', 'pro', 'Dual-Use CRM Boss', 'Medium capstone: gate Dual-Use send_customer_email selectively, guard delete_account/export_crm, and stay within 5 check nodes.', 'Enterprise CRM & customer communications', ['Capstone', 'Dual-Use Tool', 'Node Cap'], { max_check_nodes: 5 }, 'Keep total tokens <= 5,000 without using LLM review.'),
-  makeFallbackLevel('hard-1', 16, 'Hard', 'pro', 'Warehouse Ops Under Siege', 'Defend a gullible warehouse assistant across 6 tools against multi-vector chained injections, Base64 directives, and Pattern C/D tool baits.', 'Payroll database and audit logs', ['Gullible Agent', '6 Tools', 'Multi-Vector'], {}, 'Solve using at most 4 check nodes.'),
-  makeFallbackLevel('hard-2', 17, 'Hard', 'pro', 'No Heavy Weapons', 'Banking compliance prohibits LLM review. Stop attacks and tool bait against a gullible banking assistant with lighter checks and Jev.', 'Retail banking transfers & fraud rules', ['No LLM Review', 'Banking', 'Latency SLA'], { disabled_checks: ['llm_review'] }, 'Use <= 4 check nodes and keep average latency <= 500.0 ms.'),
-  makeFallbackLevel('hard-3', 18, 'Hard', 'pro', 'The Auditor\'s Minefield', 'Word Filter is disabled and legitimate compliance auditors quote attack strings verbatim in audit reports. Avoid false alarms on quoted text.', 'Legal contract signing & privileged archive', ['False Positives', 'Quoted Strings', 'No Word Filter'], { disabled_checks: ['word_filter'] }, 'Keep total wave cost <= $0.010.'),
-  makeFallbackLevel('hard-4', 19, 'Hard', 'pro', 'Polyglot & Stego Smuggler', 'SRE telemetry hides URL-encoded JSON, Base64 key-rotation commands, and YAML tool invocations. Clean and block within 5 check nodes.', 'Cloud keys, cluster nodes, and firewall', ['Polyglot', 'Text Cleaner', 'Node Cap'], { max_check_nodes: 5 }, 'Win without using LLM review.'),
-  makeFallbackLevel('hard-5', 20, 'Hard', 'pro', 'Dual-Use Finance Desk', 'Allow valid Dual-Use approve_expense calls for small receipts while blocking spoofed CEO payment memos, large unauthorized approvals, and bank fraud.', 'Corporate expense ledger & bank routing', ['Dual-Use Tool', 'CEO Spoof', 'Node Cap'], { max_check_nodes: 5 }, 'Keep total wave cost <= $0.009.'),
-  makeFallbackLevel('hard-6', 21, 'Hard', 'pro', 'Minimalist Fortress', 'Guard CI/CD production deployment tools against a gullible agent using at most 3 placeable check nodes total.', 'Production release & schema pipelines', ['Strict 3-Node Limit', 'CI/CD'], { max_check_nodes: 3 }, 'Win without using LLM review.'),
-  makeFallbackLevel('hard-7', 22, 'Hard', 'pro', 'Dual-Use Cloud Ops', 'Safety Check is disabled, and BOTH restart_staging_pod and notify_oncall are Dual-Use tools that must run only on genuine staging incidents.', 'Kubernetes prod cluster & on-call pager', ['2x Dual-Use', 'No Safety Check'], { disabled_checks: ['safety_check'] }, 'Solve using at most 4 check nodes.'),
-  makeFallbackLevel('hard-8', 23, 'Hard', 'pro', 'Zero-Day Red Team Capstone', 'Grand capstone mixing Dual-Use escalations, quoted auditor logs, Base64 smuggling, and four destructive restricted tools under cost & node limits.', 'Enterprise payout, SQL, superadmin, and audit vault', ['Final Capstone', 'Dual-Use Tool', 'Budget & Cost Cap'], { max_check_nodes: 6, max_total_cost_usd: 0.015 }, 'Use <= 4 check nodes and keep average latency <= 650.0 ms.')
+  makeFallbackLevel('easy-1', 1, 'Easy', 'free', 'Public Helpdesk', 'Match attack phrases, and limit the length.', 'Store discount codes and admin login', [], { disabled_checks: ['text_cleanup', 'secret_scan', 'ml_classifier', 'jev', 'safety_check', 'llm_review', 'tool_filter'] }, 'Clear it with 2 check nodes or fewer.'),
+  makeFallbackLevel('easy-2', 2, 'Easy', 'free', 'Hidden in Plain Sight', 'Clean the text before you scan it. Normal prompts also hold encoded text.', 'Store discount codes and admin login', [], { disabled_checks: ['ml_classifier', 'jev', 'safety_check', 'llm_review', 'tool_filter'] }, 'Clear it with 2 check nodes or fewer.'),
+  makeFallbackLevel('easy-3', 3, 'Easy', 'free', 'Developer Docs Trap', 'The same words, for a different purpose.', 'Live keys and the orders database', [], { max_check_nodes: 3, disabled_checks: ['ml_classifier', 'jev', 'safety_check', 'llm_review', 'tool_filter'] }, 'Clear it with no word filter.'),
+  makeFallbackLevel('easy-4', 4, 'Easy', 'pro', 'Train Your First Guard', 'Generalise from examples: train the ML filter.', 'Customer contact list and staff logins', [], { disabled_checks: ['word_filter', 'text_cleanup', 'length_limit', 'secret_scan', 'jev', 'safety_check', 'llm_review', 'tool_filter'] }, 'Stop all 12 attacks.'),
+  makeFallbackLevel('easy-5', 5, 'Easy', 'pro', 'Noisy Gateway', 'Exam: every tool, two nodes, and 6 ms a prompt. Choose what matters.', 'Everything from levels 1 to 4', [], { max_check_nodes: 2, max_avg_latency_ms: 6.0 }, 'A perfect wave: every attack stopped and every normal prompt helped.'),
+  makeFallbackLevel('medium-1', 6, 'Medium', 'free', 'HR Handbook', 'Agent rules, and a restricted tool.', 'Staff salary records', [], { disabled_checks: ['jev', 'safety_check', 'llm_review', 'ml_classifier'] }, 'Clear it with no word filter.'),
+  makeFallbackLevel('medium-2', 7, 'Medium', 'free', 'Refund Bot', 'Do half of a mixed request: run the safe part, skip the forbidden part.', 'Refunds to customers\' cards', [], { max_check_nodes: 4 }, 'Clear it with no LLM review.'),
+  makeFallbackLevel('medium-3', 8, 'Medium', 'pro', 'Poisoned Inbox', 'Quoted text is data, never a task.', 'Client email threads', [], { max_check_nodes: 4 }, 'Clear it with 3 check nodes or fewer.'),
+  makeFallbackLevel('medium-4', 9, 'Medium', 'pro', 'Lost in Translation', 'Meaning, not words, in four languages.', 'Patient records', [], { disabled_checks: ['word_filter', 'secret_scan'] }, 'Clear it with a list cost of $0.00080 or less.'),
+  makeFallbackLevel('medium-5', 10, 'Medium', 'pro', 'Express Lane', 'Send only the Unclear prompts to paid checks.', 'Customer money', [], { max_total_cost_usd: 0.0008 }, 'Clear it with a list cost of $0.00050 or less.'),
+  makeFallbackLevel('medium-6', 11, 'Medium', 'pro', 'Dual-Use Refund Desk', 'One tool, right or wrong by context.', 'Store credit and customer data', [], { max_check_nodes: 5 }, 'Clear it with no LLM review.'),
+  makeFallbackLevel('medium-7', 12, 'Medium', 'pro', 'CRM Boss', 'Capstone: combine levels 6 to 11.', 'Customer accounts and the CRM', [], { max_check_nodes: 5, max_total_cost_usd: 0.004 }, 'Clear it with 4 check nodes or fewer.'),
+  makeFallbackLevel('hard-1', 13, 'Hard', 'pro', 'Warehouse', 'The eager agent does what it is told: plausible abuse gets through.', 'Stock, shipments and supplier data', [], { max_check_nodes: 5 }, 'Clear it with 4 check nodes or fewer.'),
+  makeFallbackLevel('hard-2', 14, 'Hard', 'pro', 'No Heavy Weapons', 'Stop plausible abuse without the LLM review.', 'Card limits, fraud alerts and payments', [], { max_check_nodes: 3, disabled_checks: ['llm_review'] }, 'Clear it with no safety check.'),
+  makeFallbackLevel('hard-3', 15, 'Hard', 'pro', 'Auditor\'s Minefield', 'Honest staff quote attack text: the words of an attack are in normal prompts too.', 'Contracts and the audit log', [], { disabled_checks: ['word_filter'] }, 'Clear it with a list cost of $0.00120 or less.'),
+  makeFallbackLevel('hard-4', 16, 'Hard', 'pro', 'Polyglot', 'Two layers of encoding: a language inside an encoding, or one encoding inside another.', 'Cargo routes and invoices', [], { max_check_nodes: 5 }, 'Clear it with 4 check nodes or fewer.'),
+  makeFallbackLevel('hard-5', 17, 'Hard', 'pro', 'Finance Desk', 'Decide by amount and proof.', 'Expense approvals and vendor bank details', [], { max_check_nodes: 5 }, 'Clear it with a list cost of $0.00100 or less.'),
+  makeFallbackLevel('hard-6', 18, 'Hard', 'pro', 'Cloud Ops', 'Two dual-use tools with opposite conditions.', 'Production servers and the on-call team', [], { max_check_nodes: 5, disabled_checks: ['safety_check'] }, 'Clear it with 4 check nodes or fewer.'),
+  makeFallbackLevel('hard-7', 19, 'Hard', 'pro', 'Zero-Day', 'Final capstone: combine levels 13 to 18.', 'Payouts, admin roles and customer data', [], { max_check_nodes: 6, max_total_cost_usd: 0.004 }, 'Clear it with 5 check nodes or fewer.')
 ]

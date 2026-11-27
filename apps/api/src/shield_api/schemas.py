@@ -4,6 +4,7 @@ These models are the public contract. Changing them changes
 ``contracts/shield-api.openapi.json``, which the web client is generated from.
 """
 
+import json
 import re
 import unicodedata
 from datetime import datetime
@@ -49,6 +50,8 @@ class HealthResponse(BaseModel):
 class ClearanceRequest(BaseModel):
     """An admin's Supabase Auth credentials, checked once and never stored."""
 
+    model_config = ConfigDict(extra="forbid")
+
     email: Annotated[str, Field(min_length=3, max_length=320)]
     password: Annotated[str, Field(min_length=1, max_length=512)]
 
@@ -61,21 +64,54 @@ class ClearanceStatus(BaseModel):
 # --- Game models --------------------------------------------------------------
 
 
+# Bounds of a node config (spec 0054): keys, nesting depth and serialized size.
+CONFIG_MAX_KEYS = 32
+CONFIG_MAX_DEPTH = 4
+CONFIG_MAX_BYTES = 16 * 1024
+
+
+def _depth(value: Any) -> int:
+    if isinstance(value, dict):
+        return 1 + max((_depth(v) for v in value.values()), default=0)
+    if isinstance(value, list):
+        return 1 + max((_depth(v) for v in value), default=0)
+    return 0
+
+
+def _bounded_config(config: dict[str, Any]) -> dict[str, Any]:
+    if len(config) > CONFIG_MAX_KEYS:
+        raise ValueError(f"A node config holds at most {CONFIG_MAX_KEYS} keys.")
+    if _depth(config) > CONFIG_MAX_DEPTH:
+        raise ValueError(f"A node config nests at most {CONFIG_MAX_DEPTH} levels.")
+    if len(json.dumps(config, default=str).encode("utf-8")) > CONFIG_MAX_BYTES:
+        raise ValueError("A node config is at most 16 KiB.")
+    return config
+
+
+BoardId = Annotated[str, Field(max_length=128)]
+
+
 class BoardNodeSchema(BaseModel):
-    id: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: BoardId
     # "blocked" is accepted only so the engine can explain its removal (spec 0020).
     kind: NodeKind | RetiredNodeKind
-    config: dict[str, Any] = Field(default_factory=dict)
+    config: Annotated[dict[str, Any], AfterValidator(_bounded_config)] = Field(default_factory=dict)
 
 
 class BoardEdgeSchema(BaseModel):
-    id: str
-    source: str
+    model_config = ConfigDict(extra="forbid")
+
+    id: BoardId
+    source: BoardId
     source_handle: HandleKind
-    target: str
+    target: BoardId
 
 
 class BoardGraphSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     nodes: list[BoardNodeSchema]
     edges: list[BoardEdgeSchema]
 
@@ -99,6 +135,8 @@ class LevelMessageSchema(BaseModel):
 
 
 class AgentToolSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     description: str
     allowed: bool
@@ -117,6 +155,7 @@ class LevelConstraintsSchema(BaseModel):
     max_avg_latency_ms: float | None = None
     max_total_cost_usd: float | None = None
     max_tokens: int | None = None
+    max_training_rows: int | None = None
 
 
 class FollowUpChallengeSchema(BaseModel):
@@ -126,6 +165,12 @@ class FollowUpChallengeSchema(BaseModel):
     max_avg_latency_ms: float | None = None
     max_total_cost_usd: float | None = None
     max_tokens: int | None = None
+    max_training_rows: int | None = None
+
+
+class BriefingExampleSchema(BaseModel):
+    family: str
+    text: str
 
 
 class GameLevelSchema(BaseModel):
@@ -146,6 +191,12 @@ class GameLevelSchema(BaseModel):
     follow_up: FollowUpChallengeSchema | None = None
     agent_tier: AgentTier | None
     final_node_label: str
+    # Spec 0051: the one new idea, the floors, and one example of each attack family.
+    new_idea: str = ""
+    attack_floor: int | None = None
+    benign_floor: int | None = None
+    briefing: list[BriefingExampleSchema] = Field(default_factory=list)
+    version: int = 1
 
 
 class GameCatalogResponse(BaseModel):
@@ -194,17 +245,23 @@ StrongPassword = Annotated[
 
 
 class PlayerRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: PlayerEmail
     password: StrongPassword
     player_name: Annotated[str, Field(min_length=1, max_length=64)] | None = None
 
 
 class PlayerLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: PlayerEmail
     password: Annotated[str, Field(min_length=8, max_length=512)]
 
 
 class PlayerResendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: PlayerEmail
 
 
@@ -272,6 +329,55 @@ class AccountResetResponse(BaseModel):
     boards_removed: int
 
 
+class ExportAccountSchema(BaseModel):
+    email: str
+    player_name: str
+    tier: PlayerTier
+    paid_until: datetime | None = None
+    created_at: datetime | None = None
+
+
+class ExportSavedBoardSchema(BaseModel):
+    level_id: str
+    updated_at: datetime
+    save: dict[str, Any]
+
+
+class ExportScoreSchema(BaseModel):
+    level_id: str
+    total_score: int
+    medal: MedalKind
+    won: bool
+    mastered: bool
+    attacks_blocked: int
+    attacks_total: int
+    false_alarms: int
+    avg_latency_ms: float
+    total_cost_usd: float
+    created_at: datetime
+
+
+class ExportPurchaseSchema(BaseModel):
+    id: str
+    amount_cents: int
+    currency: str
+    status: str
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    created_at: datetime | None = None
+    settled_at: datetime | None = None
+
+
+class AccountExportResponse(BaseModel):
+    """Everything the gateway holds about the signed-in player (spec 0058)."""
+
+    exported_at: datetime
+    account: ExportAccountSchema | None
+    saved_boards: list[ExportSavedBoardSchema]
+    scores: list[ExportScoreSchema]
+    purchases: list[ExportPurchaseSchema]
+
+
 class PlayerConfirmationResponse(BaseModel):
     """Sent for every register or resend that needs email confirmation, whatever the email."""
 
@@ -279,6 +385,8 @@ class PlayerConfirmationResponse(BaseModel):
 
 
 class PlayerRecoverRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: PlayerEmail
 
 
@@ -417,7 +525,7 @@ class SavedBoardRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     board: BoardGraphSchema
-    positions: dict[str, NodePositionSchema] = Field(default_factory=dict)
+    positions: dict[str, NodePositionSchema] = Field(default_factory=dict, max_length=60)
     # Only for level "custom" (paid players).
     custom: CustomSetupSchema | None = None
 
@@ -428,6 +536,8 @@ class SavedBoardResponse(SavedBoardRequest):
 
 
 class GameRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     level_id: RunLevelId = "easy-1"
     board: BoardGraphSchema
     custom_message: Annotated[str, Field(max_length=1000)] | None = None
@@ -606,7 +716,7 @@ class PlayerProgressResponse(BaseModel):
 class TrainingRowSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: StrictStr
+    text: Annotated[StrictStr, Field(max_length=4000)]
     label: StrictInt | StrictStr
 
 
@@ -614,8 +724,8 @@ class GameTrainRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     algorithm: str = "logistic_regression"
-    csv_text: StrictStr | None = None
-    dataset: list[TrainingRowSchema] | None = None
+    csv_text: Annotated[StrictStr, Field(max_length=1_310_720)] | None = None
+    dataset: Annotated[list[TrainingRowSchema], Field(max_length=2000)] | None = None
     level_id: RunLevelId | None = None
 
 

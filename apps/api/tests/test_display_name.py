@@ -135,6 +135,7 @@ def test_rename_is_rate_limited_in_production() -> None:
         "x-shield-client-ip": "203.0.113.9",
         "x-shield-proxy-secret": SecretStr("s3cret").get_secret_value(),
         "x-shield-botid": "pass",
+        "sec-fetch-site": "same-origin",
     }
     signed_up = client.post(
         "/api/v1/auth/register",

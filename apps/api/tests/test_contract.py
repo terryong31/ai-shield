@@ -14,6 +14,7 @@ def test_only_versioned_routes_are_published() -> None:
     assert sorted(paths) == [
         "/api/v1/auth/account",  # spec 0025
         "/api/v1/auth/account/email",
+        "/api/v1/auth/account/export",  # spec 0058
         "/api/v1/auth/account/password",
         "/api/v1/auth/account/profile",  # spec 0048
         "/api/v1/auth/account/reset-progress",

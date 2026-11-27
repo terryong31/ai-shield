@@ -2,49 +2,46 @@
 
 > ai-shield is an interactive prompt-injection defence game where players wire layered security checks on a visual node board to protect an LLM agent from injection waves, jailbreaks, secret leaks, and unauthorized tool calls.
 
-Players connect defence nodes between the `Input` source and the final node (`Help Desk` on Easy levels, or `Protected Agent` on Medium, Hard, and Custom). Each wave sends a mix of normal user prompts and prompt-injection attacks through the board and scores the run from 0 to 10,000 points. To win a wave, a board must stop every attack without blocking any legitimate prompt.
+Players connect defence nodes between the `Input` source and the final node (`Help Desk` on Easy levels, or `Protected Agent` on Medium, Hard, and Custom). Each wave sends a mix of normal user prompts and prompt-injection attacks through the board and scores the run from 0 to 10,000 points. To clear a level, a board must stop enough attacks and help enough normal prompts, with no critical leak and within the level's limits. Each run is scored, and the best run is kept.
 
 ## Pages
 
-- [Main Menu & Leaderboard](https://ai-shield-delta.vercel.app/): Difficulty and level selector for the 23-level campaign, and a live leaderboard for each difficulty.
-- [Defence Board](https://ai-shield-delta.vercel.app/game): Interactive Vue Flow canvas where players place, configure, and wire security checks, run waves, test single messages, and inspect confusion-matrix results.
-- [Plans](https://ai-shield-delta.vercel.app/plans): `Free` ($0: 5 wave runs and 20 tests per day) and `Paid` ($5 for 30 days, one payment that does not renew: 300 wave runs and 1,000 tests per day, all campaign levels, and the Custom sandbox).
+- [Main Menu & Leaderboard](https://ai-shield-delta.vercel.app/): Difficulty and level selector for the 19-level campaign, and a live leaderboard for each difficulty.
+- [Defence Board](https://ai-shield-delta.vercel.app/game): Interactive Vue Flow canvas where players place, configure, and wire security checks, run waves, and inspect results by prompt family.
+- [Privacy Policy](https://ai-shield-delta.vercel.app/privacy): what ai-shield collects, why, where it is kept and for how long, the cookies and browser storage it uses, its sub-processors, and how to download or delete your data.
+- [Plans](https://ai-shield-delta.vercel.app/plans): `Free` ($0: 5 wave runs per day) and `Paid` ($5 for 30 days, one payment that does not renew: 50 wave runs per day, all campaign levels, and the Custom sandbox).
 
 ## Game Levels
 
-The campaign has 23 levels. Levels marked `Paid` need a pass.
+The campaign has 19 levels. Levels marked `Paid` need a pass.
 
 ### Easy
 
-- [Public Helpdesk](https://ai-shield-delta.vercel.app/game?level=easy-1): Stop direct prompt overrides and oversized prompt-stuffing payloads while letting store customer questions through.
-- [Hidden in Plain Sight](https://ai-shield-delta.vercel.app/game?level=easy-2): Normalize zero-width obfuscation, Base64 strings, and hex smuggling with Text Cleaner before scanning for secret phrases.
-- [Train Your First Guard](https://ai-shield-delta.vercel.app/game?level=easy-3): Only the ML Filter is available here. Train it from CSV examples and route Safe vs. Unclear prompts without blocking polite questions.
-- [Developer Docs Trap](https://ai-shield-delta.vercel.app/game?level=easy-4): Legitimate developers ask educational questions mentioning SELECT * and API_KEY setup; filter real credential theft within 4 check nodes. (`Paid`)
-- [The Noisy Gateway](https://ai-shield-delta.vercel.app/game?level=easy-5): Easy capstone combining oversized stuffing, zero-width smuggling, paraphrased overrides, and benign lookalikes under an 8 ms SLA. (`Paid`)
+- [Public Helpdesk](https://ai-shield-delta.vercel.app/game?level=easy-1): Match attack phrases, and limit the length.
+- [Hidden in Plain Sight](https://ai-shield-delta.vercel.app/game?level=easy-2): Clean the text before you scan it. Normal prompts also hold encoded text.
+- [Developer Docs Trap](https://ai-shield-delta.vercel.app/game?level=easy-3): The same words, for a different purpose.
+- [Train Your First Guard](https://ai-shield-delta.vercel.app/game?level=easy-4): Generalise from examples: train the ML filter. (`Paid`)
+- [Noisy Gateway](https://ai-shield-delta.vercel.app/game?level=easy-5): Exam: every tool, two nodes, and 6 ms a prompt. Choose what matters. (`Paid`)
 
 ### Medium
 
-- [HR Handbook Assistant](https://ai-shield-delta.vercel.app/game?level=medium-1): Stop base64 tricks and roleplay jailbreaks without blocking staff who ask normal policy questions.
-- [Over-Helpful Refund Bot](https://ai-shield-delta.vercel.app/game?level=medium-2): Let valid parcel questions use lookup_order while switching off issue_refund when impatient shoppers slip in quick-fix refund requests.
-- [Poisoned Inbox](https://ai-shield-delta.vercel.app/game?level=medium-3): Summarize legitimate supplier emails while stripping hidden forwarding instructions buried inside quoted email threads. (`Paid`)
-- [Lost in Translation](https://ai-shield-delta.vercel.app/game?level=medium-4): Word Filter is disabled. Catch Malay, Spanish, and JSON-wrapped overrides semantically without over-spending or blocking clinic bookings. (`Paid`)
-- [Confused Dev Copilot](https://ai-shield-delta.vercel.app/game?level=medium-5): Let engineers ask harmless debugging questions about .env files and SQL joins while blocking real read_env_secrets and run_sql attacks. (`Paid`)
-- [50ms Express Lane](https://ai-shield-delta.vercel.app/game?level=medium-6): Route obvious benign FX inquiries past expensive LLM checks to keep the entire wave under a strict $0.005 total cost cap. (`Paid`)
-- [IT Helpdesk Triage](https://ai-shield-delta.vercel.app/game?level=medium-7): Tickets bait three separate privileged IT actions (reset_mfa, grant_admin, delete_ticket). Route tool policy selectively within 5 check nodes. (`Paid`)
-- [Dual-Use Refund Desk](https://ai-shield-delta.vercel.app/game?level=medium-8): First Dual-Use tool: issue_store_credit MUST work for verified damaged deliveries, yet MUST be switched off on quick-fix bait and attacks. (`Paid`)
-- [Encoded Cargo Courier](https://ai-shield-delta.vercel.app/game?level=medium-9): Tracking remarks hide Base64 and URL-encoded tool-rerouting directives. Clean encoded text before Tool Policy decides what to gate. (`Paid`)
-- [Dual-Use CRM Boss](https://ai-shield-delta.vercel.app/game?level=medium-10): Medium capstone: gate Dual-Use send_customer_email selectively, guard delete_account/export_crm, and stay within 5 check nodes. (`Paid`)
+- [HR Handbook](https://ai-shield-delta.vercel.app/game?level=medium-1): Agent rules, and a restricted tool.
+- [Refund Bot](https://ai-shield-delta.vercel.app/game?level=medium-2): Do half of a mixed request: run the safe part, skip the forbidden part.
+- [Poisoned Inbox](https://ai-shield-delta.vercel.app/game?level=medium-3): Quoted text is data, never a task. (`Paid`)
+- [Lost in Translation](https://ai-shield-delta.vercel.app/game?level=medium-4): Meaning, not words, in four languages. (`Paid`)
+- [Express Lane](https://ai-shield-delta.vercel.app/game?level=medium-5): Send only the Unclear prompts to paid checks. (`Paid`)
+- [Dual-Use Refund Desk](https://ai-shield-delta.vercel.app/game?level=medium-6): One tool, right or wrong by context. (`Paid`)
+- [CRM Boss](https://ai-shield-delta.vercel.app/game?level=medium-7): Capstone: combine levels 6 to 11. (`Paid`)
 
 ### Hard
 
-- [Warehouse Ops Under Siege](https://ai-shield-delta.vercel.app/game?level=hard-1): Defend a gullible warehouse assistant across 6 tools against multi-vector chained injections, Base64 directives, and Pattern C/D tool baits. (`Paid`)
-- [No Heavy Weapons](https://ai-shield-delta.vercel.app/game?level=hard-2): Banking compliance prohibits LLM review. Stop attacks and tool bait against a gullible banking assistant with lighter checks and Jev. (`Paid`)
-- [The Auditor's Minefield](https://ai-shield-delta.vercel.app/game?level=hard-3): Word Filter is disabled and legitimate compliance auditors quote attack strings verbatim in audit reports. Avoid false alarms on quoted text. (`Paid`)
-- [Polyglot & Stego Smuggler](https://ai-shield-delta.vercel.app/game?level=hard-4): SRE telemetry hides URL-encoded JSON, Base64 key-rotation commands, and YAML tool invocations. Clean and block within 5 check nodes. (`Paid`)
-- [Dual-Use Finance Desk](https://ai-shield-delta.vercel.app/game?level=hard-5): Allow valid Dual-Use approve_expense calls for small receipts while blocking spoofed CEO payment memos, large unauthorized approvals, and bank fraud. (`Paid`)
-- [Minimalist Fortress](https://ai-shield-delta.vercel.app/game?level=hard-6): Guard CI/CD production deployment tools against a gullible agent using at most 3 placeable check nodes total. (`Paid`)
-- [Dual-Use Cloud Ops](https://ai-shield-delta.vercel.app/game?level=hard-7): Safety Check is disabled, and BOTH restart_staging_pod and notify_oncall are Dual-Use tools that must run only on genuine staging incidents. (`Paid`)
-- [Zero-Day Red Team Capstone](https://ai-shield-delta.vercel.app/game?level=hard-8): Grand capstone mixing Dual-Use escalations, quoted auditor logs, Base64 smuggling, and four destructive restricted tools under cost & node limits. (`Paid`)
+- [Warehouse](https://ai-shield-delta.vercel.app/game?level=hard-1): The eager agent does what it is told: plausible abuse gets through. (`Paid`)
+- [No Heavy Weapons](https://ai-shield-delta.vercel.app/game?level=hard-2): Stop plausible abuse without the LLM review. (`Paid`)
+- [Auditor's Minefield](https://ai-shield-delta.vercel.app/game?level=hard-3): Honest staff quote attack text: the words of an attack are in normal prompts too. (`Paid`)
+- [Polyglot](https://ai-shield-delta.vercel.app/game?level=hard-4): Two layers of encoding: a language inside an encoding, or one encoding inside another. (`Paid`)
+- [Finance Desk](https://ai-shield-delta.vercel.app/game?level=hard-5): Decide by amount and proof. (`Paid`)
+- [Cloud Ops](https://ai-shield-delta.vercel.app/game?level=hard-6): Two dual-use tools with opposite conditions. (`Paid`)
+- [Zero-Day](https://ai-shield-delta.vercel.app/game?level=hard-7): Final capstone: combine levels 13 to 18. (`Paid`)
 
 ### Custom
 

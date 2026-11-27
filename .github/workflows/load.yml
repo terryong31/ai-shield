@@ -1,0 +1,58 @@
+# k6 smoke test against an isolated gateway in the runner (spec 0057).
+# The gateway runs with in-memory stores (perf/k6/serve_api.py): no Supabase, no model and
+# no payment provider, so the run costs nothing and touches no real data.
+name: Load
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  smoke:
+    name: k6 smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          tools: uv python k6
+          javascript: "false"
+      - name: Check the scenarios
+        run: mise run perf:check
+      - name: Start the gateway
+        run: |
+          uv run python perf/k6/serve_api.py --mode dev --port 8000 &
+          for _ in $(seq 1 60); do
+            curl --silent --fail http://127.0.0.1:8000/api/v1/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "The gateway did not start" >&2
+          exit 1
+      - name: Smoke
+        env:
+          K6_TARGET_URL: http://127.0.0.1:8000
+          K6_NO_USAGE_REPORT: "true"
+        run: mise run perf:smoke
+      - name: Upload the redacted summary
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: k6-smoke-summary
+          path: perf/k6/.reports/smoke-summary.json
+          if-no-files-found: warn
+          retention-days: 14

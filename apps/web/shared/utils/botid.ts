@@ -13,5 +13,7 @@ export const BOTID_PROTECTED_ROUTES: readonly BotIdProtectedRoute[] = [
   { path: '/api/v1/auth/confirm', method: 'POST' },
   { path: '/api/v1/auth/reset-password', method: 'POST' },
   { path: '/api/v1/game/run', method: 'POST' },
-  { path: '/api/v1/game/train', method: 'POST' }
+  { path: '/api/v1/game/train', method: 'POST' },
+  // Admin sign-in is behind BotID too (spec 0054).
+  { path: '/api/v1/clearance', method: 'POST' }
 ]

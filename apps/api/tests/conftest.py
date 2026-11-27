@@ -348,6 +348,7 @@ def make_harness() -> Iterator[Callable[..., Harness]]:
     ) -> Harness:
         from shield_api.services.leaderboard import LeaderboardService
         from shield_api.services.models import InMemoryTrainedModelStore
+        from shield_api.services.rate_limit import RateLimiter
         from shield_api.services.sessions import AttemptLimiter, InMemorySessionStore
 
         classifier = StaticClassifier(verdict, probability)
@@ -380,6 +381,8 @@ def make_harness() -> Iterator[Callable[..., Harness]]:
                 clock=clock,
             ),
             players=players or InMemoryPlayerStore(),
+            # The same clock as the attempt limiter, so windows can be advanced in tests.
+            rate_limiter=RateLimiter(clock=clock),
         )
         client = TestClient(create_app(container))
         client.__enter__()
@@ -423,6 +426,10 @@ def _matches(row: dict[str, Any], tests: list[tuple[str, str, Any]]) -> bool:
             return False
         if op == "gte" and not (cell is not None and cell >= value):
             return False
+        if op == "like" and not (
+            isinstance(cell, str) and cell.startswith(str(value).removesuffix("%"))
+        ):
+            return False
     return True
 
 
@@ -459,6 +466,10 @@ class FakeQuery:
 
     def lt(self, column: str, value: Any) -> "FakeQuery":
         self.tests.append(("lt", column, value))
+        return self
+
+    def like(self, column: str, value: Any) -> "FakeQuery":
+        self.tests.append(("like", column, value))
         return self
 
     def gte(self, column: str, value: Any) -> "FakeQuery":
@@ -652,3 +663,16 @@ def fake_supabase() -> Callable[..., FakeClient]:
         return FakeClient(fail=fail)
 
     return build
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Database tests need local Supabase, so they run only with `-m db` (spec 0056).
+
+    The root conftest has the same rule; this one applies when apps/api is the rootdir.
+    """
+    if "db" in (config.option.markexpr or "") or config.getoption("--spec-ids", default=""):
+        return
+    deselected = [item for item in items if item.get_closest_marker("db") is not None]
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = [item for item in items if item.get_closest_marker("db") is None]

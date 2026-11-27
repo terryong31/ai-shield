@@ -44,9 +44,12 @@ def _with_constraints(
     def patched(lid: str):  # type: ignore[no-untyped-def]
         return level if lid == level_id else original(lid)
 
-    import shield_engine.game as game
+    # The runner and the scorer each hold their own name for get_level (spec 0055).
+    from shield_engine.game import runner, scoring
 
-    monkeypatch.setattr(game, "get_level", patched)
+    for module in (runner, scoring):
+        if hasattr(module, "get_level"):
+            monkeypatch.setattr(module, "get_level", patched)
 
 
 @pytest.mark.spec("ENG-FAIR-009")

@@ -6,6 +6,7 @@ members = ["packages/engine", "apps/api"]
 [dependency-groups]
 dev = [
     "mypy>=1.15",
+    "psycopg[binary]>=3.2",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
@@ -21,12 +22,15 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "spec(id): links a test to an acceptance criterion in specs/ (traceability)",
+    "db: needs the local Supabase stack; runs only with `-m db` (mise run test:db, spec 0056)",
 ]
 
 [tool.ruff]
 line-length = 100
 # Python sources only; code blocks in Markdown docs are illustrative prose.
 include = ["*.py", "*.pyi"]
+# Generated from the reviewed drafts of spec 0051 by scripts/build_level_waves.py.
+extend-exclude = ["packages/engine/src/shield_engine/game/level_waves.py"]
 target-version = "py312"
 
 [tool.ruff.lint]

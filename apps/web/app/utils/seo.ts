@@ -70,3 +70,8 @@ export function buildGameJsonLd(siteUrl?: string) {
     }
   }
 }
+
+/** JSON for a `<script type="application/ld+json">` that no value can close (spec 0053). */
+export function serializeJsonLd(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c')
+}

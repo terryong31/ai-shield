@@ -48,11 +48,11 @@ def _register(harness: Harness, email: str, name: str | None = None) -> None:
 
 
 @pytest.mark.spec("API-CAMP-001")
-def test_catalog_exposes_23_levels_and_enforces_pro_tier_gating(make_harness) -> None:
+def test_catalog_exposes_19_levels_and_enforces_pro_tier_gating(make_harness) -> None:
     harness = make_harness(allow_self_upgrade=True)
     catalog = harness.client.get("/api/v1/game/levels").json()
     levels = catalog["levels"]
-    assert len(levels) == 23
+    assert len(levels) == 19  # spec 0051
 
     by_id = {lvl["id"]: lvl for lvl in levels}
     assert by_id["easy-1"]["tier"] == "free"
@@ -61,11 +61,10 @@ def test_catalog_exposes_23_levels_and_enforces_pro_tier_gating(make_harness) ->
     assert by_id["medium-3"]["tier"] == "pro"
     assert by_id["hard-1"]["tier"] == "pro"
     assert by_id["easy-1"]["order"] == 1
-    assert by_id["easy-1"]["tags"]
     assert by_id["easy-1"]["follow_up"] is not None
-    assert "disabled_checks" in by_id["easy-3"]["constraints"]
+    assert "word_filter" in by_id["easy-4"]["constraints"]["disabled_checks"]
     credit_tool = next(
-        t for t in by_id["medium-8"]["agent"]["tools"] if t["name"] == "issue_store_credit"
+        t for t in by_id["medium-6"]["agent"]["tools"] if t["name"] == "issue_store_credit"
     )
     assert credit_tool["dual_use"] is True
 
@@ -213,11 +212,11 @@ async def test_migration_purges_legacy_scores_and_preserves_mastered_stickily(
 async def test_difficulty_leaderboard_aggregates_sum_per_category_and_progress_reports_all_levels(
     harness: Harness,
 ) -> None:
-    # Anonymous progress starts zeroed for all 23 levels and 3 difficulty summaries.
+    # Anonymous progress starts zeroed for all 19 levels and 3 difficulty summaries.
     anon_prog = harness.client.get("/api/v1/game/progress")
     assert anon_prog.status_code == 200
     anon_body = anon_prog.json()
-    assert len(anon_body["levels"]) == 23
+    assert len(anon_body["levels"]) == 19
     assert all(item["best_score"] == 0 and item["won"] is False for item in anon_body["levels"])
     assert [d["difficulty"] for d in anon_body["difficulties"]] == ["Easy", "Medium", "Hard"]
 
@@ -288,7 +287,7 @@ async def test_difficulty_leaderboard_aggregates_sum_per_category_and_progress_r
     assert all_ada["total_score"] == 26000
     assert all_ada["levels_solved"] == 3
     assert all_ada["levels_mastered"] == 2
-    assert all_ada["levels_total"] == 23
+    assert all_ada["levels_total"] == 19
 
     # Register as Ada and verify GET /api/v1/game/progress reflects Ada's progress.
     _register(harness, "ada@example.com", "Ada")

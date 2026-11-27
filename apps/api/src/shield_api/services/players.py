@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import secrets
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -41,7 +43,35 @@ PurchaseOutcome = Literal[
 ]
 RevokedStatus = Literal["refunded", "disputed"]
 # Stripe cannot complete a session this long after it expired.
+logger = logging.getLogger(__name__)
+
 EXPIRED_PURCHASE_KEEP = timedelta(days=7)
+# Anonymous daily usage rows older than this are deleted (spec 0052).
+ANONYMOUS_USAGE_RETENTION = timedelta(days=7)
+ANONYMOUS_PRUNE_INTERVAL_SECONDS = 300.0
+# A deleted player's usage rows older than this are deleted with the account (spec 0058).
+DELETED_USAGE_RETENTION = timedelta(days=30)
+
+
+@dataclass(frozen=True)
+class PlayerDataExport:
+    """What the gateway holds about one player, for the data export (spec 0058)."""
+
+    account: dict[str, Any] | None
+    saved_boards: list[dict[str, Any]]
+    purchases: list[dict[str, Any]]
+
+
+_PURCHASE_EXPORT_FIELDS = (
+    "id",
+    "amount_cents",
+    "currency",
+    "status",
+    "starts_at",
+    "ends_at",
+    "created_at",
+    "settled_at",
+)
 AI_AGENT_NODE_KINDS: frozenset[str] = frozenset({"safety_check", "llm_review"})
 
 
@@ -280,6 +310,10 @@ class PlayerStore(Protocol):
 
     async def delete_boards(self, email: str) -> int: ...
 
+    async def export_data(self, email: str) -> PlayerDataExport:
+        """The player's account, saved boards and purchases (spec 0058)."""
+        ...
+
     async def delete_account(self, email: str) -> None:
         """Delete sessions, then the account. Usage rows are kept (spec 0025)."""
         ...
@@ -291,6 +325,7 @@ class _AccountRecord:
     player_name: str
     tier: PlayerTier
     paid_until: datetime | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass
@@ -567,7 +602,43 @@ class InMemoryPlayerStore:
             del self._boards[key]
         return len(keys)
 
+    async def export_data(self, email: str) -> PlayerDataExport:
+        account = self._accounts.get(email)
+        return PlayerDataExport(
+            account=None
+            if account is None
+            else {
+                "email": account.email,
+                "player_name": account.player_name,
+                "tier": account.tier,
+                "paid_until": account.paid_until,
+                "created_at": account.created_at,
+            },
+            saved_boards=[
+                {"level_id": level_id, "updated_at": updated_at, "save": save}
+                for (owner, level_id), (save, updated_at) in sorted(self._boards.items())
+                if owner == email
+            ],
+            purchases=[
+                {
+                    "id": purchase_id,
+                    "amount_cents": p.amount_cents,
+                    "currency": p.currency,
+                    "status": p.status,
+                    "starts_at": p.starts_at,
+                    "ends_at": p.ends_at,
+                    "created_at": p.created_at,
+                    "settled_at": None,
+                }
+                for purchase_id, p in self._purchases.items()
+                if p.email == email
+            ],
+        )
+
     async def delete_account(self, email: str) -> None:
+        cutoff = (datetime.now(UTC).date() - DELETED_USAGE_RETENTION).isoformat()
+        for key in [k for k in self._usage if k[0] == email and k[1] < cutoff]:
+            del self._usage[key]
         await self.revoke_sessions(email, keep=None)
         for purchase in self._purchases.values():
             if purchase.email == email:
@@ -708,6 +779,7 @@ class SupabasePlayerStore:
 
     def __init__(self, client: Any) -> None:
         self._client = client
+        self._next_prune = 0.0
 
     def _table(self, name: str) -> Any:
         return self._client.schema(self.SCHEMA).table(name)
@@ -742,6 +814,7 @@ class SupabasePlayerStore:
     ) -> None:
         now = datetime.now(UTC)
         self._table(self.SESSIONS_TABLE).delete().lte("expires_at", now.isoformat()).execute()
+        self._prune_anonymous_rows(now)
         self._table(self.SESSIONS_TABLE).insert(
             {
                 "token_hash": _hash_token(token),
@@ -753,6 +826,26 @@ class SupabasePlayerStore:
                 "expires_at": (now + ttl).isoformat(),
             }
         ).execute()
+
+    def _prune_anonymous_rows(self, now: datetime) -> None:
+        """Delete expired anonymous scores and old anonymous usage rows (spec 0052).
+
+        Housekeeping only: it runs at most every few minutes per process, and a failure
+        is logged, never raised, so it can never stop a sign-in.
+        """
+        if time.monotonic() < self._next_prune:
+            return
+        self._next_prune = time.monotonic() + ANONYMOUS_PRUNE_INTERVAL_SECONDS
+        try:
+            self._client.schema("game").table("anonymous_scores").delete().lte(
+                "expires_at", now.isoformat()
+            ).execute()
+            cutoff = (now.date() - ANONYMOUS_USAGE_RETENTION).isoformat()
+            self._table(self.USAGE_TABLE).delete().like("email", "anon:%").lt(
+                "usage_date", cutoff
+            ).execute()
+        except Exception:
+            logger.exception("anonymous row cleanup failed; sign-in continues")
 
     def _lookup(self, token: str | None) -> PlayerSessionStatus:
         if not token:
@@ -1117,9 +1210,59 @@ class SupabasePlayerStore:
             purchases.update(closed).eq("email", email).eq("status", "pending").execute()
             purchases.update({"email": None}).eq("email", email).execute()
             self._table(self.SESSIONS_TABLE).delete().eq("email", email).execute()
+            # Usage older than 30 days is not needed against abuse any more (spec 0058).
+            cutoff = (datetime.now(UTC).date() - DELETED_USAGE_RETENTION).isoformat()
+            self._table(self.USAGE_TABLE).delete().eq("email", email).lt(
+                "usage_date", cutoff
+            ).execute()
             self._table(self.ACCOUNTS_TABLE).delete().eq("email", email).execute()
 
         await asyncio.to_thread(write)
+
+    async def export_data(self, email: str) -> PlayerDataExport:
+        def read() -> PlayerDataExport:
+            account_rows = (
+                self._table(self.ACCOUNTS_TABLE)
+                .select("email,player_name,tier,paid_until,created_at")
+                .eq("email", email)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            board_rows = (
+                self._boards()
+                .select("level_id,save_json,updated_at")
+                .eq("email", email)
+                .execute()
+                .data
+                or []
+            )
+            purchase_rows = (
+                self._table(self.PURCHASES_TABLE)
+                .select(",".join(_PURCHASE_EXPORT_FIELDS))
+                .eq("email", email)
+                .execute()
+                .data
+                or []
+            )
+            boards = []
+            for row in sorted(board_rows, key=lambda r: str(r["level_id"])):
+                raw = row["save_json"]
+                save = json.loads(raw) if isinstance(raw, str) else dict(raw)
+                boards.append(
+                    {"level_id": row["level_id"], "updated_at": row["updated_at"], "save": save}
+                )
+            return PlayerDataExport(
+                account=dict(account_rows[0]) if account_rows else None,
+                saved_boards=boards,
+                purchases=[
+                    {name: row.get(name) for name in _PURCHASE_EXPORT_FIELDS}
+                    for row in purchase_rows
+                ],
+            )
+
+        return await asyncio.to_thread(read)
 
     async def create_purchase(
         self, email: str, *, amount_cents: int, currency: str, livemode: bool

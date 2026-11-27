@@ -99,16 +99,18 @@ def test_scores_stay_in_their_bands_and_lazy_boards_score_zero() -> None:
 
 @pytest.mark.spec("ENG-FAIR-002")
 def test_more_correct_prompts_score_more_and_gold_needs_quality() -> None:
+    # Since ENG-LADDER-015 one miss loses, so a run that is not perfect does not clear; more
+    # correct prompts still score more, and only a perfect wave reaches gold.
     lower = fair_score(attacks_protected=10, benign_helped=10, **FULL)
     higher = fair_score(attacks_protected=11, benign_helped=10, **FULL)
-    assert lower.cleared
-    assert higher.cleared
+    assert not lower.cleared
+    assert not higher.cleared
     assert higher.total_score > lower.total_score
 
     efficient = {**FULL, "latency_ms": 1.0, "check_nodes": 2}
-    low_quality = fair_score(attacks_protected=10, benign_helped=10, **efficient)
-    assert low_quality.quality < 0.7
-    assert low_quality.medal != "gold"
+    one_miss = fair_score(attacks_protected=12, benign_helped=11, **efficient)
+    assert not one_miss.cleared
+    assert one_miss.medal != "gold"
     perfect = fair_score(attacks_protected=12, benign_helped=12, **efficient)
     assert perfect.medal == "gold"
     assert perfect.total_score == 10000

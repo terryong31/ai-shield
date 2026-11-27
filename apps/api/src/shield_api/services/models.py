@@ -67,6 +67,10 @@ class TrainedModelStore(Protocol):
 
     async def purge_account(self, email: str, *, keep_token: str | None = None) -> None: ...
 
+    async def move_session(self, old_token: str, new_token: str, *, signing_key: bytes) -> None:
+        """Keep a session's model when its token rotates (spec 0054): verify, then re-sign."""
+        ...
+
 
 @dataclass
 class _StoredEntry:
@@ -145,6 +149,23 @@ class InMemoryTrainedModelStore:
         tok_hash = owner_hash(token)
         async with self._lock:
             self._entries.pop(tok_hash, None)
+
+    async def move_session(self, old_token: str, new_token: str, *, signing_key: bytes) -> None:
+        old_hash, new_hash = owner_hash(old_token), owner_hash(new_token)
+        async with self._lock:
+            entry = self._entries.pop(old_hash, None)
+            if entry is None or self._clock() >= entry.expires_at:
+                return
+            try:
+                model = load_signed_model(
+                    entry.blob, key=signing_key, context=signing_context(old_hash, entry.model_id)
+                )
+            except ModelSignatureError:
+                return
+            entry.blob = sign_model(
+                model, key=signing_key, context=signing_context(new_hash, entry.model_id)
+            )
+            self._entries[new_hash] = entry
 
     async def purge_account(self, email: str, *, keep_token: str | None = None) -> None:
         e_hash = account_hash(email)
@@ -257,6 +278,33 @@ class RedisTrainedModelStore:
 
     async def purge_session(self, token: str) -> None:
         await self._redis.delete(self._model_key(owner_hash(token)))
+
+    async def move_session(self, old_token: str, new_token: str, *, signing_key: bytes) -> None:
+        old_hash, new_hash = owner_hash(old_token), owner_hash(new_token)
+        old_key = self._model_key(old_hash)
+        raw = await self._redis.get(old_key)
+        await self._redis.delete(old_key)
+        parsed = self._decode_record(raw) if isinstance(raw, str) else None
+        if parsed is None:
+            return
+        model_id, e_hash, blob = parsed
+        try:
+            model = load_signed_model(
+                blob, key=signing_key, context=signing_context(old_hash, model_id)
+            )
+        except ModelSignatureError:
+            return
+        moved = sign_model(model, key=signing_key, context=signing_context(new_hash, model_id))
+        await self._redis.set(
+            self._model_key(new_hash),
+            self._encode_record(model_id, e_hash, moved),
+            ex=MODEL_IDLE_TTL_SECONDS,
+        )
+        if e_hash:
+            akey = self._acct_key(e_hash)
+            await self._redis.srem(akey, old_hash)
+            await self._redis.sadd(akey, new_hash)
+            await self._redis.expire(akey, MODEL_IDLE_TTL_SECONDS * 2)
 
     async def purge_account(self, email: str, *, keep_token: str | None = None) -> None:
         akey = self._acct_key(account_hash(email))
