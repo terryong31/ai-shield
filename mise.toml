@@ -128,8 +128,6 @@ run = "bun run test"
 description = "Database tests against local Supabase: pgTAP SQL tests and pytest -m db (spec 0056)"
 depends = ["db:start"]
 run = [
-  # db:check may have started only the database; the store tests also need PostgREST.
-  "supabase start >/dev/null 2>&1 || supabase status >/dev/null",
   "supabase test db",
   "uv run pytest apps/api/tests/db -m db --no-cov",
 ]
@@ -322,7 +320,7 @@ run = 'infisical run --env=prod --path=/api -- uv run python -m shield_api.admin
 [tasks."db:start"]
 description = "Start the local Supabase stack (applies migrations + seed on first run)"
 depends = ["docker:ensure"]
-run = "supabase status >/dev/null 2>&1 || supabase start"
+run = "supabase status -o json 2>/dev/null | grep -q '\"API_URL\"' || (supabase stop >/dev/null 2>&1 || true; supabase start)"
 
 [tasks."db:stop"]
 description = "Stop the local Supabase stack (data is kept)"
