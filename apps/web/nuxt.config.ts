@@ -6,7 +6,8 @@ export default defineNuxtConfig({
   modules: [
     '@nuxt/eslint',
     '@nuxt/ui',
-    '@vueuse/nuxt'
+    '@vueuse/nuxt',
+    '@nuxt/a11y'
   ],
   app: {
     head: {
@@ -38,17 +39,25 @@ export default defineNuxtConfig({
     clientIpHeader: 'x-vercel-forwarded-for',
     public: {
       siteUrl: 'http://localhost:3000',
-      // Contact on /privacy (spec 0058); empty shows the project issues page instead.
-      privacyContactEmail: ''
+      landingUrl: 'https://ai-shield.my',
+      // Contact email (spec 0058/0061); defaults to support@ai-shield.my in production.
+      privacyContactEmail: 'support@ai-shield.my'
     }
   },
-  // Security headers on every page (spec 0053). Analytics are a client plugin
-  // (app/plugins/analytics.client.ts) so each event is scrubbed first.
+  // Security headers on every page (spec 0053) plus 308 redirects for canonical legal pages (spec 0061).
   routeRules: securityRouteRules(process.env.NODE_ENV === 'production'),
   devServer: {
     host: 'localhost'
   },
   compatibilityDate: '2025-01-01',
+  a11y: {
+    axe: {
+      options: {},
+      runOptions: {
+        runOnly: ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']
+      }
+    }
+  },
   eslint: {
     config: {
       stylistic: {

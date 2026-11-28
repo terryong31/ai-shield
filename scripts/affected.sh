@@ -20,6 +20,19 @@ case "$target" in
       ':(exclude,glob)apps/web/*.md' ':(exclude)apps/web/.env.example'
       ':(exclude)apps/web/vitest.config.ts' ':(exclude)apps/web/playwright.config.ts'
     ) ;;
+  deploy-admin)
+    paths=(
+      apps/admin package.json bun.lock
+      ':(exclude)apps/admin/test' ':(exclude)apps/admin/Dockerfile'
+      ':(exclude,glob)apps/admin/*.md' ':(exclude)apps/admin/.env.example'
+      ':(exclude)apps/admin/vitest.config.ts'
+    ) ;;
+  deploy-landing)
+    paths=(
+      apps/landing package.json bun.lock
+      ':(exclude)apps/landing/test' ':(exclude,glob)apps/landing/*.md'
+      ':(exclude)apps/landing/vitest.config.ts'
+    ) ;;
   deploy-api)
     paths=(
       apps/api packages/engine pyproject.toml uv.lock
@@ -31,6 +44,10 @@ case "$target" in
   # GitHub Actions: also the tests and the files that the tests read.
   ci-web)
     paths=("${ci[@]}" apps/web package.json bun.lock contracts ':(exclude,glob)apps/web/*.md') ;;
+  ci-admin)
+    paths=("${ci[@]}" apps/admin package.json bun.lock contracts ':(exclude,glob)apps/admin/*.md') ;;
+  ci-landing)
+    paths=("${ci[@]}" apps/landing package.json bun.lock ':(exclude,glob)apps/landing/*.md') ;;
   ci-python)
     paths=(
       "${ci[@]}" apps/api packages/engine scripts conftest.py pyproject.toml uv.lock

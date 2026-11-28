@@ -14,7 +14,7 @@ import { isValidLevelId } from '~/utils/gameBoard'
 const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
 const siteUrl = computed(() => resolveSiteUrl(runtimeConfig.public.siteUrl))
-const INDEXABLE_PATHS = new Set(['/', '/game', '/plans', '/auth/login', '/auth/register', '/privacy'])
+const INDEXABLE_PATHS = new Set(['/', '/game', '/plans', '/auth/login', '/auth/register'])
 const canonicalUrl = computed(() => {
   if (!INDEXABLE_PATHS.has(route.path)) return null
   if (route.path === '/game') {
@@ -56,6 +56,7 @@ useHead(() => ({
 
 <template>
   <UApp>
+    <NuxtRouteAnnouncer />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

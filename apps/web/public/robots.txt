@@ -10,4 +10,4 @@ Disallow: /auth/confirmed
 Disallow: /auth/reset-password
 Disallow: /api/
 
-Sitemap: https://ai-shield-delta.vercel.app/sitemap.xml
+Sitemap: https://play.ai-shield.my/sitemap.xml

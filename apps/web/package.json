@@ -13,6 +13,7 @@
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:a11y": "playwright test --config=playwright.a11y.config.ts",
     "contract": "openapi-typescript ../../contracts/shield-api.openapi.json -o app/types/api.gen.ts"
   },
   "dependencies": {
@@ -32,7 +33,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.1",
     "@iconify-json/lucide": "^1.2.153",
+    "@nuxt/a11y": "^1.0.0-alpha.1",
     "@nuxt/eslint": "^1.17.0",
     "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",

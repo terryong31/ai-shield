@@ -1,10 +1,5 @@
 import type { ClearanceStatus } from '~/types/api'
 
-/**
- * Admin access to /_console. The admin's email and password go once to the
- * gateway, which answers with an HttpOnly session cookie; the browser only
- * ever holds the resulting status (WEB-CLEAR-002).
- */
 export const useAdminAccess = () => {
   const { getClearance, grantClearance, revokeClearance } = useShieldApi()
   const toast = useToast()

@@ -7,6 +7,7 @@ import { buildPageSeo } from '~/utils/seo'
 import { withSsrTimeout } from '~/utils/ssr'
 
 const runtimeConfig = useRuntimeConfig()
+const landingUrl = computed(() => String(runtimeConfig.public.landingUrl || 'https://ai-shield.my').replace(/\/+$/, ''))
 useSeoMeta(buildPageSeo({
   title: 'Plans',
   description: 'Compare Free and Paid plans for ai-shield. Unlock 50 daily wave runs, all 19 campaign levels, AI safety nodes, and the custom BYOK agent sandbox.',
@@ -176,11 +177,23 @@ onMounted(async () => {
       />
 
       <p class="text-center text-sm text-muted">
+        All prices are in USD. The 30-day pass is a one-time payment that activates immediately and does not auto-renew.
         Stripe takes the payment on its own page; we never see your card. See our
         <ULink
-          to="/privacy"
+          :to="`${landingUrl}/privacy`"
+          external
           class="font-medium text-highlighted"
-        >Privacy Policy</ULink>.
+        >Privacy Policy</ULink>,
+        <ULink
+          :to="`${landingUrl}/terms`"
+          external
+          class="font-medium text-highlighted"
+        >Terms of Service</ULink>, and
+        <ULink
+          :to="`${landingUrl}/refund`"
+          external
+          class="font-medium text-highlighted"
+        >Refund Policy</ULink>.
       </p>
     </div>
   </main>

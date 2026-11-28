@@ -4,6 +4,7 @@ import { ensureAuthBrowserCookie, passwordChangeSchema } from '~/utils/playerAut
 import { buildPageSeo } from '~/utils/seo'
 
 const runtimeConfig = useRuntimeConfig()
+const landingUrl = computed(() => String(runtimeConfig.public.landingUrl || 'https://ai-shield.my').replace(/\/+$/, ''))
 useSeoMeta(buildPageSeo({
   title: 'Settings',
   description: 'Manage your ai-shield theme preference, account email, password, and saved game progress.',
@@ -225,9 +226,16 @@ onMounted(() => {
                 <p class="text-sm text-muted">
                   A JSON file of your account, boards, scores and purchases. See the
                   <ULink
-                    to="/privacy"
+                    :to="`${landingUrl}/privacy`"
+                    external
                     class="font-medium text-highlighted"
-                  >Privacy Policy</ULink>.
+                  >Privacy Policy</ULink>
+                  and
+                  <ULink
+                    :to="`${landingUrl}/terms`"
+                    external
+                    class="font-medium text-highlighted"
+                  >Terms of Service</ULink>.
                 </p>
               </div>
               <UButton
@@ -275,18 +283,21 @@ onMounted(() => {
 
         <UPageCard
           v-else
-          title="Account"
           class="w-full max-w-md min-w-190"
         >
-          <UButton
-            label="Sign in to manage your account"
-            to="/auth/login"
-            icon="i-lucide-log-in"
-            color="neutral"
-            variant="outline"
-            block
-            size="lg"
-          />
+          <div class="flex items-center justify-between gap-4">
+            <span class="text-base font-medium text-highlighted">
+              Account
+            </span>
+            <UButton
+              label="Sign in to manage your account"
+              to="/auth/login"
+              icon="i-lucide-log-in"
+              color="neutral"
+              variant="outline"
+              size="lg"
+            />
+          </div>
         </UPageCard>
       </div>
     </div>

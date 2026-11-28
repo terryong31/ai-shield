@@ -1,0 +1,4 @@
+Contact: mailto:security@ai-shield.my
+Preferred-Languages: en, ms
+Canonical: https://ai-shield.my/.well-known/security.txt
+Expires: 2027-11-28T00:00:00.000Z

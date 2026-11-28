@@ -437,10 +437,11 @@ extra_search_path = ["public", "extensions"]
 enabled = false
 
 [remotes.production.auth]
-site_url = "https://ai-shield-delta.vercel.app"
+site_url = "https://play.ai-shield.my"
 additional_redirect_urls = [
-  "https://ai-shield-delta.vercel.app/auth/confirmed",
-  "https://ai-shield-delta.vercel.app/auth/reset-password",
+  "https://play.ai-shield.my/auth/confirmed",
+  "https://play.ai-shield.my/auth/reset-password",
+  "https://play.ai-shield.my/auth/**",
   "https://ai-shield-delta.vercel.app/auth/**",
 ]
 enable_anonymous_sign_ins = false

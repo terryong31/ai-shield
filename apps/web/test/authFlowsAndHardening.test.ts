@@ -88,7 +88,7 @@ describe('auth flows and hardening (spec 0047)', () => {
     const appVue = readApp('app.vue')
     expect(appVue).not.toContain('loadAccess')
 
-    const dashboardLayout = readApp('layouts', 'dashboard.vue')
+    const dashboardLayout = readFileSync(join(ROOT, '..', 'admin', 'app', 'layouts', 'dashboard.vue'), 'utf-8')
     expect(dashboardLayout).toContain('loadAccess')
 
     const botidMod = await import('../shared/utils/botid')

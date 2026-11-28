@@ -1,14 +1,16 @@
 # Architecture
 
-## Three deployables
+## Five deployables
 
-`ai-shield` has three separately deployable parts in one repository:
+`ai-shield` has five separately deployable parts in one repository:
 
 | Part | Role | Talks to |
 | --- | --- | --- |
 | `packages/engine` (`shield-engine`) | The game's check library: board interpreter, check nodes, levels, the AI agent, the custom sandbox and scoring, plus the bundled baseline classifier | Nothing directly; everything external comes in through ports |
-| `apps/api` (`shield-api`) | Gateway: puts the game on HTTP, owns players, quotas, saved boards, the leaderboard, payments and admin clearance, and wires the model providers | Engine (in-process), Gemini, Groq, TypeSafe, the player's BYOK provider, Supabase, Redis, Stripe |
-| `apps/web` (`@ai-shield/web`) | Web client: main menu (`/`), defence board (`/game`), plans, settings, and the admin console (`/_console`) | The gateway only, over the published HTTP contract |
+| `apps/api` (`shield-api`) | Gateway (`api.ai-shield.my`): puts the game on HTTP, owns players, quotas, saved boards, the leaderboard, payments and admin clearance, and wires the model providers | Engine (in-process), Gemini, Groq, TypeSafe, the player's BYOK provider, Supabase, Redis, Stripe |
+| `apps/web` (`@ai-shield/web`) | Game client (`play.ai-shield.my`): main menu (`/`), defence board (`/game`), plans, and player settings | The gateway only, over the published HTTP contract |
+| `apps/admin` (`@ai-shield/admin`) | Isolated admin console (`admin.ai-shield.my`): score statistics, scoreboard reset, and clearance settings | The gateway only, with its dedicated admin proxy secret |
+| `apps/landing` (`@ai-shield/landing`) | Static marketing, bilingual legal hub, and client changelog (`ai-shield.my`) | Static content only |
 
 The engine stays free of FastAPI, database drivers and environment variables, so
 its rules and scoring are tested in isolation and the gateway can change

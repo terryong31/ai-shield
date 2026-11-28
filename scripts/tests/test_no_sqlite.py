@@ -22,6 +22,8 @@ def _is_allowed_sqlite_path(rel: str) -> bool:
         or rel.startswith("docs/explanation/decisions/")
         or rel == "bun.lock"
         or rel == "scripts/tests/test_no_sqlite.py"
+        # @nuxt/content v3 uses node:sqlite at build time for static prerendering (no runtime DB).
+        or rel == "apps/landing/nuxt.config.ts"
     )
 
 

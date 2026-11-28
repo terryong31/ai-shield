@@ -35,6 +35,7 @@ PRIVATE = (b"cache-control", b"private, no-store")
 GATE_HEADERS = frozenset(
     {
         "x-shield-proxy-secret",
+        "x-shield-admin-proxy-secret",
         "x-shield-botid",
         "sec-fetch-site",
         "origin",
@@ -52,6 +53,17 @@ def proxy_secret(settings: Settings) -> str:
 def proxy_secret_matches(settings: Settings, presented: str) -> bool:
     """Whether a request proves the web proxy's shared secret (constant time)."""
     expected = proxy_secret(settings)
+    return bool(expected) and hmac.compare_digest(presented.encode(), expected.encode())
+
+
+def admin_proxy_secret(settings: Settings) -> str:
+    raw = settings.API_ADMIN_PROXY_SECRET
+    return raw.get_secret_value().strip() if raw else ""
+
+
+def admin_proxy_secret_matches(settings: Settings, presented: str) -> bool:
+    """Whether a request proves the admin proxy's dedicated secret (constant time)."""
+    expected = admin_proxy_secret(settings)
     return bool(expected) and hmac.compare_digest(presented.encode(), expected.encode())
 
 
@@ -76,6 +88,8 @@ class SecurityMiddleware:
         self._health = f"{prefix}/health"
         self._webhook = f"{prefix}/billing/webhook"
         self._train = f"{prefix}/game/train"
+        self._clearance = f"{prefix}/clearance"
+        self._scores = f"{prefix}/game/scores"
         self._private_prefixes = (
             f"{prefix}/auth/",
             f"{prefix}/game/saves/",
@@ -182,14 +196,23 @@ class SecurityMiddleware:
         exempt = (method == "GET" and path == self._health) or (
             method == "POST" and path == self._webhook
         )
-        vouched = proxy_secret_matches(settings, headers.get("x-shield-proxy-secret", ""))
+        is_admin_route = path == self._clearance or (method == "DELETE" and path == self._scores)
+        admin_vouched = admin_proxy_secret_matches(
+            settings, headers.get("x-shield-admin-proxy-secret", "")
+        )
+        web_vouched = proxy_secret_matches(settings, headers.get("x-shield-proxy-secret", ""))
+        vouched = admin_vouched or web_vouched
+        if production and is_admin_route and admin_proxy_secret(settings) and not admin_vouched:
+            # Admin routes require the dedicated admin proxy secret when configured (spec 0059).
+            return 403, "Request blocked."
         if production and not exempt and not vouched:
-            # Only the web proxy may reach the gateway in production.
+            # Only the web or admin proxy may reach the gateway in production.
             return 403, "Request blocked."
         if (
             production
             and method == "POST"
             and path in self._botid_paths
+            and not admin_vouched
             and headers.get("x-shield-botid") != "pass"
         ):
             # The proxy runs Vercel BotID on these routes and vouches with this header.

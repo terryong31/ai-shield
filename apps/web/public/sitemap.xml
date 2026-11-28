@@ -1,127 +1,122 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://ai-shield-delta.vercel.app/</loc>
+    <loc>https://play.ai-shield.my/</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game</loc>
+    <loc>https://play.ai-shield.my/game</loc>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://ai-shield-delta.vercel.app/plans</loc>
+    <loc>https://play.ai-shield.my/plans</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/auth/register</loc>
+    <loc>https://play.ai-shield.my/auth/register</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/auth/login</loc>
+    <loc>https://play.ai-shield.my/auth/login</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=easy-1</loc>
+    <loc>https://play.ai-shield.my/game?level=easy-1</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=easy-2</loc>
+    <loc>https://play.ai-shield.my/game?level=easy-2</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=easy-3</loc>
+    <loc>https://play.ai-shield.my/game?level=easy-3</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=easy-4</loc>
+    <loc>https://play.ai-shield.my/game?level=easy-4</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=easy-5</loc>
+    <loc>https://play.ai-shield.my/game?level=easy-5</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-1</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-1</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-2</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-2</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-3</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-3</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-4</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-4</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-5</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-5</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-6</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-6</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=medium-7</loc>
+    <loc>https://play.ai-shield.my/game?level=medium-7</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-1</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-1</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-2</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-2</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-3</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-3</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-4</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-4</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-5</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-5</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-6</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-6</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://ai-shield-delta.vercel.app/game?level=hard-7</loc>
+    <loc>https://play.ai-shield.my/game?level=hard-7</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>

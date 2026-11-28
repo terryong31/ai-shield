@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     ALLOW_SELF_UPGRADE: bool = False
     TRUSTED_CLIENT_IP_HEADER: str | None = None
     TRUSTED_PROXY_SECRET: SecretStr | None = None
+    # Dedicated proxy secret for admin.ai-shield.my (spec 0059); prevents apps/web
+    # from proxying to admin clearance and admin-only routes in production.
+    API_ADMIN_PROXY_SECRET: SecretStr | None = None
     CLEARANCE_MAX_ATTEMPTS: int = Field(default=5, gt=0)
     CLEARANCE_WINDOW_MINUTES: int = Field(default=10, gt=0)
 

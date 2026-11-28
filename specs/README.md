@@ -131,6 +131,9 @@ Check locally with `mise run spec:check`.
 | 0056 | [Database tests](0056-database-tests/spec.md) | API, DEV | Implemented |
 | 0057 | [k6 load testing](0057-k6-load-testing/spec.md) | DEV, API | Implemented |
 | 0058 | [Privacy policy and player data controls](0058-privacy-policy/spec.md) | API, WEB | Implemented |
+| 0059 | [Admin console extraction and multi-app monorepo support](0059-admin-console-extraction/spec.md) | DEV, API, WEB | Implemented |
+| 0060 | [Standalone landing site, bilingual legal pages, and client changelog](0060-landing-site-and-legal/spec.md) | WEB, DEV | Implemented |
+| 0061 | [Custom domain cutover across web, api, admin, and landing](0061-custom-domain-cutover/spec.md) | API, WEB, DEV | Implemented |
 
 See [docs/how-to/write-a-spec.md](../docs/how-to/write-a-spec.md) for the
 step-by-step workflow and [docs/explanation/development-process.md](../docs/explanation/development-process.md)

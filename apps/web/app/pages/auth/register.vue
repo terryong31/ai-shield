@@ -4,6 +4,8 @@ import { registerSchema, type RegisterSchema } from '~/utils/playerAuth'
 import { buildPageSeo } from '~/utils/seo'
 
 const runtimeConfig = useRuntimeConfig()
+const landingUrl = computed(() => String(runtimeConfig.public.landingUrl || 'https://ai-shield.my').replace(/\/+$/, ''))
+const acceptedTerms = ref(false)
 useSeoMeta(buildPageSeo({
   title: 'Create Account',
   description: 'Create a free ai-shield player account to unlock AI safety nodes, save custom defence boards across devices, and compete on the leaderboard.',
@@ -46,13 +48,15 @@ const registerFields: AuthFormField[] = [
     label: 'Password',
     placeholder: 'At least 8 characters',
     defaultValue: '',
-    required: true
+    required: true,
+    error: false
   }
 ]
 
 const onSubmit = async (
   event: FormSubmitEvent<RegisterSchema>
 ) => {
+  if (!acceptedTerms.value) return
   const email = event.data.email
   const password = event.data.password
   const outcome = await registerAccount(email, password, event.data.player_name)
@@ -124,6 +128,7 @@ onMounted(async () => {
       >
         <UAuthForm
           :schema="registerSchema"
+          :validate-on="[]"
           title="Create account"
           icon="i-lucide-user-plus"
           :fields="registerFields"
@@ -132,7 +137,8 @@ onMounted(async () => {
             label: 'Create account',
             color: 'neutral',
             variant: 'solid',
-            block: true
+            block: true,
+            disabled: !acceptedTerms
           }"
           @submit="onSubmit"
         >
@@ -152,12 +158,25 @@ onMounted(async () => {
             >Sign in</ULink>.
           </template>
 
-          <template #footer>
-            By creating an account, you agree to how we handle your data in our
-            <ULink
-              to="/privacy"
-              class="font-medium text-highlighted"
-            >Privacy Policy</ULink>.
+          <template #validation>
+            <UCheckbox v-model="acceptedTerms">
+              <template #label>
+                I agree to the
+                <ULink
+                  :to="`${landingUrl}/terms`"
+                  external
+                  target="_blank"
+                  class="font-medium text-highlighted underline"
+                >Terms of Service</ULink>
+                and acknowledge the
+                <ULink
+                  :to="`${landingUrl}/privacy`"
+                  external
+                  target="_blank"
+                  class="font-medium text-highlighted underline"
+                >Privacy Policy</ULink>.
+              </template>
+            </UCheckbox>
           </template>
         </UAuthForm>
       </UPageCard>

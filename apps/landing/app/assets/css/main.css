@@ -1,0 +1,18 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Same theme as the game (apps/web): Nuxt UI's default neutral surfaces and the system font. */
+body {
+  background-color: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

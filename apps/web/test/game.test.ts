@@ -104,7 +104,7 @@ describe('game board operations', () => {
 })
 
 describe('admin console access and routing', () => {
-  it('[WEB-CLEAN-002] restricts /_console to granted admin sessions', () => {
+  it('[WEB-CLEAN-002] restricts admin console to granted admin sessions', () => {
     expect(resolveConsoleAccess({ granted: false, expires_at: null })).toEqual({
       allowed: false,
       reason: 'Admin access required'
@@ -114,15 +114,15 @@ describe('admin console access and routing', () => {
       reason: null
     })
 
-    const consolePage = readFileSync(join(APP_DIR, 'pages', 'console', 'index.vue'), 'utf-8')
-    expect(consolePage).toContain('/_console')
+    const adminPage = readFileSync(join(APP_DIR, '..', '..', 'admin', 'app', 'pages', 'index.vue'), 'utf-8')
+    expect(adminPage).toContain('Admin console')
   })
 
   it('[WEB-GAME-005] enforces ai-shield main menu, hidden console with UAuthForm, Safe/Assistant labels, quit modal, and double-click node settings with ML dataset upload', () => {
     const indexSource = readFileSync(join(APP_DIR, 'pages', 'index.vue'), 'utf-8')
     const gameSource = readGamePage()
     const appSource = readFileSync(join(APP_DIR, 'app.vue'), 'utf-8')
-    const dashboardLayout = readFileSync(join(APP_DIR, 'layouts', 'dashboard.vue'), 'utf-8')
+    const dashboardLayout = readFileSync(join(APP_DIR, '..', '..', 'admin', 'app', 'layouts', 'dashboard.vue'), 'utf-8')
 
     // Branded ai-shield, no client-side links to /_console on public pages
     expect(indexSource).toContain('ai-shield')

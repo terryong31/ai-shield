@@ -52,9 +52,11 @@ describe('Frontend security hardening (spec 0053)', () => {
 
   it('[WEB-SEC-002] never caches the console, settings or plans pages', () => {
     const rules = securityRouteRules(true)
-    for (const path of ['/_console', '/_console/**', '/settings', '/plans']) {
+    for (const path of ['/settings', '/plans']) {
       expect(rules[path]?.headers?.['Cache-Control']).toBe('no-store')
     }
+    const adminConfig = readFileSync(join(root, '..', 'admin', 'nuxt.config.ts'), 'utf8')
+    expect(adminConfig).toContain('\'Cache-Control\': \'no-store\'')
   })
 
   it('[WEB-SEC-003] shows only allowlisted messages for auth link errors', () => {
@@ -146,14 +148,14 @@ describe('Frontend security hardening (spec 0053)', () => {
   })
 
   it('[WEB-SEC-007] asks the admin to type CLEAR before clearing the scoreboard', () => {
-    const page = read('app', 'pages', 'console', 'index.vue')
+    const page = readFileSync(join(root, '..', 'admin', 'app', 'pages', 'index.vue'), 'utf8')
     expect(page).toMatch(/@click="isClearOpen = true"/)
     expect(page).toMatch(/:disabled="clearConfirm !== 'CLEAR'"/)
     expect(page).toMatch(/const handleClearScores = async \(\) => \{\s*if \(clearConfirm\.value !== 'CLEAR'\) return/)
   })
 
   it('[WEB-SEC-008] loads scores only after admin access is granted', () => {
-    const page = read('app', 'pages', 'console', 'index.vue')
+    const page = readFileSync(join(root, '..', 'admin', 'app', 'pages', 'index.vue'), 'utf8')
     expect(page).not.toMatch(/onMounted\(loadScores\)/)
     expect(page).toMatch(/watch\(\s*\(\) => access\.value\.allowed,\s*\(allowed\) => \{\s*if \(allowed\) void loadScores\(\)/)
     expect(page).toMatch(/const loadScores = async \(\) => \{\s*if \(!access\.value\.allowed\) return/)

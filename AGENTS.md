@@ -7,13 +7,15 @@ working in this repository. `CLAUDE.md` files import this file. Package-level
 ## What this is
 
 `ai-shield` is an interactive **prompt-injection defence game**: players wire checks on a
-board to protect an LLM agent from injection waves. It has three separately deployable parts:
+board to protect an LLM agent from injection waves. It has five separately deployable parts:
 
 | Path | What | Stack |
 | --- | --- | --- |
 | `packages/engine` | The game's check library (`shield_engine`), framework-free | Python 3.12, scikit-learn |
 | `apps/api` | Game gateway (`shield_api`): players, runs, saves, scores, admin clearance | FastAPI |
-| `apps/web` | Game client and the `/_console` admin page | Nuxt 4, Nuxt UI, Vue Flow |
+| `apps/web` | Game client (`play.ai-shield.my`) | Nuxt 4, Nuxt UI, Vue Flow |
+| `apps/admin` | Isolated operator admin console (`admin.ai-shield.my`) | Nuxt 4, Nuxt UI |
+| `apps/landing` | Marketing site, bilingual legal hub, and client changelog (`ai-shield.my`) | Nuxt 4, Nuxt UI, Nuxt Content, i18n |
 
 Supporting: `specs/` (specifications), `docs/` (Diátaxis docs),
 `contracts/` (OpenAPI contract), `supabase/` (migrations, seed, local config), `.infisical.json` (secrets manager),

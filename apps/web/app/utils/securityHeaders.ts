@@ -4,7 +4,8 @@
  */
 
 interface HeaderRule {
-  headers: Record<string, string>
+  headers?: Record<string, string>
+  redirect?: { to: string, statusCode: 301 | 302 | 307 | 308 }
 }
 
 const NO_STORE: HeaderRule = { headers: { 'Cache-Control': 'no-store' } }
@@ -51,9 +52,9 @@ export function securityRouteRules(production: boolean): Record<string, HeaderRu
   return {
     '/**': { headers: baseline },
     '/auth/**': { headers: { 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' } },
-    '/_console': NO_STORE,
-    '/_console/**': NO_STORE,
     '/settings': NO_STORE,
-    '/plans': NO_STORE
+    '/plans': NO_STORE,
+    '/privacy': { redirect: { to: 'https://ai-shield.my/privacy', statusCode: 308 } },
+    '/terms': { redirect: { to: 'https://ai-shield.my/terms', statusCode: 308 } }
   }
 }

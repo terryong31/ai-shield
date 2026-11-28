@@ -6,10 +6,10 @@ Players connect defence nodes between the `Input` source and the final node (`He
 
 ## Pages
 
-- [Main Menu & Leaderboard](https://ai-shield-delta.vercel.app/): Difficulty and level selector for the 19-level campaign, and a live leaderboard for each difficulty.
-- [Defence Board](https://ai-shield-delta.vercel.app/game): Interactive Vue Flow canvas where players place, configure, and wire security checks, run waves, and inspect results by prompt family.
-- [Privacy Policy](https://ai-shield-delta.vercel.app/privacy): what ai-shield collects, why, where it is kept and for how long, the cookies and browser storage it uses, its sub-processors, and how to download or delete your data.
-- [Plans](https://ai-shield-delta.vercel.app/plans): `Free` ($0: 5 wave runs per day) and `Paid` ($5 for 30 days, one payment that does not renew: 50 wave runs per day, all campaign levels, and the Custom sandbox).
+- [Main Menu & Leaderboard](https://play.ai-shield.my/): Difficulty and level selector for the 19-level campaign, and a live leaderboard for each difficulty.
+- [Defence Board](https://play.ai-shield.my/game): Interactive Vue Flow canvas where players place, configure, and wire security checks, run waves, and inspect results by prompt family.
+- [Privacy Policy](https://ai-shield.my/privacy): what ai-shield collects, why, where it is kept and for how long, the cookies and browser storage it uses, its sub-processors, and how to download or delete your data.
+- [Plans](https://play.ai-shield.my/plans): `Free` ($0: 5 wave runs per day) and `Paid` ($5 for 30 days, one payment that does not renew: 50 wave runs per day, all campaign levels, and the Custom sandbox).
 
 ## Game Levels
 
@@ -17,35 +17,35 @@ The campaign has 19 levels. Levels marked `Paid` need a pass.
 
 ### Easy
 
-- [Public Helpdesk](https://ai-shield-delta.vercel.app/game?level=easy-1): Match attack phrases, and limit the length.
-- [Hidden in Plain Sight](https://ai-shield-delta.vercel.app/game?level=easy-2): Clean the text before you scan it. Normal prompts also hold encoded text.
-- [Developer Docs Trap](https://ai-shield-delta.vercel.app/game?level=easy-3): The same words, for a different purpose.
-- [Train Your First Guard](https://ai-shield-delta.vercel.app/game?level=easy-4): Generalise from examples: train the ML filter. (`Paid`)
-- [Noisy Gateway](https://ai-shield-delta.vercel.app/game?level=easy-5): Exam: every tool, two nodes, and 6 ms a prompt. Choose what matters. (`Paid`)
+- [Public Helpdesk](https://play.ai-shield.my/game?level=easy-1): Match attack phrases, and limit the length.
+- [Hidden in Plain Sight](https://play.ai-shield.my/game?level=easy-2): Clean the text before you scan it. Normal prompts also hold encoded text.
+- [Developer Docs Trap](https://play.ai-shield.my/game?level=easy-3): The same words, for a different purpose.
+- [Train Your First Guard](https://play.ai-shield.my/game?level=easy-4): Generalise from examples: train the ML filter. (`Paid`)
+- [Noisy Gateway](https://play.ai-shield.my/game?level=easy-5): Exam: every tool, two nodes, and 6 ms a prompt. Choose what matters. (`Paid`)
 
 ### Medium
 
-- [HR Handbook](https://ai-shield-delta.vercel.app/game?level=medium-1): Agent rules, and a restricted tool.
-- [Refund Bot](https://ai-shield-delta.vercel.app/game?level=medium-2): Do half of a mixed request: run the safe part, skip the forbidden part.
-- [Poisoned Inbox](https://ai-shield-delta.vercel.app/game?level=medium-3): Quoted text is data, never a task. (`Paid`)
-- [Lost in Translation](https://ai-shield-delta.vercel.app/game?level=medium-4): Meaning, not words, in four languages. (`Paid`)
-- [Express Lane](https://ai-shield-delta.vercel.app/game?level=medium-5): Send only the Unclear prompts to paid checks. (`Paid`)
-- [Dual-Use Refund Desk](https://ai-shield-delta.vercel.app/game?level=medium-6): One tool, right or wrong by context. (`Paid`)
-- [CRM Boss](https://ai-shield-delta.vercel.app/game?level=medium-7): Capstone: combine levels 6 to 11. (`Paid`)
+- [HR Handbook](https://play.ai-shield.my/game?level=medium-1): Agent rules, and a restricted tool.
+- [Refund Bot](https://play.ai-shield.my/game?level=medium-2): Do half of a mixed request: run the safe part, skip the forbidden part.
+- [Poisoned Inbox](https://play.ai-shield.my/game?level=medium-3): Quoted text is data, never a task. (`Paid`)
+- [Lost in Translation](https://play.ai-shield.my/game?level=medium-4): Meaning, not words, in four languages. (`Paid`)
+- [Express Lane](https://play.ai-shield.my/game?level=medium-5): Send only the Unclear prompts to paid checks. (`Paid`)
+- [Dual-Use Refund Desk](https://play.ai-shield.my/game?level=medium-6): One tool, right or wrong by context. (`Paid`)
+- [CRM Boss](https://play.ai-shield.my/game?level=medium-7): Capstone: combine levels 6 to 11. (`Paid`)
 
 ### Hard
 
-- [Warehouse](https://ai-shield-delta.vercel.app/game?level=hard-1): The eager agent does what it is told: plausible abuse gets through. (`Paid`)
-- [No Heavy Weapons](https://ai-shield-delta.vercel.app/game?level=hard-2): Stop plausible abuse without the LLM review. (`Paid`)
-- [Auditor's Minefield](https://ai-shield-delta.vercel.app/game?level=hard-3): Honest staff quote attack text: the words of an attack are in normal prompts too. (`Paid`)
-- [Polyglot](https://ai-shield-delta.vercel.app/game?level=hard-4): Two layers of encoding: a language inside an encoding, or one encoding inside another. (`Paid`)
-- [Finance Desk](https://ai-shield-delta.vercel.app/game?level=hard-5): Decide by amount and proof. (`Paid`)
-- [Cloud Ops](https://ai-shield-delta.vercel.app/game?level=hard-6): Two dual-use tools with opposite conditions. (`Paid`)
-- [Zero-Day](https://ai-shield-delta.vercel.app/game?level=hard-7): Final capstone: combine levels 13 to 18. (`Paid`)
+- [Warehouse](https://play.ai-shield.my/game?level=hard-1): The eager agent does what it is told: plausible abuse gets through. (`Paid`)
+- [No Heavy Weapons](https://play.ai-shield.my/game?level=hard-2): Stop plausible abuse without the LLM review. (`Paid`)
+- [Auditor's Minefield](https://play.ai-shield.my/game?level=hard-3): Honest staff quote attack text: the words of an attack are in normal prompts too. (`Paid`)
+- [Polyglot](https://play.ai-shield.my/game?level=hard-4): Two layers of encoding: a language inside an encoding, or one encoding inside another. (`Paid`)
+- [Finance Desk](https://play.ai-shield.my/game?level=hard-5): Decide by amount and proof. (`Paid`)
+- [Cloud Ops](https://play.ai-shield.my/game?level=hard-6): Two dual-use tools with opposite conditions. (`Paid`)
+- [Zero-Day](https://play.ai-shield.my/game?level=hard-7): Final capstone: combine levels 13 to 18. (`Paid`)
 
 ### Custom
 
-- [Custom Sandbox](https://ai-shield-delta.vercel.app/game?level=custom): Bring your own agent objective, tool list, CSV prompt dataset, and in-memory model API key (`Paid`).
+- [Custom Sandbox](https://play.ai-shield.my/game?level=custom): Bring your own agent objective, tool list, CSV prompt dataset, and in-memory model API key (`Paid`).
 
 ## Defence Tools
 
@@ -61,5 +61,5 @@ The campaign has 19 levels. Levels marked `Paid` need a pass.
 
 ## Optional
 
-- [Sign In](https://ai-shield-delta.vercel.app/auth/login): Sign in to use AI safety nodes, save boards across devices, record scores on the leaderboard, and change your display name.
-- [Create Account](https://ai-shield-delta.vercel.app/auth/register): Create a free ai-shield player account.
+- [Sign In](https://play.ai-shield.my/auth/login): Sign in to use AI safety nodes, save boards across devices, record scores on the leaderboard, and change your display name.
+- [Create Account](https://play.ai-shield.my/auth/register): Create a free ai-shield player account.

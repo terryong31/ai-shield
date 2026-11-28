@@ -12,6 +12,11 @@ build/
 # Playwright
 apps/web/test-results/
 apps/web/.e2e-auth/
+apps/landing/test-results/
+apps/admin/test-results/
+
+# Nuxt Content local cache
+.data/
 
 # python caches
 __pycache__/
@@ -65,3 +70,6 @@ perf/k6/.reports/
 
 # Load lab results and logs (perf/prodsim)
 perf/prodsim/out/
+
+# Promotional videos (large, kept out of git)
+media/

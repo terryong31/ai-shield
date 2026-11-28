@@ -698,15 +698,6 @@ const scoreColumns: TableColumn<LeaderboardRow>[] = [
       </div>
     </div>
 
-    <footer class="flex justify-center py-4 text-xs">
-      <ULink
-        to="/privacy"
-        class="text-muted"
-      >
-        Privacy Policy
-      </ULink>
-    </footer>
-
     <!-- Mission Briefing & Upgrade to Pro Modals -->
     <CampaignLevelBriefingModal
       v-model:open="isBriefingModalOpen"
