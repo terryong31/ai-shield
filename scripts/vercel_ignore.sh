@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Vercel Ignored Build Step. Usage: vercel_ignore.sh <web|api>
+# Vercel Ignored Build Step. Usage: vercel_ignore.sh <web|admin|landing|api>
 # Exit 0: Vercel skips the build. Exit 1: Vercel builds. If in doubt, build.
 set -uo pipefail
 

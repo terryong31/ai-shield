@@ -1,0 +1,13 @@
+# ai-shield
+
+> ai-shield is an interactive prompt-injection defence game where players wire layered security checks on a visual node board to protect an LLM agent from injection waves, jailbreaks, secret leaks, and unauthorized tool calls.
+
+## Sites
+
+- [Landing Page](https://ai-shield.my/): Product overview, 19-level campaign summary, defence tools, and attack patterns.
+- [Pricing](https://ai-shield.my/pricing): `Free $0` vs `30-Day Pass $5 USD` (one payment, does not renew), and FAQ.
+- [Play ai-shield](https://play.ai-shield.my/): Interactive game client, level selector, live leaderboards, and Custom Sandbox.
+- [Changelog](https://ai-shield.my/changelog): Client-facing release notes for new levels, defence tools, and scoring updates.
+- [Privacy Policy](https://ai-shield.my/privacy): Bilingual English and Bahasa Malaysia privacy policy covering `ai-shield.my`, `play.ai-shield.my`, `admin.ai-shield.my`, and `api.ai-shield.my`.
+- [Terms of Service](https://ai-shield.my/terms): Terms of use, educational simulation disclaimer, BYOK disclaimer, and pricing rules.
+- [Refund Policy](https://ai-shield.my/refund): Statutory-minimum refund and cancellation policy for the non-renewing `$5 USD` 30-day pass.

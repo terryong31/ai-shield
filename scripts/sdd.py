@@ -31,13 +31,13 @@ STATUS_LINE = re.compile(r"^(- \*\*Status:\*\*[ \t]*)(.*)$", re.MULTILINE)
 PROTECTED_STATUSES = {"Accepted", "Implemented"}
 
 TEST_PATHS = re.compile(
-    r"(^|/)tests/|^apps/web/test/|^packages/engine/src/shield_engine/testing\.py$"
+    r"(^|/)tests/|^apps/[^/]+/test/|^packages/engine/src/shield_engine/testing\.py$"
 )
 PRODUCTION_PATHS = re.compile(
-    r"^(packages/[^/]+/src/|apps/api/src/|apps/web/app/|supabase/migrations/)"
+    r"^(packages/[^/]+/src/|apps/api/src/|apps/[^/]+/(app|server)/|supabase/migrations/)"
 )
 PRODUCTION_IN_COMMAND = re.compile(
-    r"(packages/[\w-]+/src/|apps/api/src/|apps/web/app/|supabase/migrations/)"
+    r"(packages/[\w-]+/src/|apps/api/src/|apps/[\w-]+/(app|server)/|supabase/migrations/)"
 )
 SHELL_WRITE = re.compile(
     r"(>|\btee\b|\bsed\s+-i|\bperl\s+-\w*i|\bmv\b|\bcp\b|\brm\b|write_text|open\([^)]*['\"][wa])"
@@ -444,38 +444,51 @@ def _run_python(root: Path, ids: list[str], run: TestRun) -> None:
             )
 
 
+def _web_app_dirs(root: Path) -> list[Path]:
+    apps = root / "apps"
+    if not apps.is_dir():
+        return []
+    return sorted(
+        p
+        for p in apps.iterdir()
+        if p.is_dir() and (p / "package.json").is_file() and (p / "test").is_dir()
+    )
+
+
 def _run_web(root: Path, ids: list[str], run: TestRun) -> None:
-    web = root / "apps" / "web"
-    with tempfile.TemporaryDirectory() as tmp:
-        report = Path(tmp) / "vitest.json"
-        pattern = "|".join(re.escape(f"[{i}]") for i in ids)
-        subprocess.run(
-            ["bunx", "vitest", "run", "--reporter=default", "--reporter=json",
-             f"--outputFile.json={report}", "-t", pattern],
-            cwd=web, check=False,
-        )  # fmt: skip
-        if not report.exists():
-            raise SddError("vitest produced no report; see its output above.")
-        data = json.loads(report.read_text(encoding="utf-8"))
+    pattern = "|".join(re.escape(f"[{i}]") for i in ids)
     wanted = set(ids)
-    for suite in data.get("testResults", []):
-        assertions = suite.get("assertionResults", [])
-        if not assertions and suite.get("status") == "failed":
-            message = suite.get("message", "")
-            status = "failed" if is_legitimate_collection_error(message) else "error"
-            for criterion in _ids_in_file(Path(suite["name"]), wanted):
-                run.by_id.setdefault(criterion, []).append(
-                    TestOutcome(suite["name"], status, message)
+    for app_dir in _web_app_dirs(root):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "vitest.json"
+            subprocess.run(
+                ["bunx", "vitest", "run", "--reporter=default", "--reporter=json",
+                 f"--outputFile.json={report}", "-t", pattern],
+                cwd=app_dir, check=False,
+            )  # fmt: skip
+            if not report.exists():
+                raise SddError(
+                    f"vitest produced no report in {app_dir.name}; see its output above."
                 )
-        for test in assertions:
-            for criterion in wanted:
-                if f"[{criterion}]" in test["fullName"] and test["status"] != "pending":
-                    outcome = (
-                        test["status"] if test["status"] in {"passed", "failed"} else "skipped"
-                    )
+            data = json.loads(report.read_text(encoding="utf-8"))
+        for suite in data.get("testResults", []):
+            assertions = suite.get("assertionResults", [])
+            if not assertions and suite.get("status") == "failed":
+                message = suite.get("message", "")
+                status = "failed" if is_legitimate_collection_error(message) else "error"
+                for criterion in _ids_in_file(Path(suite["name"]), wanted):
                     run.by_id.setdefault(criterion, []).append(
-                        TestOutcome(test["fullName"], outcome)
+                        TestOutcome(suite["name"], status, message)
                     )
+            for test in assertions:
+                for criterion in wanted:
+                    if f"[{criterion}]" in test["fullName"] and test["status"] != "pending":
+                        outcome = (
+                            test["status"] if test["status"] in {"passed", "failed"} else "skipped"
+                        )
+                        run.by_id.setdefault(criterion, []).append(
+                            TestOutcome(test["fullName"], outcome)
+                        )
 
 
 def run_tests(root: Path, ids: list[str]) -> TestRun:

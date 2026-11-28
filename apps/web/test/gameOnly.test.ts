@@ -46,14 +46,16 @@ describe('game-only web app (spec 0026)', () => {
   })
 
   it('[WEB-CLEAN-002] keeps a game-only admin console', () => {
-    const layout = read('layouts', 'dashboard.vue')
+    const adminApp = join(import.meta.dirname, '..', '..', 'admin', 'app')
+    const readAdmin = (...parts: string[]) => readFileSync(join(adminApp, ...parts), 'utf-8')
+    const layout = readAdmin('layouts', 'dashboard.vue')
     expect(layout).toContain('label: \'Overview\'')
     expect(layout).toContain('label: \'Settings\'')
-    expect(layout).toContain('label: \'Main menu\'')
+    expect(layout).toContain('label: \'Open game\'')
     expect(layout).not.toContain('Audit logs')
     expect(layout).not.toContain('/_console/logs')
 
-    const overview = read('pages', 'console', 'index.vue')
+    const overview = readAdmin('pages', 'index.vue')
     expect(overview).toContain('consoleScoreStats(scores.value)')
     expect(overview).toContain('label="Clear scoreboard"')
     expect(overview).toContain('clearScores()')

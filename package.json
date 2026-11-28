@@ -3,7 +3,7 @@
   "private": true,
   "description": "AI S.H.I.E.L.D. monorepo. JavaScript workspaces; Python lives in the uv workspace (pyproject.toml).",
   "workspaces": [
-    "apps/web"
+    "apps/*"
   ],
   "packageManager": "bun@1.4.0",
   "overrides": {

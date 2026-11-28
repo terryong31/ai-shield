@@ -21,8 +21,6 @@ const ALL_PAGES: string[][] = [
   ['pages', 'auth', 'recover.vue'],
   ['pages', 'auth', 'confirmed.vue'],
   ['pages', 'auth', 'reset-password.vue'],
-  ['pages', 'console', 'index.vue'],
-  ['pages', 'console', 'settings.vue'],
   ['pages', '[...slug].vue']
 ]
 
@@ -31,8 +29,6 @@ const NOINDEX_PAGES: string[][] = [
   ['pages', 'auth', 'recover.vue'],
   ['pages', 'auth', 'confirmed.vue'],
   ['pages', 'auth', 'reset-password.vue'],
-  ['pages', 'console', 'index.vue'],
-  ['pages', 'console', 'settings.vue'],
   ['pages', '[...slug].vue']
 ]
 
@@ -179,7 +175,7 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
   })
 
   it('[WEB-GAME-017] sitemap.xml, robots.txt and llms.txt use the production site and match the current pages and levels', () => {
-    const site = 'https://ai-shield-delta.vercel.app'
+    const site = 'https://play.ai-shield.my'
     const [sitemap, robots, llms] = ['sitemap.xml', 'robots.txt', 'llms.txt'].map(readPublic) as [string, string, string]
     for (const file of [sitemap, robots, llms]) expect(file).not.toContain('localhost')
 
@@ -187,8 +183,8 @@ describe('SEO metadata, Twitter card, sitemap, robots and llms.txt (spec 0016)',
     const levelUrls = FALLBACK_CAMPAIGN_LEVELS.map(level => `${site}/game?level=${level.id}`)
     expect(levelUrls.length).toBe(19)
     expect(new Set(urls)).toEqual(new Set([
-      // Spec 0058 added the privacy policy.
-      ...['/', '/game', '/plans', '/auth/login', '/auth/register', '/privacy'].map(path => `${site}${path}`),
+      // Canonical privacy policy moved to https://ai-shield.my/privacy in specs 0060/0061.
+      ...['/', '/game', '/plans', '/auth/login', '/auth/register'].map(path => `${site}${path}`),
       ...levelUrls
     ]))
 

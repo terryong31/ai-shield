@@ -68,7 +68,9 @@ Template: [`apps/web/.env.example`](../../apps/web/.env.example).
 | --- | --- |
 | `/**` | `Content-Security-Policy` (`default-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin`. A production build (`NODE_ENV=production`) also sends `Strict-Transport-Security`. |
 | `/auth/**` | `Referrer-Policy: no-referrer`, `Cache-Control: no-store` |
-| `/_console`, `/_console/**`, `/settings`, `/plans` | `Cache-Control: no-store` |
+| `/settings`, `/plans` | `Cache-Control: no-store` |
+
+The isolated admin console (`apps/admin`, `admin.ai-shield.my`) sets `X-Robots-Tag: noindex, nofollow`, `Cache-Control: no-store`, strict CSP, and HSTS in production, and proxies `/api/v1/**` with `NUXT_API_ADMIN_PROXY_SECRET` (`x-shield-admin-proxy-secret`). The landing site (`apps/landing`, `ai-shield.my`) sets CSP, security headers, and HSTS in production via [`apps/landing/app/utils/securityHeaders.ts`](../../apps/landing/app/utils/securityHeaders.ts).
 
 The `/api/v1/**` proxy refuses a body over 2 MiB with `413` before it calls the gateway, also when the request has no `Content-Length`. It refuses a `POST`, `PUT`, `PATCH` or `DELETE` with `403 Cross-site request blocked.` when `Sec-Fetch-Site` is not `same-origin` or `none`, when `Origin` is another origin, or, in production, when both headers are missing.
 

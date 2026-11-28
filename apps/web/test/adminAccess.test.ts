@@ -2,22 +2,22 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const APP_DIR = join(import.meta.dirname, '..', 'app')
-const read = (...parts: string[]) => readFileSync(join(APP_DIR, ...parts), 'utf-8')
+const ADMIN_APP_DIR = join(import.meta.dirname, '..', '..', 'admin', 'app')
+const read = (...parts: string[]) => readFileSync(join(ADMIN_APP_DIR, ...parts), 'utf-8')
 
 const CONSOLE_FILES = [
   ['composables', 'useAdminAccess.ts'],
   ['composables', 'useShieldApi.ts'],
   ['layouts', 'dashboard.vue'],
-  ['pages', 'console', 'index.vue'],
-  ['pages', 'console', 'settings.vue'],
+  ['pages', 'index.vue'],
+  ['pages', 'settings.vue'],
   ['app.vue']
 ]
 
 describe('admin console sign-in (spec 0012)', () => {
   it('[WEB-CLEAR-002] sends email and password once, stores neither, and never mentions a passphrase', () => {
     const api = read('composables', 'useShieldApi.ts')
-    expect(api).toMatch(/grantClearance: \(email: string, password: string\) =>/)
+    expect(api).toMatch(/grantClearance = async \(email: string, password: string\)/)
     expect(api).toMatch(/body: \{ email, password \}/)
 
     const access = read('composables', 'useAdminAccess.ts')
@@ -31,7 +31,7 @@ describe('admin console sign-in (spec 0012)', () => {
     expect(layout).toMatch(/name: 'email'/)
     expect(layout).toMatch(/name: 'password'/)
 
-    expect(existsSync(join(APP_DIR, 'composables', 'usePassphrase.ts'))).toBe(false)
+    expect(existsSync(join(ADMIN_APP_DIR, 'composables', 'usePassphrase.ts'))).toBe(false)
     for (const parts of CONSOLE_FILES) {
       expect(read(...parts), parts.join('/')).not.toMatch(/passphrase/i)
     }

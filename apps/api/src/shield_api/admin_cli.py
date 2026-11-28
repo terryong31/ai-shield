@@ -97,7 +97,7 @@ def main(
             return 1
         result = create_admin(admin or _supabase_admin(), email, password)
         print(f"{result.capitalize()} {email} with role=admin.")
-        print("Sign in at /_console with this email and password.")
+        print("Sign in at https://admin.ai-shield.my with this email and password.")
         return 0
 
     if not revoke_admin(admin or _supabase_admin(), email):

@@ -55,9 +55,19 @@ description = "Run the Nuxt web client on :3000 (Infisical dev /web when signed 
 dir = "apps/web"
 run = "python3 ../../scripts/with_secrets.py --env=dev --path=/web -- bun run dev"
 
+[tasks."admin:dev"]
+description = "Run the Nuxt admin console on :3002"
+dir = "apps/admin"
+run = "python3 ../../scripts/with_secrets.py --env=dev --path=/web -- bun run dev -- --port 3002"
+
+[tasks."landing:dev"]
+description = "Run the Nuxt landing site on :3001"
+dir = "apps/landing"
+run = "bun run dev -- --port 3001"
+
 [tasks.dev]
-description = "Run API and web together"
-depends = ["api:dev", "web:dev"]
+description = "Run API (:8000), web (:3000), landing (:3001), and admin (:3002) together"
+depends = ["api:dev", "web:dev", "landing:dev", "admin:dev"]
 
 [tasks.stop]
 description = "Stop this repo's dev servers, Stripe listener, Redis and local Supabase (data is kept)"
@@ -67,8 +77,8 @@ set -u
 # Only processes whose working directory is in this repo: other projects keep running.
 find_pids() {
   {
-    lsof -nP -t -iTCP:3000 -iTCP:8000 -sTCP:LISTEN
-    pgrep -f 'mise (run )?(dev|api:dev|web:dev|stripe:listen)|uvicorn shield_api|nuxt.* dev|bun run dev|stripe listen|infisical run'
+    lsof -nP -t -iTCP:3000 -iTCP:3001 -iTCP:3002 -iTCP:8000 -sTCP:LISTEN
+    pgrep -f 'mise (run )?(dev|api:dev|web:dev|landing:dev|admin:dev|stripe:listen)|uvicorn shield_api|nuxt.* dev|bun run dev|stripe listen|infisical run'
   } 2>/dev/null | sort -u | while read -r pid; do
     [ "$pid" = "$$" ] || [ "$pid" = "$PPID" ] && continue
     cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
@@ -124,6 +134,35 @@ description = "Web unit tests (Vitest)"
 dir = "apps/web"
 run = "bun run test"
 
+[tasks."test:admin"]
+description = "Admin console unit tests (Vitest)"
+dir = "apps/admin"
+run = "bun run test"
+
+[tasks."test:landing"]
+description = "Landing site unit tests (Vitest)"
+dir = "apps/landing"
+run = "bun run test"
+
+[tasks."test:a11y:landing"]
+description = "Landing site WCAG 2.2 AA and rendered-HTML audit (Playwright + axe-core; requires build:landing)"
+dir = "apps/landing"
+run = "bun run test:a11y"
+
+[tasks."test:a11y:web"]
+description = "Web client WCAG 2.2 AA audit (Playwright + axe-core; requires build:web)"
+dir = "apps/web"
+run = "bun run test:a11y"
+
+[tasks."test:a11y:admin"]
+description = "Admin console WCAG 2.2 AA audit (Playwright + axe-core; requires build:admin)"
+dir = "apps/admin"
+run = "bun run test:a11y"
+
+[tasks."test:a11y"]
+description = "WCAG 2.2 AA audits across landing, web, and admin (requires builds)"
+depends = ["test:a11y:landing", "test:a11y:web", "test:a11y:admin"]
+
 [tasks."test:db"]
 description = "Database tests against local Supabase: pgTAP SQL tests and pytest -m db (spec 0056)"
 depends = ["db:start"]
@@ -174,7 +213,7 @@ run = "python3 scripts/e2e_gate.py"
 
 [tasks.test]
 description = "All tests"
-depends = ["test:engine", "test:api", "test:tooling", "test:web"]
+depends = ["test:engine", "test:api", "test:tooling", "test:web", "test:admin", "test:landing"]
 
 # --- static checks -------------------------------------------------------------
 
@@ -187,13 +226,23 @@ description = "ESLint"
 dir = "apps/web"
 run = "bun run lint"
 
+[tasks."lint:admin"]
+description = "ESLint (admin)"
+dir = "apps/admin"
+run = "bun run lint"
+
+[tasks."lint:landing"]
+description = "ESLint (landing)"
+dir = "apps/landing"
+run = "bun run lint"
+
 [tasks."lint:actions"]
 description = "actionlint + zizmor over the GitHub Actions workflows"
 run = ["actionlint", "zizmor --offline --min-severity medium .github"]
 
 [tasks.lint]
 description = "All linters"
-depends = ["lint:py", "lint:web", "lint:actions"]
+depends = ["lint:py", "lint:web", "lint:admin", "lint:landing", "lint:actions"]
 
 [tasks."secrets:scan"]
 description = "gitleaks over the full git history"
@@ -212,26 +261,37 @@ description = "vue-tsc via nuxt typecheck"
 dir = "apps/web"
 run = "bun run typecheck"
 
+[tasks."typecheck:admin"]
+description = "vue-tsc via nuxt typecheck (admin)"
+dir = "apps/admin"
+run = "bun run typecheck"
+
+[tasks."typecheck:landing"]
+description = "vue-tsc via nuxt typecheck (landing)"
+dir = "apps/landing"
+run = "bun run typecheck"
+
 [tasks.typecheck]
 description = "All type checkers"
-depends = ["typecheck:py", "typecheck:web"]
+depends = ["typecheck:py", "typecheck:web", "typecheck:admin", "typecheck:landing"]
 
 [tasks.format]
 description = "Auto-format everything"
-run = ["uv run ruff format .", "uv run ruff check --fix .", "bun run --cwd apps/web lint:fix"]
+run = ["uv run ruff format .", "uv run ruff check --fix .", "bun run --cwd apps/web lint:fix", "bun run --cwd apps/admin lint:fix", "bun run --cwd apps/landing lint:fix"]
 
 # --- contracts & specs -----------------------------------------------------------
 
 [tasks.contract]
-description = "Regenerate the OpenAPI contract and the web client's types from it"
-run = ["uv run shield-api-export-openapi", "bun run --cwd apps/web contract"]
+description = "Regenerate the OpenAPI contract and the web and admin clients' types from it"
+run = ["uv run shield-api-export-openapi", "bun run --cwd apps/web contract", "bun run --cwd apps/admin contract"]
 
 [tasks."contract:check"]
 description = "Fail if the committed contract or generated types are stale"
 run = [
   "uv run shield-api-export-openapi",
   "bun run --cwd apps/web contract",
-  "git diff --exit-code -- contracts apps/web/app/types/api.gen.ts",
+  "bun run --cwd apps/admin contract",
+  "git diff --exit-code -- contracts apps/web/app/types/api.gen.ts apps/admin/app/types/api.gen.ts",
 ]
 
 [tasks."levels:build"]
@@ -420,4 +480,14 @@ depends = ["lint", "typecheck", "test", "spec:check", "contract:check", "levels:
 [tasks."build:web"]
 description = "Production build of the web client"
 dir = "apps/web"
+run = "bun run build"
+
+[tasks."build:admin"]
+description = "Production build of the admin console"
+dir = "apps/admin"
+run = "bun run build"
+
+[tasks."build:landing"]
+description = "Production build of the landing site"
+dir = "apps/landing"
 run = "bun run build"

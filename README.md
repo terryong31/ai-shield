@@ -1,7 +1,7 @@
 <a id="readme-top"></a>
 
 <div align="center">
-  <a href="https://ai-shield-delta.vercel.app">
+  <a href="https://play.ai-shield.my">
     <img src="apps/web/public/favicon.svg" alt="ai-shield logo" width="72" height="72">
   </a>
 
@@ -14,7 +14,9 @@
   </p>
 
   <p>
-    <a href="https://ai-shield-delta.vercel.app"><strong>Play the game</strong></a>
+    <a href="https://play.ai-shield.my"><strong>Play the game</strong></a>
+    &middot;
+    <a href="https://ai-shield.my">Website</a>
     &middot;
     <a href="docs/README.md">Read the docs</a>
     &middot;
@@ -47,7 +49,7 @@
 
 ## About the project
 
-[![The defence board: checks on the left, Input and Help Desk on the right][board-screenshot]](https://ai-shield-delta.vercel.app)
+[![The defence board: checks on the left, Input and Help Desk on the right][board-screenshot]](https://play.ai-shield.my)
 
 Players wire checks on a node board to protect an LLM agent from waves of prompt
 injections. Each wave gets a score for protection, helpfulness, tool use, tokens, speed
@@ -169,8 +171,9 @@ To run both apps in containers, use `mise run up`. Do not commit `.env` files.
 4. **Build your own level.** A 30-day pass (**Plans**) unlocks all levels and the
    **Custom** sandbox, with your own agent, dataset and model key.
 
-Administrators use the console (`/_console`) to see the score statistics and to clear the
-scoreboard. To create an administrator, run `mise run admin:create <email>`.
+Administrators use the isolated admin console (`apps/admin`, `https://admin.ai-shield.my`)
+to view score statistics and clear the scoreboard. To create an administrator, run
+`mise run admin:create <email>`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

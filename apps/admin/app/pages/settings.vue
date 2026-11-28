@@ -1,20 +1,14 @@
 <script setup lang="ts">
-import { resolveConsoleAccess } from '~/utils/gameBoard'
-import { buildPageSeo } from '~/utils/seo'
+import { resolveConsoleAccess } from '~/utils/console'
 
 definePageMeta({
-  path: '/_console/settings',
   layout: 'dashboard'
 })
 
-const runtimeConfig = useRuntimeConfig()
-useSeoMeta(buildPageSeo({
+useSeoMeta({
   title: 'Console Settings',
-  description: 'Appearance and admin session settings for the ai-shield console.',
-  path: '/_console/settings',
-  siteUrl: runtimeConfig.public.siteUrl,
-  noindex: true
-}))
+  robots: 'noindex, nofollow'
+})
 
 const { status, granted, signOut } = useAdminAccess()
 const access = computed(() => resolveConsoleAccess(status.value))
@@ -72,7 +66,7 @@ const access = computed(() => resolveConsoleAccess(status.value))
             <UButton
               v-if="granted"
               label="Sign out"
-              color="error"
+              color="neutral"
               variant="outline"
               size="sm"
               @click="signOut"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AuthFormField, FormSubmitEvent, NavigationMenuItem } from '@nuxt/ui'
 
+const runtimeConfig = useRuntimeConfig()
 const { granted, loadAccess, signIn, signOut } = useAdminAccess()
 
 onMounted(loadAccess)
@@ -17,7 +18,7 @@ const authFields: AuthFormField[] = [
     name: 'email',
     type: 'email',
     label: 'Email',
-    placeholder: 'admin@ai-shield.local',
+    placeholder: 'admin@ai-shield.my',
     required: true
   },
   {
@@ -38,36 +39,40 @@ const onAuthSubmit = async (event: FormSubmitEvent<{ email?: string, password?: 
   }
 }
 
-const links = [[{
+const webUrl = computed(() => String(runtimeConfig.public.webUrl || 'https://play.ai-shield.my'))
+
+const links = computed<NavigationMenuItem[][]>(() => [[{
   label: 'Overview',
   icon: 'i-lucide-chart-no-axes-column',
-  to: '/_console',
+  to: '/',
   exact: true,
   onSelect: close
 }, {
   label: 'Settings',
   icon: 'i-lucide-sliders-horizontal',
-  to: '/_console/settings',
+  to: '/settings',
   onSelect: close
 }], [{
-  label: 'Main menu',
-  icon: 'i-lucide-house',
-  to: '/',
+  label: 'Open game',
+  icon: 'i-lucide-external-link',
+  to: webUrl.value,
+  target: '_blank',
+  external: true,
   onSelect: close
-}]] satisfies NavigationMenuItem[][]
+}]])
 </script>
 
 <template>
-  <div
+  <main
     v-if="!granted"
-    class="flex h-dvh w-screen items-center justify-center bg-default p-6"
+    class="flex min-h-dvh w-full items-center justify-center bg-default p-6"
   >
     <UCard
       variant="outline"
       class="w-full max-w-sm"
     >
       <UAuthForm
-        title="Login"
+        title="Admin Login"
         icon="i-lucide-lock"
         :fields="authFields"
         :loading="signingIn"
@@ -75,7 +80,7 @@ const links = [[{
         @submit="onAuthSubmit"
       />
     </UCard>
-  </div>
+  </main>
 
   <UDashboardGroup
     v-else
@@ -91,7 +96,7 @@ const links = [[{
     >
       <template #header="{ collapsed }">
         <NuxtLink
-          to="/_console"
+          to="/"
           class="flex items-center gap-2 min-w-0"
         >
           <UIcon
@@ -102,7 +107,7 @@ const links = [[{
             v-if="!collapsed"
             class="text-sm font-bold tracking-tight text-highlighted truncate"
           >
-            ai-shield
+            ai-shield Admin
           </span>
         </NuxtLink>
       </template>

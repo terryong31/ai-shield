@@ -129,13 +129,6 @@ onMounted(async () => {
               tabindex="-1"
             >Forgot password?</ULink>
           </template>
-
-          <template #footer>
-            <ULink
-              to="/privacy"
-              class="text-muted"
-            >Privacy Policy</ULink>
-          </template>
         </UAuthForm>
       </UPageCard>
     </div>

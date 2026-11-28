@@ -57,19 +57,30 @@ ai-shield/
 │   │   │   └── providers/       # gemini.py (standard-tier agent), byok.py (custom sandbox), typesafe.py (Jev)
 │   │   └── tests/
 │   │
-│   └── web/                     # @ai-shield/web: Nuxt 4 + Nuxt UI + Vue Flow client
-│       ├── nuxt.config.ts       # app.head defaults, security routeRules, runtimeConfig.apiProxyTarget, runtimeConfig.public.siteUrl
-│       ├── Dockerfile           # build from repo root
-│       ├── .env.example
-│       ├── public/              # twitter-card.png, twitter-card.svg, favicon.svg, robots.txt, sitemap.xml, llms.txt
-│       ├── app/
-│       │   ├── pages/           # index.vue (menu + levels), game.vue (board layout; state in composables/useGamePage.ts, panels in components/game/), plans.vue, settings.vue, auth/*, console/{index,settings}.vue (/_console)
-│       │   ├── layouts/         # dashboard.vue (UAuthForm-guarded layout for /_console)
-│       │   ├── components/      # workflow/GameNode.vue, campaign/*, PasswordStrengthField.vue
-│       │   ├── composables/     # useShieldApi, usePlayerAuth, useLeaderboard, useAdminAccess, useGamePage, …
-│       │   ├── utils/           # gameBoard.ts, campaignSelect.ts, billing.ts, sessionHint.ts, seo.ts, …
-│       │   └── types/           # api.gen.ts (generated), api.ts (aliases)
-│       └── test/                # Vitest
+│   ├── web/                     # @ai-shield/web: Nuxt 4 + Nuxt UI + Vue Flow game client (play.ai-shield.my)
+│   │   ├── nuxt.config.ts       # app.head defaults, security routeRules, runtimeConfig.apiProxyTarget, runtimeConfig.public.siteUrl
+│   │   ├── Dockerfile           # build from repo root
+│   │   ├── .env.example
+│   │   ├── public/              # twitter-card.png, twitter-card.svg, favicon.svg, robots.txt, sitemap.xml, llms.txt, .well-known/security.txt
+│   │   ├── app/
+│   │   │   ├── pages/           # index.vue (menu + levels), game.vue (board layout; state in composables/useGamePage.ts, panels in components/game/), plans.vue, settings.vue, auth/*
+│   │   │   ├── components/      # workflow/GameNode.vue, campaign/*, PasswordStrengthField.vue
+│   │   │   ├── composables/     # useShieldApi, usePlayerAuth, useLeaderboard, useGamePage, …
+│   │   │   ├── utils/           # gameBoard.ts, campaignSelect.ts, billing.ts, sessionHint.ts, seo.ts, …
+│   │   │   └── types/           # api.gen.ts (generated), api.ts (aliases)
+│   │   └── test/                # Vitest
+│   │
+│   ├── admin/                   # @ai-shield/admin: Nuxt 4 + Nuxt UI admin console (admin.ai-shield.my)
+│   │   ├── nuxt.config.ts       # admin security headers (noindex, nofollow, no-store)
+│   │   ├── server/routes/api/   # Nitro proxy with x-shield-admin-proxy-secret
+│   │   ├── app/                 # pages/ (index, settings), layouts/dashboard.vue, composables/, types/api.gen.ts
+│   │   └── test/                # Vitest
+│   │
+│   └── landing/                 # @ai-shield/landing: Nuxt 4 marketing, legal, and changelog site (ai-shield.my)
+│       ├── nuxt.config.ts       # security headers, i18n (en/ms), prerender routes, @nuxt/a11y
+│       ├── content/             # en/{privacy,terms,refund}.md, ms/{privacy,terms,refund}.md
+│       ├── app/                 # pages/ (index, pricing, changelog, privacy, terms, refund), components/, data/
+│       └── test/                # Vitest + Playwright axe-core WCAG 2.2 AA audit (a11y.spec.ts)
 │
 ├── contracts/
 │   └── shield-api.openapi.json  # generated HTTP contract (committed)
@@ -90,7 +101,7 @@ Git-ignored runtime and local paths:
 | Ecosystem | Tool | Root file | Members |
 | --- | --- | --- | --- |
 | Python | uv workspace | `pyproject.toml` | `packages/engine` (`shield-engine`), `apps/api` (`shield-api`) |
-| JavaScript | bun workspaces | `package.json` | `apps/web` (`@ai-shield/web`) |
+| JavaScript | bun workspaces | `package.json` | `apps/*` (`@ai-shield/web`, `@ai-shield/admin`, `@ai-shield/landing`) |
 
 `apps/api` depends on the engine through `[tool.uv.sources] shield-engine = { workspace = true }`.
 See [ADR 0001](../explanation/decisions/0001-monorepo-with-uv-and-bun-workspaces.md).

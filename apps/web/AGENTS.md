@@ -17,14 +17,12 @@ The game client. Root rules in [../../AGENTS.md](../../AGENTS.md) apply; these a
 | `app/components/workflow/GameNode.vue` | The game board's Vue Flow node |
 | `app/pages/index.vue` | Game main menu, level selector cards, and leaderboard |
 | `app/pages/settings.vue` | Player settings: theme, display name, email, password, data export, reset, delete |
-| `app/pages/privacy.vue` | Public privacy policy (spec 0058); keep it in step with the tables, cookies, storage keys and providers |
 | `app/pages/auth/` | Player authentication pages (`login`, `register`, `recover`, `confirmed`, `reset-password`) |
 | `app/pages/game.vue` | Layout of the defence board page: header, panels and SEO (at most 600 lines, spec 0055) |
 | `app/composables/useGamePage.ts` | All state and logic of the game page; `provide`d by the page, read by panels with `useGameContext()` |
 | `app/components/game/` | Game page panels: controls, tools panel, canvas, dialogs, results, node settings, tour |
 | `app/pages/plans.vue` | Free and Paid plans (`UPricingPlans`), pass checkout and sync |
 | `public/` | `llms.txt`, `robots.txt` and `sitemap.xml` use the production URL; update them when pages, levels or the price change (WEB-GAME-017) |
-| `app/pages/console/` | Guarded `/_console` admin console (`UAuthForm` login, score stats, scoreboard reset, settings) |
 
 ## Rules
 
@@ -49,7 +47,7 @@ Follow these rules on every change to `apps/web` to prevent common frontend vuln
 - **Never store secrets or session tokens in browser storage.** Session cookies are `HttpOnly` and owned by the gateway. Never put tokens, passwords, or user API keys (`customApiKey`) in `localStorage`, `sessionStorage`, non-`HttpOnly` cookies, or `runtimeConfig.public`.
 - **Never buffer unbounded bodies or accept loose origins in the Nitro proxy.** Enforce a byte cap before reading request bodies in `shared/utils/apiProxy.ts`. On state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`), reject `cross-site` and `same-site` requests and fail closed in production when origin headers are missing.
 - **Never trigger destructive actions on one click or fetch admin data before clearance.** Destructive admin or account actions must require an explicit confirmation modal (typed confirmation word or re-authentication). Gate admin API calls on `access.allowed`.
-- **Never advertise private routes in `public/robots.txt`.** Use `useSeoMeta({ robots: 'noindex, nofollow' })` on `/_console` and other private routes instead of listing them in `robots.txt`.
+- **Never advertise private routes in `public/robots.txt`.** Use `useSeoMeta({ robots: 'noindex, nofollow' })` on private routes instead of listing them in `robots.txt`. Admin routes live in `apps/admin`, not `apps/web`.
 - **Always validate forms with Zod and pin package versions.** Every `UForm` that submits user input must bind a Zod `:schema`. Never use `"latest"` in `apps/web/package.json` dependencies or `devDependencies`.
 
 Also please use UEmpty for empty states, and USplitter for resizable layouts.

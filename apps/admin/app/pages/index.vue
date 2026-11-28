@@ -1,30 +1,25 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
 import type { ScoreRecord } from '~/types/api'
-import { consoleScoreStats, resolveConsoleAccess } from '~/utils/gameBoard'
-import { buildPageSeo } from '~/utils/seo'
+import { consoleScoreStats, resolveConsoleAccess } from '~/utils/console'
 
 definePageMeta({
-  path: '/_console',
   layout: 'dashboard'
 })
 
-const runtimeConfig = useRuntimeConfig()
-useSeoMeta(buildPageSeo({
+useSeoMeta({
   title: 'Admin Console',
-  description: 'Admin console for monitoring player scores, medal statistics, and managing the ai-shield leaderboard.',
-  path: '/_console',
-  siteUrl: runtimeConfig.public.siteUrl,
-  noindex: true
-}))
+  robots: 'noindex, nofollow'
+})
 
+const runtimeConfig = useRuntimeConfig()
+const webUrl = computed(() => String(runtimeConfig.public.webUrl || 'https://play.ai-shield.my'))
 const { status } = useAdminAccess()
 const { getScores, clearScores } = useShieldApi()
 const toast = useToast()
 
 const access = computed(() => resolveConsoleAccess(status.value))
 const scores = ref<ScoreRecord[]>([])
-// Tiles cover the 100 best current-version scores, the most the scores endpoint returns.
 const stats = computed(() => consoleScoreStats(scores.value))
 const statTiles = computed(() => [
   { label: 'Scores recorded', icon: 'i-lucide-trophy', value: stats.value.scores },
@@ -33,7 +28,6 @@ const statTiles = computed(() => [
   { label: 'Gold / Silver / Bronze', icon: 'i-lucide-medal', value: `${stats.value.medals.gold} / ${stats.value.medals.silver} / ${stats.value.medals.bronze}` }
 ])
 const clearing = ref(false)
-// Clearing the scoreboard needs a typed confirmation (spec 0053).
 const isClearOpen = ref(false)
 const clearConfirm = ref('')
 
@@ -81,7 +75,6 @@ const handleClearScores = async () => {
   }
 }
 
-// No admin data is fetched before clearance is granted (spec 0053).
 watch(
   () => access.value.allowed,
   (allowed) => {
@@ -121,11 +114,12 @@ watch(
         <UEmpty
           icon="i-lucide-lock"
           title="Site admin access required"
-          description="Normal players cannot open /_console. Sign in with an admin account to monitor and manage the game's scores."
+          description="Sign in with an admin account to monitor and manage the game's scores."
         >
           <template #actions>
             <UButton
-              to="/game"
+              :to="webUrl"
+              external
               label="Return to game"
               color="neutral"
               variant="outline"
@@ -180,7 +174,7 @@ watch(
             v-else
             icon="i-lucide-trophy"
             title="No saved scores"
-            description="Player runs submitted from /game will appear here."
+            description="Player runs submitted from the game will appear here."
           />
         </div>
       </div>
@@ -198,13 +192,13 @@ watch(
             <UInput
               v-model="clearConfirm"
               autocomplete="off"
-              class="w-full"
+              placeholder="CLEAR"
             />
           </UFormField>
         </template>
 
         <template #footer>
-          <div class="flex w-full justify-end gap-2">
+          <div class="flex justify-end gap-2">
             <UButton
               label="Cancel"
               color="neutral"
@@ -212,7 +206,7 @@ watch(
               @click="isClearOpen = false"
             />
             <UButton
-              label="Clear scoreboard"
+              label="Delete all scores"
               color="error"
               :loading="clearing"
               :disabled="clearConfirm !== 'CLEAR'"
